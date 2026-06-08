@@ -53,6 +53,10 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_fCEJWNSfV7SEt46MYRS0xg_BNvfL
 SUPABASE_SERVICE_ROLE_KEY=
 DISCORD_BOT_SYNC_TOKEN=
 CRON_SECRET=
+DISCORD_APPLICATION_ID=
+DISCORD_PUBLIC_KEY=
+DISCORD_CLIENT_ID=
+DISCORD_CLIENT_SECRET=
 DISCORD_BOT_TOKEN=
 DISCORD_GUILD_ID=
 DISCORD_INVITE_CHANNEL_ID=
@@ -60,7 +64,7 @@ DISCORD_INVITE_CHANNEL_ID=
 
 `SUPABASE_SERVICE_ROLE_KEY` ist nur fuer serverseitige Admin-Aufgaben noetig und darf niemals im Browser genutzt werden.
 `DISCORD_BOT_SYNC_TOKEN` schuetzt die internen Bot-Endpunkte und muss spaeter identisch im Bot hinterlegt werden.
-`CRON_SECRET` schuetzt den geplanten Vercel-Aufruf. Die Discord-Werte braucht der Sync, um Einladungen zu erstellen und Auditlogs zu lesen.
+`CRON_SECRET` schuetzt den geplanten Vercel-Aufruf. `DISCORD_APPLICATION_ID`, `DISCORD_PUBLIC_KEY`, `DISCORD_CLIENT_ID` und `DISCORD_CLIENT_SECRET` gehoeren zur Discord-App. `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID` und `DISCORD_INVITE_CHANNEL_ID` braucht der Sync, um Einladungen zu erstellen und Auditlogs zu lesen.
 
 ## Interne Discord-Bot-Schnittstelle
 
