@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 
 type HomeProps = {
   searchParams: Promise<{
+    member?: string;
     section?: string;
     setup?: string;
   }>;
@@ -30,6 +31,7 @@ export default async function Home({ searchParams }: HomeProps) {
       authStatus={authStatus}
       dashboardSnapshot={dashboardSnapshot}
       environmentStatus={getEnvironmentStatus()}
+      initialSelectedMemberId={params.member}
       initialSection={params.section}
       setupNotice={getSetupNotice(params.setup)}
       workspaceData={workspaceData}
@@ -66,10 +68,52 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "member-opened") {
+    return {
+      tone: "success" as const,
+      text: "Mitgliederakte wurde geoeffnet und im Aktenprotokoll vermerkt.",
+    };
+  }
+
   if (setup === "member-create-error") {
     return {
       tone: "error" as const,
       text: "Mitgliederakte konnte nicht angelegt werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
+  if (setup === "member-open-error") {
+    return {
+      tone: "error" as const,
+      text: "Mitgliederakte konnte nicht geoeffnet werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
+  if (setup === "member-open-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum Oeffnen einer Mitgliederakte muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "member-open-permission") {
+    return {
+      tone: "error" as const,
+      text: "Mitgliederakte konnte nicht geoeffnet werden. Der Account hat keine passende Oeffnen-Berechtigung.",
+    };
+  }
+
+  if (setup === "member-open-reason") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte gib vor dem Oeffnen einen Zugriffsgrund mit mindestens 8 Zeichen an.",
+    };
+  }
+
+  if (setup === "member-open-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Diese Mitgliederakte wurde nicht gefunden.",
     };
   }
 

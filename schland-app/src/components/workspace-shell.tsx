@@ -29,7 +29,11 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { claimFirstAdminAction, createMemberAction } from "@/app/actions";
+import {
+  claimFirstAdminAction,
+  createMemberAction,
+  openMemberCaseAction,
+} from "@/app/actions";
 import type { AuthStatus } from "@/lib/auth";
 import type { DashboardSnapshot } from "@/lib/dashboard";
 import type { EnvironmentStatus } from "@/lib/env";
@@ -66,6 +70,7 @@ type WorkspaceShellProps = {
   authStatus: AuthStatus;
   dashboardSnapshot: DashboardSnapshot;
   environmentStatus: EnvironmentStatus;
+  initialSelectedMemberId?: string;
   initialSection?: string;
   setupNotice?: SetupNotice;
   workspaceData: WorkspaceData;
@@ -99,6 +104,7 @@ export function WorkspaceShell({
   authStatus,
   dashboardSnapshot,
   environmentStatus,
+  initialSelectedMemberId,
   initialSection,
   setupNotice,
   workspaceData,
@@ -107,10 +113,13 @@ export function WorkspaceShell({
   const [activeSection, setActiveSection] = useState<SectionId>(
     isSectionId(initialSection) ? initialSection : "dashboard",
   );
+  const openedMemberId = members.some((member) => member.id === initialSelectedMemberId)
+    ? String(initialSelectedMemberId)
+    : "";
   const [memberSearch, setMemberSearch] = useState("");
   const [accessReason, setAccessReason] = useState("");
-  const [selectedMemberId, setSelectedMemberId] = useState(
-    members[0]?.id ?? "",
+  const [selectedMemberId] = useState(
+    openedMemberId || members[0]?.id || "",
   );
 
   const filteredMembers = useMemo(() => {
@@ -138,6 +147,8 @@ export function WorkspaceShell({
     members.find((member) => member.id === selectedMemberId) ?? members[0] ?? null;
   const mfaReady = authStatus.mfaLevel === "aal2";
   const canOpenMember = mfaReady && accessReason.trim().length >= 8;
+  const canViewSelectedMember =
+    mfaReady && Boolean(openedMemberId) && selectedMember?.id === openedMemberId;
   const activeLabel =
     sections.find((section) => section.id === activeSection)?.label ??
     "Dashboard";
@@ -309,6 +320,7 @@ export function WorkspaceShell({
           <MembersSection
             accessReason={accessReason}
             canOpenMember={canOpenMember}
+            canViewSelectedMember={canViewSelectedMember}
             filteredMembers={filteredMembers}
             memberSearch={memberSearch}
             mfaReady={mfaReady}
@@ -316,7 +328,6 @@ export function WorkspaceShell({
             selectedMemberId={selectedMemberId}
             setAccessReason={setAccessReason}
             setMemberSearch={setMemberSearch}
-            setSelectedMemberId={setSelectedMemberId}
           />
         );
       case "files":
@@ -503,6 +514,7 @@ function DashboardSection({
 function MembersSection({
   accessReason,
   canOpenMember,
+  canViewSelectedMember,
   filteredMembers,
   memberSearch,
   mfaReady,
@@ -510,10 +522,10 @@ function MembersSection({
   selectedMemberId,
   setAccessReason,
   setMemberSearch,
-  setSelectedMemberId,
 }: {
   accessReason: string;
   canOpenMember: boolean;
+  canViewSelectedMember: boolean;
   filteredMembers: WorkspaceMember[];
   memberSearch: string;
   mfaReady: boolean;
@@ -521,7 +533,6 @@ function MembersSection({
   selectedMemberId: string;
   setAccessReason: (value: string) => void;
   setMemberSearch: (value: string) => void;
-  setSelectedMemberId: (value: string) => void;
 }) {
   return (
     <div className="grid gap-5 xl:grid-cols-[1fr_420px]">
@@ -774,7 +785,9 @@ function MembersSection({
                     key={member.id}
                     className={[
                       "border-t border-[var(--line)]",
-                      selectedMemberId === member.id ? "bg-[var(--accent-soft)]" : "",
+                      canViewSelectedMember && selectedMemberId === member.id
+                        ? "bg-[var(--accent-soft)]"
+                        : "",
                     ].join(" ")}
                   >
                     <td className="px-4 py-3">
@@ -811,20 +824,23 @@ function MembersSection({
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        title={
-                          canOpenMember
-                            ? "Akte oeffnen"
-                            : "Zugriffsgrund eintragen"
-                        }
-                        disabled={!canOpenMember}
-                        onClick={() => setSelectedMemberId(member.id)}
-                        className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        <Eye className="size-4" aria-hidden="true" />
-                        <span>Oeffnen</span>
-                      </button>
+                      <form action={openMemberCaseAction}>
+                        <input type="hidden" name="memberId" value={member.id} />
+                        <input type="hidden" name="reason" value={accessReason} />
+                        <button
+                          type="submit"
+                          title={
+                            canOpenMember
+                              ? "Akte oeffnen"
+                              : "Zugriffsgrund eintragen"
+                          }
+                          disabled={!canOpenMember}
+                          className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          <Eye className="size-4" aria-hidden="true" />
+                          <span>Oeffnen</span>
+                        </button>
+                      </form>
                     </td>
                   </tr>
                   ))
@@ -844,10 +860,10 @@ function MembersSection({
             <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-muted)] p-4 text-sm text-neutral-600">
               Waehle eine Mitgliederakte aus, sobald Daten vorhanden sind.
             </div>
-          ) : !canOpenMember ? (
+          ) : !canViewSelectedMember ? (
             <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-muted)] p-4 text-sm text-neutral-600">
               {mfaReady
-                ? "Ein valider Zugriffsgrund schaltet die Detailansicht frei."
+                ? "Oeffne eine Akte mit Zugriffsgrund, damit die Detailansicht protokolliert freigeschaltet wird."
                 : "2FA muss aktiv sein, bevor die Detailansicht freigeschaltet wird."}
             </div>
           ) : (

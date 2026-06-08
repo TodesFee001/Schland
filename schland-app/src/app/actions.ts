@@ -88,6 +88,48 @@ export async function createMemberAction(formData: FormData) {
   redirect("/?section=members&setup=member-created");
 }
 
+export async function openMemberCaseAction(formData: FormData) {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=members&setup=missing-supabase");
+  }
+
+  const memberId = getFormText(formData, "memberId");
+  const reason = getFormText(formData, "reason");
+
+  if (!memberId) {
+    redirect("/?section=members&setup=member-open-missing");
+  }
+
+  if (reason.length < 8) {
+    redirect("/?section=members&setup=member-open-reason");
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data: assuranceLevel } =
+    await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+
+  if (assuranceLevel?.currentLevel !== "aal2") {
+    redirect("/?section=members&setup=member-open-aal2");
+  }
+
+  const { error } = await supabase.rpc("open_member_case", {
+    p_member_id: memberId,
+    p_reason: reason,
+  });
+
+  if (error) {
+    console.error("open_member_case failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect(`/?section=members&setup=${getMemberOpenErrorSetup(error)}`);
+  }
+
+  revalidatePath("/", "layout");
+  redirect(`/?section=members&member=${encodeURIComponent(memberId)}&setup=member-opened`);
+}
+
 function getFormText(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
@@ -128,4 +170,22 @@ function getMemberCreateErrorSetup(error: { code?: string; message?: string }) {
   }
 
   return "member-create-error";
+}
+
+function getMemberOpenErrorSetup(error: { message?: string }) {
+  const message = error.message?.toLowerCase() ?? "";
+
+  if (message.includes("reason")) {
+    return "member-open-reason";
+  }
+
+  if (message.includes("not found")) {
+    return "member-open-missing";
+  }
+
+  if (message.includes("denied")) {
+    return "member-open-permission";
+  }
+
+  return "member-open-error";
 }
