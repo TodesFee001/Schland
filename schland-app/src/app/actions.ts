@@ -249,6 +249,114 @@ export async function unlinkMemberFileAction(formData: FormData) {
   );
 }
 
+export async function setMemberDiscordAnalyticsAction(formData: FormData) {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=members&setup=missing-supabase");
+  }
+
+  const memberId = getFormText(formData, "memberId");
+  const enabledValue = getFormText(formData, "enabled");
+  const reason = getFormText(formData, "reason");
+  const enabled =
+    enabledValue === "true" ? true : enabledValue === "false" ? false : null;
+
+  if (!memberId || enabled === null) {
+    redirect("/?section=members&setup=member-analytics-missing");
+  }
+
+  if (reason.length < 8) {
+    redirect(
+      `/?section=members&member=${encodeURIComponent(
+        memberId,
+      )}&setup=member-analytics-reason`,
+    );
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect(
+      `/?section=members&member=${encodeURIComponent(
+        memberId,
+      )}&setup=member-analytics-aal2`,
+    );
+  }
+
+  const { error } = await supabase.rpc("set_member_discord_analytics", {
+    p_enabled: enabled,
+    p_member_id: memberId,
+    p_reason: reason,
+  });
+
+  if (error) {
+    console.error("set_member_discord_analytics failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect(
+      `/?section=members&member=${encodeURIComponent(
+        memberId,
+      )}&setup=${getMemberDiscordAnalyticsErrorSetup(error)}`,
+    );
+  }
+
+  revalidatePath("/", "layout");
+  redirect(
+    `/?section=members&member=${encodeURIComponent(memberId)}&setup=${
+      enabled ? "member-analytics-enabled" : "member-analytics-disabled"
+    }`,
+  );
+}
+
+export async function createDiscordInviteRequestAction(formData: FormData) {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=sync&setup=missing-supabase");
+  }
+
+  const inviteeName = getFormText(formData, "inviteeName");
+  const permissionId = getFormText(formData, "permissionId");
+  const reason = getFormText(formData, "reason");
+  const targetMemberId = getFormText(formData, "targetMemberId") || null;
+
+  if (inviteeName.length < 2) {
+    redirect("/?section=sync&setup=discord-invite-name");
+  }
+
+  if (!permissionId) {
+    redirect("/?section=sync&setup=discord-invite-permission");
+  }
+
+  if (reason.length < 8) {
+    redirect("/?section=sync&setup=discord-invite-reason");
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect("/?section=sync&setup=discord-invite-aal2");
+  }
+
+  const { error } = await supabase.rpc("create_discord_invite_request", {
+    p_invitee_name: inviteeName,
+    p_permission_id: permissionId,
+    p_reason: reason,
+    p_target_member_id: targetMemberId,
+  });
+
+  if (error) {
+    console.error("create_discord_invite_request failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect(`/?section=sync&setup=${getDiscordInviteErrorSetup(error)}`);
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/?section=sync&setup=discord-invite-created");
+}
+
 export async function setUserRoleAction(formData: FormData) {
   if (!hasSupabasePublicEnv()) {
     redirect("/?section=users&setup=missing-supabase");
@@ -662,6 +770,58 @@ function getMemberFileLinkErrorSetup(error: { code?: string; message?: string })
   }
 
   return "member-file-error";
+}
+
+function getMemberDiscordAnalyticsErrorSetup(error: { message?: string }) {
+  const message = error.message?.toLowerCase() ?? "";
+
+  if (message.includes("reason")) {
+    return "member-analytics-reason";
+  }
+
+  if (message.includes("member") && message.includes("not found")) {
+    return "member-analytics-missing";
+  }
+
+  if (
+    message.includes("denied") ||
+    message.includes("permission") ||
+    message.includes("setting denied")
+  ) {
+    return "member-analytics-permission";
+  }
+
+  return "member-analytics-error";
+}
+
+function getDiscordInviteErrorSetup(error: { message?: string }) {
+  const message = error.message?.toLowerCase() ?? "";
+
+  if (message.includes("invitee") || message.includes("name")) {
+    return "discord-invite-name";
+  }
+
+  if (message.includes("reason")) {
+    return "discord-invite-reason";
+  }
+
+  if (message.includes("permission") && message.includes("not found")) {
+    return "discord-invite-permission";
+  }
+
+  if (message.includes("permission")) {
+    return "discord-invite-permission";
+  }
+
+  if (message.includes("target member")) {
+    return "discord-invite-member";
+  }
+
+  if (message.includes("denied")) {
+    return "discord-invite-denied";
+  }
+
+  return "discord-invite-error";
 }
 
 function getUserRoleErrorSetup(error: { message?: string }) {

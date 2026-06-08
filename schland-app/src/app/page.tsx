@@ -229,6 +229,111 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "member-analytics-enabled") {
+    return {
+      tone: "success" as const,
+      text: "Discord-Auswertung wurde fuer diese Mitgliederakte wieder aktiviert.",
+    };
+  }
+
+  if (setup === "member-analytics-disabled") {
+    return {
+      tone: "success" as const,
+      text: "Discord-Auswertung wurde fuer diese Mitgliederakte deaktiviert und protokolliert.",
+    };
+  }
+
+  if (setup === "member-analytics-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum Aendern der Discord-Auswertung muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "member-analytics-reason") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte gib fuer die Datenschutz-Aenderung einen Grund mit mindestens 8 Zeichen an.",
+    };
+  }
+
+  if (setup === "member-analytics-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Diese Mitgliederakte wurde nicht gefunden.",
+    };
+  }
+
+  if (setup === "member-analytics-permission") {
+    return {
+      tone: "error" as const,
+      text: "Discord-Auswertung konnte nicht geaendert werden. Der Account hat keine passende Mitglieder-Berechtigung.",
+    };
+  }
+
+  if (setup === "member-analytics-error") {
+    return {
+      tone: "error" as const,
+      text: "Discord-Auswertung konnte nicht geaendert werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
+  if (setup === "discord-invite-created") {
+    return {
+      tone: "success" as const,
+      text: "Discord-Einladung wurde als Datenbankauftrag angelegt. Der Bot erstellt spaeter daraus eine 1x nutzbare Einladung mit 1 Tag Gueltigkeit.",
+    };
+  }
+
+  if (setup === "discord-invite-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum Anlegen einer Discord-Einladung muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "discord-invite-name") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte gib an, wen du einladen moechtest.",
+    };
+  }
+
+  if (setup === "discord-invite-reason") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte gib fuer die Discord-Einladung einen Grund mit mindestens 8 Zeichen an.",
+    };
+  }
+
+  if (setup === "discord-invite-permission") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte verknuepfe die Discord-Einladung mit einer Berechtigung.",
+    };
+  }
+
+  if (setup === "discord-invite-member") {
+    return {
+      tone: "warning" as const,
+      text: "Das ausgewaehlte Zielmitglied wurde nicht gefunden.",
+    };
+  }
+
+  if (setup === "discord-invite-denied") {
+    return {
+      tone: "error" as const,
+      text: "Discord-Einladung konnte nicht angelegt werden. Dem Account fehlt die passende Berechtigung.",
+    };
+  }
+
+  if (setup === "discord-invite-error") {
+    return {
+      tone: "error" as const,
+      text: "Discord-Einladung konnte nicht angelegt werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
   if (setup === "role-assigned") {
     return {
       tone: "success" as const,

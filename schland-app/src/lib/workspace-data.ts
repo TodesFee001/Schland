@@ -7,6 +7,9 @@ export type MemberStatusLabel = "Aktiv" | "Pruefung" | "Archiv";
 export type WorkspaceMember = {
   id: string;
   age: number | null;
+  discordAnalyticsDisabledAt: string;
+  discordAnalyticsDisabledReason: string;
+  discordAnalyticsEnabled: boolean;
   discordId: string;
   discordName: string;
   displayName: string;
@@ -82,6 +85,29 @@ export type WorkspaceRoleRow = {
   roleKey: string;
 };
 
+export type WorkspacePermissionOption = {
+  description: string;
+  id: string;
+  key: string;
+};
+
+export type WorkspaceDiscordInvite = {
+  createdAt: string;
+  expiresAt: string;
+  id: string;
+  inviteeName: string;
+  maxUses: number;
+  permission: string;
+  permissionKey: string;
+  reason: string;
+  requestedBy: string;
+  status: string;
+  statusLabel: string;
+  targetDiscordId: string;
+  targetMemberName: string;
+  uses: number;
+};
+
 export type WorkspaceLogRow = {
   action: string;
   id: string;
@@ -137,10 +163,12 @@ export type WorkspaceSyncStatus = {
 
 export type WorkspaceData = {
   categories: WorkspaceCategory[];
+  discordInvites: WorkspaceDiscordInvite[];
   files: WorkspaceFile[];
   folders: WorkspaceFolder[];
   logs: WorkspaceLogRow[];
   members: WorkspaceMember[];
+  permissions: WorkspacePermissionOption[];
   roles: WorkspaceRoleRow[];
   source: "demo" | "supabase";
   sync: WorkspaceSyncStatus;
@@ -159,6 +187,9 @@ export const demoWorkspaceData: WorkspaceData = {
       id: "MEM-1007",
       name: "Elias Kramer",
       age: 27,
+      discordAnalyticsDisabledAt: "-",
+      discordAnalyticsDisabledReason: "",
+      discordAnalyticsEnabled: true,
       residence: "Gera",
       profession: "IT-Service",
       discordId: "842109348219",
@@ -193,6 +224,9 @@ export const demoWorkspaceData: WorkspaceData = {
       id: "MEM-1042",
       name: "Mara Seidel",
       age: 24,
+      discordAnalyticsDisabledAt: "-",
+      discordAnalyticsDisabledReason: "",
+      discordAnalyticsEnabled: true,
       residence: "Jena",
       profession: "Medien",
       discordId: "742101095203",
@@ -219,6 +253,9 @@ export const demoWorkspaceData: WorkspaceData = {
       id: "MEM-1099",
       name: "Noah Becker",
       age: 31,
+      discordAnalyticsDisabledAt: "02.06.2026, 19:04",
+      discordAnalyticsDisabledReason: "Datenschutz-Widerspruch",
+      discordAnalyticsEnabled: false,
       residence: "Leipzig",
       profession: "Logistik",
       discordId: "663180193355",
@@ -226,10 +263,10 @@ export const demoWorkspaceData: WorkspaceData = {
       displayName: "Noah",
       invitedBy: "Elias Kramer",
       status: "Pruefung",
-      lastActivity: "02.06.2026, 19:04",
+      lastActivity: "Auswertung deaktiviert",
       roles: ["Mitglied", "Bilderzugriff"],
-      messagesMonth: 73,
-      voiceHoursMonth: 9,
+      messagesMonth: 0,
+      voiceHoursMonth: 0,
       linkedFiles: [
         {
           createdAt: "02.06.2026, 19:04",
@@ -393,6 +430,36 @@ export const demoWorkspaceData: WorkspaceData = {
       members: 16,
     },
   ],
+  permissions: [
+    {
+      id: "permission-demo-1",
+      key: "discord.invites.create",
+      description: "Discord-Einladung ueber Datenbank anlegen",
+    },
+    {
+      id: "permission-demo-2",
+      key: "members.open",
+      description: "Mitgliederakte oeffnen",
+    },
+  ],
+  discordInvites: [
+    {
+      id: "invite-demo-1",
+      inviteeName: "Beispielmitglied",
+      targetMemberName: "Noah Becker",
+      targetDiscordId: "663180193355",
+      reason: "Aufnahme nach Pruefung",
+      permission: "Discord-Einladung ueber Datenbank anlegen",
+      permissionKey: "discord.invites.create",
+      status: "pending",
+      statusLabel: "Offen",
+      uses: 0,
+      maxUses: 1,
+      expiresAt: "Morgen, 19:04",
+      createdAt: "Heute, 19:04",
+      requestedBy: "Mara Seidel",
+    },
+  ],
   logs: [
     {
       id: "log-demo-1",
@@ -499,6 +566,9 @@ export const demoWorkspaceData: WorkspaceData = {
       ["Neue Mitglieder", "Backend-Endpunkt spaeter", false],
       ["Nachrichtenzaehler", "Monatsmodell vorbereitet", true],
       ["Voice-Sessions", "Tabellen vorbereitet", true],
+      ["Datenschutz Opt-out", "Datenbankregel vorbereitet", true],
+      ["DB-Einladungen", "Warteschlange vorbereitet", true],
+      ["Moderationsregister", "Kommt mit Bot-Sync", false],
       ["Bot-Implementierung", "Zum Schluss", false],
     ].map(([label, status, active]) => ({
       label: String(label),
@@ -525,6 +595,8 @@ export async function getWorkspaceData(
       foldersResult,
       filesResult,
       rolesResult,
+      permissionsResult,
+      discordInvitesResult,
       profilesResult,
       logsResult,
       syncResult,
@@ -541,6 +613,9 @@ export async function getWorkspaceData(
             discord_id,
             discord_username,
             discord_display_name,
+            discord_analytics_enabled,
+            discord_analytics_disabled_reason,
+            discord_analytics_disabled_at,
             status,
             updated_at,
             invited_by:invited_by_member_id(name),
@@ -619,6 +694,29 @@ export async function getWorkspaceData(
         )
         .order("name", { ascending: true }),
       supabase
+        .from("permissions")
+        .select("id, permission_key, description")
+        .order("permission_key", { ascending: true }),
+      supabase
+        .from("discord_invite_requests")
+        .select(
+          `
+            id,
+            invitee_name,
+            reason,
+            status,
+            max_uses,
+            uses,
+            expires_at,
+            created_at,
+            requested_by_name,
+            target_member:members!discord_invite_requests_target_member_id_fkey(name, discord_id),
+            requested_permission:permissions!discord_invite_requests_requested_permission_id_fkey(permission_key, description)
+          `,
+        )
+        .order("created_at", { ascending: false })
+        .limit(20),
+      supabase
         .from("profiles")
         .select(
           `
@@ -648,6 +746,8 @@ export async function getWorkspaceData(
     collectWarning(warnings, foldersResult.error?.message);
     collectWarning(warnings, filesResult.error?.message);
     collectWarning(warnings, rolesResult.error?.message);
+    collectWarning(warnings, permissionsResult.error?.message);
+    collectWarning(warnings, discordInvitesResult.error?.message);
     collectWarning(warnings, profilesResult.error?.message);
     collectWarning(warnings, logsResult.error?.message);
     collectWarning(warnings, syncResult.error?.message);
@@ -659,6 +759,8 @@ export async function getWorkspaceData(
       folders: mapFolders(foldersResult.data ?? []),
       files: mapFiles(filesResult.data ?? []),
       roles: mapRoles(rolesResult.data ?? []),
+      permissions: mapPermissions(permissionsResult.data ?? []),
+      discordInvites: mapDiscordInvites(discordInvitesResult.data ?? []),
       users: mapUsers(profilesResult.data ?? []),
       logs: mapLogs(logsResult.data ?? []),
       sync: mapSync(syncResult.data ?? []),
@@ -680,6 +782,7 @@ function collectWarning(warnings: string[], message?: string) {
 
 function mapMembers(rows: Record<string, unknown>[]): WorkspaceMember[] {
   return rows.map((row) => {
+    const discordAnalyticsEnabled = row.discord_analytics_enabled !== false;
     const messageRows = asArray(row.message_activity_monthly);
     const voiceRows = asArray(row.voice_activity_monthly);
     const currentMessageRow = messageRows.find(
@@ -699,6 +802,13 @@ function mapMembers(rows: Record<string, unknown>[]): WorkspaceMember[] {
       id: String(row.id ?? ""),
       name: String(row.name ?? "Unbenannt"),
       age: row.age === null || row.age === undefined ? null : Number(row.age),
+      discordAnalyticsDisabledAt: formatDate(
+        String(row.discord_analytics_disabled_at ?? ""),
+      ),
+      discordAnalyticsDisabledReason: String(
+        row.discord_analytics_disabled_reason ?? "",
+      ),
+      discordAnalyticsEnabled,
       residence: String(row.residence ?? "-"),
       profession: String(row.profession ?? "-"),
       discordId: String(row.discord_id ?? "-"),
@@ -706,12 +816,18 @@ function mapMembers(rows: Record<string, unknown>[]): WorkspaceMember[] {
       displayName: String(row.discord_display_name ?? row.discord_username ?? "-"),
       invitedBy: String(asObject(row.invited_by)?.name ?? "-"),
       status: mapMemberStatus(String(row.status ?? "active")),
-      lastActivity: formatDate(lastActivityAt),
+      lastActivity: discordAnalyticsEnabled
+        ? formatDate(lastActivityAt)
+        : "Auswertung deaktiviert",
       roles: asArray(row.member_discord_roles)
         .map((entry) => String(asObject(entry.discord_roles)?.role_name ?? ""))
         .filter(Boolean),
-      messagesMonth: Number(currentMessageRow?.message_count ?? 0),
-      voiceHoursMonth: Math.round(Number(currentVoiceRow?.voice_minutes ?? 0) / 60),
+      messagesMonth: discordAnalyticsEnabled
+        ? Number(currentMessageRow?.message_count ?? 0)
+        : 0,
+      voiceHoursMonth: discordAnalyticsEnabled
+        ? Math.round(Number(currentVoiceRow?.voice_minutes ?? 0) / 60)
+        : 0,
       linkedFiles: asArray(row.member_files)
         .map((entry) => {
           const file = asObject(entry.files);
@@ -826,6 +942,39 @@ function mapRoles(rows: Record<string, unknown>[]): WorkspaceRoleRow[] {
   }));
 }
 
+function mapPermissions(rows: Record<string, unknown>[]): WorkspacePermissionOption[] {
+  return rows.map((row) => ({
+    id: String(row.id ?? ""),
+    key: String(row.permission_key ?? ""),
+    description: String(row.description ?? row.permission_key ?? ""),
+  }));
+}
+
+function mapDiscordInvites(rows: Record<string, unknown>[]): WorkspaceDiscordInvite[] {
+  return rows.map((row) => {
+    const targetMember = asObject(row.target_member);
+    const permission = asObject(row.requested_permission);
+    const permissionKey = String(permission.permission_key ?? "");
+
+    return {
+      id: String(row.id ?? ""),
+      inviteeName: String(row.invitee_name ?? "Unbekannt"),
+      targetMemberName: String(targetMember.name ?? "-"),
+      targetDiscordId: String(targetMember.discord_id ?? "-"),
+      reason: String(row.reason ?? "-"),
+      permission: String(permission.description ?? permissionKey ?? "-"),
+      permissionKey,
+      status: String(row.status ?? "pending"),
+      statusLabel: mapDiscordInviteStatus(String(row.status ?? "pending")),
+      uses: Number(row.uses ?? 0),
+      maxUses: Number(row.max_uses ?? 1),
+      expiresAt: formatDate(String(row.expires_at ?? "")),
+      createdAt: formatDate(String(row.created_at ?? "")),
+      requestedBy: String(row.requested_by_name ?? "-"),
+    };
+  });
+}
+
 function mapUsers(rows: Record<string, unknown>[]): WorkspaceUserSummary {
   return rows.reduce<WorkspaceUserSummary>(
     (summary, row) => {
@@ -911,6 +1060,21 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
         active: true,
       },
       {
+        label: "Datenschutz Opt-out",
+        status: "Datenbankregel vorbereitet",
+        active: true,
+      },
+      {
+        label: "DB-Einladungen",
+        status: "Warteschlange vorbereitet",
+        active: true,
+      },
+      {
+        label: "Moderationsregister",
+        status: "Kommt mit Bot-Sync",
+        active: false,
+      },
+      {
         label: "Bot-Implementierung",
         status: "Zum Schluss",
         active: false,
@@ -955,6 +1119,19 @@ function mapLogAction(action: string) {
   };
 
   return labels[action] ?? action;
+}
+
+function mapDiscordInviteStatus(status: string) {
+  const labels: Record<string, string> = {
+    pending: "Offen",
+    created: "Erstellt",
+    used: "Verwendet",
+    expired: "Abgelaufen",
+    cancelled: "Abgebrochen",
+    failed: "Fehler",
+  };
+
+  return labels[status] ?? status;
 }
 
 function formatDate(value: string) {

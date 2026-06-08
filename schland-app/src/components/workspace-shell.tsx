@@ -33,12 +33,14 @@ import { useMemo, useState } from "react";
 
 import {
   claimFirstAdminAction,
+  createDiscordInviteRequestAction,
   createFolderAction,
   createMemberAction,
   deleteFolderAction,
   downloadFileAction,
   linkMemberFileAction,
   openMemberCaseAction,
+  setMemberDiscordAnalyticsAction,
   setFolderPermissionAction,
   setUserRoleAction,
   unlinkMemberFileAction,
@@ -51,11 +53,13 @@ import type {
   MemberStatusLabel,
   WorkspaceCategory,
   WorkspaceData,
+  WorkspaceDiscordInvite,
   WorkspaceFile,
   WorkspaceFolder,
   WorkspaceFolderPermission,
   WorkspaceLogRow,
   WorkspaceMember,
+  WorkspacePermissionOption,
   WorkspaceRoleRow,
   WorkspaceSyncStatus,
   WorkspaceUserSummary,
@@ -368,7 +372,15 @@ export function WorkspaceShell({
       case "activity":
         return <ActivitySection members={members} />;
       case "sync":
-        return <SyncSection sync={workspaceData.sync} />;
+        return (
+          <SyncSection
+            discordInvites={workspaceData.discordInvites}
+            members={members}
+            mfaReady={mfaReady}
+            permissions={workspaceData.permissions}
+            sync={workspaceData.sync}
+          />
+        );
       case "settings":
         return (
           <SettingsSection
@@ -847,10 +859,18 @@ function MembersSection({
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <div>{member.messagesMonth} Nachrichten</div>
-                      <div className="text-xs text-neutral-500">
-                        {member.voiceHoursMonth} Voice-Stunden
-                      </div>
+                      {member.discordAnalyticsEnabled ? (
+                        <>
+                          <div>{member.messagesMonth} Nachrichten</div>
+                          <div className="text-xs text-neutral-500">
+                            {member.voiceHoursMonth} Voice-Stunden
+                          </div>
+                        </>
+                      ) : (
+                        <span className="rounded-md bg-[#fff4d6] px-2 py-1 text-xs font-medium text-[var(--warning)]">
+                          Auswertung aus
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <form action={openMemberCaseAction}>
@@ -914,6 +934,84 @@ function MembersSection({
                   <DetailRow label="Discord" value={selectedMember.discordName} />
                   <DetailRow label="Eingeladen von" value={selectedMember.invitedBy} />
                 </dl>
+              </div>
+
+              <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-muted)] p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold">Discord-Datenschutz</h3>
+                    <p className="mt-1 text-xs text-neutral-600">
+                      {selectedMember.discordAnalyticsEnabled
+                        ? "Auswertung durch den Bot ist erlaubt."
+                        : "Auswertung durch den Bot ist deaktiviert."}
+                    </p>
+                  </div>
+                  <span
+                    className={[
+                      "shrink-0 rounded-md px-2 py-1 text-xs font-medium",
+                      selectedMember.discordAnalyticsEnabled
+                        ? "bg-[var(--accent-soft)] text-[var(--accent-strong)]"
+                        : "bg-[#fff4d6] text-[var(--warning)]",
+                    ].join(" ")}
+                  >
+                    {selectedMember.discordAnalyticsEnabled ? "Aktiv" : "Aus"}
+                  </span>
+                </div>
+                {!selectedMember.discordAnalyticsEnabled ? (
+                  <dl className="mt-3 grid gap-2 text-xs text-neutral-600">
+                    <DetailRow
+                      label="Deaktiviert seit"
+                      value={selectedMember.discordAnalyticsDisabledAt}
+                    />
+                    <DetailRow
+                      label="Grund"
+                      value={selectedMember.discordAnalyticsDisabledReason || "-"}
+                    />
+                  </dl>
+                ) : null}
+                <form
+                  action={setMemberDiscordAnalyticsAction}
+                  className="mt-3 grid gap-2"
+                >
+                  <input type="hidden" name="memberId" value={selectedMember.id} />
+                  <input
+                    type="hidden"
+                    name="enabled"
+                    value={selectedMember.discordAnalyticsEnabled ? "false" : "true"}
+                  />
+                  <input
+                    name="reason"
+                    required
+                    minLength={8}
+                    placeholder={
+                      selectedMember.discordAnalyticsEnabled
+                        ? "Grund fuer Deaktivierung"
+                        : "Grund fuer Aktivierung"
+                    }
+                    className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                  />
+                  <button
+                    type="submit"
+                    title={
+                      selectedMember.discordAnalyticsEnabled
+                        ? "Discord-Auswertung deaktivieren"
+                        : "Discord-Auswertung aktivieren"
+                    }
+                    className={[
+                      "flex h-9 items-center justify-center gap-2 rounded-md px-3 text-sm text-white",
+                      selectedMember.discordAnalyticsEnabled
+                        ? "bg-[var(--danger)]"
+                        : "bg-[var(--foreground)]",
+                    ].join(" ")}
+                  >
+                    <Shield className="size-4" aria-hidden="true" />
+                    <span>
+                      {selectedMember.discordAnalyticsEnabled
+                        ? "Auswertung deaktivieren"
+                        : "Auswertung aktivieren"}
+                    </span>
+                  </button>
+                </form>
               </div>
 
               <div>
@@ -1863,11 +1961,21 @@ function ActivitySection({ members }: { members: WorkspaceMember[] }) {
               <Activity className="size-5 text-[var(--accent)]" aria-hidden="true" />
             </div>
             <div className="mt-5 grid grid-cols-2 gap-3">
-              <MetricTile label="Nachrichten Monat" value={member.messagesMonth} />
-              <MetricTile
-                label="Voice-Stunden Monat"
-                value={member.voiceHoursMonth}
-              />
+              {member.discordAnalyticsEnabled ? (
+                <>
+                  <MetricTile label="Nachrichten Monat" value={member.messagesMonth} />
+                  <MetricTile
+                    label="Voice-Stunden Monat"
+                    value={member.voiceHoursMonth}
+                  />
+                </>
+              ) : (
+                <MetricTile
+                  label="Discord-Auswertung"
+                  value="Datenschutz aktiv"
+                  wide
+                />
+              )}
               <MetricTile label="Letzte Aktivitaet" value={member.lastActivity} wide />
             </div>
           </article>
@@ -1881,33 +1989,208 @@ function ActivitySection({ members }: { members: WorkspaceMember[] }) {
   );
 }
 
-function SyncSection({ sync }: { sync: WorkspaceSyncStatus }) {
+function SyncSection({
+  discordInvites,
+  members,
+  mfaReady,
+  permissions,
+  sync,
+}: {
+  discordInvites: WorkspaceDiscordInvite[];
+  members: WorkspaceMember[];
+  mfaReady: boolean;
+  permissions: WorkspacePermissionOption[];
+  sync: WorkspaceSyncStatus;
+}) {
+  const permissionOptions = permissions.filter(
+    (permission) => permission.id && permission.key,
+  );
+
   return (
     <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
-      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
-        <SectionHeader icon={Bot} title="Discord-Synchronisation" />
-        <div className="grid gap-4 border-t border-[var(--line)] p-4">
-          {sync.rows.map(({ active, label, status }) => (
-            <div
-              key={label}
-              className="flex items-center justify-between gap-4 border-b border-[var(--line)] py-3 last:border-b-0"
-            >
-              <div>
-                <p className="font-medium">{label}</p>
-                <p className="text-sm text-neutral-500">{status}</p>
+      <div className="grid gap-5">
+        <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+          <SectionHeader icon={Bot} title="Discord-Synchronisation" />
+          <div className="grid gap-4 border-t border-[var(--line)] p-4">
+            {sync.rows.map(({ active, label, status }) => (
+              <div
+                key={label}
+                className="flex items-center justify-between gap-4 border-b border-[var(--line)] py-3 last:border-b-0"
+              >
+                <div>
+                  <p className="font-medium">{label}</p>
+                  <p className="text-sm text-neutral-500">{status}</p>
+                </div>
+                {active ? (
+                  <CheckCircle2
+                    className="size-5 text-[var(--accent)]"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <Clock className="size-5 text-[var(--warning)]" aria-hidden="true" />
+                )}
               </div>
-              {active ? (
-                <CheckCircle2
-                  className="size-5 text-[var(--accent)]"
-                  aria-hidden="true"
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+          <SectionHeader
+            icon={Plus}
+            title="Discord-Einladungen"
+            action={
+              <span className="rounded-md bg-[var(--surface-muted)] px-2 py-1 text-xs font-medium text-neutral-600">
+                1x / 1 Tag
+              </span>
+            }
+          />
+          <form
+            action={createDiscordInviteRequestAction}
+            className="grid gap-3 border-t border-[var(--line)] p-4 xl:grid-cols-[1fr_1fr_1fr_1.4fr_auto]"
+          >
+            <fieldset
+              disabled={!mfaReady}
+              className="contents disabled:opacity-60"
+            >
+              <label className="grid gap-2">
+                <span className="text-xs font-medium uppercase text-neutral-500">
+                  Wen einladen
+                </span>
+                <input
+                  name="inviteeName"
+                  required
+                  minLength={2}
+                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
                 />
-              ) : (
-                <Clock className="size-5 text-[var(--warning)]" aria-hidden="true" />
-              )}
+              </label>
+              <label className="grid gap-2">
+                <span className="text-xs font-medium uppercase text-neutral-500">
+                  Mitglied
+                </span>
+                <select
+                  name="targetMemberId"
+                  defaultValue=""
+                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <option value="">Ohne Akte</option>
+                  {members.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-2">
+                <span className="text-xs font-medium uppercase text-neutral-500">
+                  Berechtigung
+                </span>
+                <select
+                  name="permissionId"
+                  required
+                  disabled={!mfaReady || permissionOptions.length === 0}
+                  defaultValue=""
+                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <option value="">Recht waehlen</option>
+                  {permissionOptions.map((permission) => (
+                    <option key={permission.id} value={permission.id}>
+                      {permission.description}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-2">
+                <span className="text-xs font-medium uppercase text-neutral-500">
+                  Grund
+                </span>
+                <input
+                  name="reason"
+                  required
+                  minLength={8}
+                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                />
+              </label>
+              <div className="flex items-end">
+                <button
+                  type="submit"
+                  title="Einladung als Datenbankauftrag anlegen"
+                  disabled={!mfaReady || permissionOptions.length === 0}
+                  className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45 xl:w-auto"
+                >
+                  <Save className="size-4" aria-hidden="true" />
+                  <span>Anlegen</span>
+                </button>
+              </div>
+            </fieldset>
+          </form>
+          {!mfaReady ? (
+            <div className="border-t border-[var(--line)] px-4 py-3">
+              <div className="rounded-lg border border-amber-200 bg-[#fff4d6] p-3 text-sm text-amber-900">
+                2FA-Sitzung freischalten, bevor Discord-Einladungen angelegt werden.
+              </div>
             </div>
-          ))}
-        </div>
-      </section>
+          ) : null}
+          <div className="overflow-x-auto border-t border-[var(--line)]">
+            <table className="w-full min-w-[980px] text-sm">
+              <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Einladung</th>
+                  <th className="px-4 py-3 font-medium">Berechtigung</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Gueltigkeit</th>
+                  <th className="px-4 py-3 font-medium">Grund</th>
+                </tr>
+              </thead>
+              <tbody>
+                {discordInvites.length > 0 ? (
+                  discordInvites.map((invite) => (
+                    <tr key={invite.id} className="border-t border-[var(--line)]">
+                      <td className="px-4 py-3">
+                        <div className="font-medium">{invite.inviteeName}</div>
+                        <div className="font-mono text-xs text-neutral-500">
+                          {invite.targetMemberName} {"-"} {invite.targetDiscordId}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div>{invite.permission}</div>
+                        <div className="font-mono text-xs text-neutral-500">
+                          {invite.permissionKey}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={[
+                            "rounded-md px-2 py-1 text-xs font-medium",
+                            getInviteStatusClass(invite.status),
+                          ].join(" ")}
+                        >
+                          {invite.statusLabel}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div>
+                          {invite.uses}/{invite.maxUses} genutzt
+                        </div>
+                        <div className="text-xs text-neutral-500">
+                          bis {invite.expiresAt}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="max-w-xs truncate">{invite.reason}</div>
+                        <div className="text-xs text-neutral-500">
+                          {invite.requestedBy} {"-"} {invite.createdAt}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <TableEmpty colSpan={5} label="Noch keine Discord-Einladungen angelegt." />
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
 
       <aside className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-4">
         <div className="flex items-center gap-3">
@@ -2111,6 +2394,18 @@ function StatusBadge({ status }: { status: MemberStatusLabel }) {
       {status}
     </span>
   );
+}
+
+function getInviteStatusClass(status: string) {
+  if (status === "pending" || status === "created") {
+    return "bg-[var(--accent-soft)] text-[var(--accent-strong)]";
+  }
+
+  if (status === "failed" || status === "cancelled") {
+    return "bg-red-50 text-[var(--danger)]";
+  }
+
+  return "bg-[var(--surface-muted)] text-neutral-600";
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
