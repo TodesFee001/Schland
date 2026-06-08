@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   Clock,
   Database,
-  Download,
   Eye,
   FileText,
   Folder,
@@ -16,6 +15,8 @@ import {
   Lock,
   LogOut,
   Pencil,
+  Plus,
+  Save,
   Search,
   Server,
   Settings,
@@ -31,8 +32,11 @@ import { useMemo, useState } from "react";
 
 import {
   claimFirstAdminAction,
+  createFolderAction,
   createMemberAction,
+  deleteFolderAction,
   openMemberCaseAction,
+  setFolderPermissionAction,
   setUserRoleAction,
 } from "@/app/actions";
 import type { AuthStatus } from "@/lib/auth";
@@ -43,6 +47,7 @@ import type {
   WorkspaceCategory,
   WorkspaceData,
   WorkspaceFolder,
+  WorkspaceFolderPermission,
   WorkspaceLogRow,
   WorkspaceMember,
   WorkspaceRoleRow,
@@ -332,7 +337,14 @@ export function WorkspaceShell({
           />
         );
       case "files":
-        return <FilesSection folders={workspaceData.folders} />;
+        return (
+          <FilesSection
+            categories={workspaceData.categories}
+            folders={workspaceData.folders}
+            mfaReady={mfaReady}
+            roles={workspaceData.roles}
+          />
+        );
       case "categories":
         return <CategoriesSection categories={workspaceData.categories} />;
       case "users":
@@ -948,7 +960,19 @@ function MembersSection({
   );
 }
 
-function FilesSection({ folders }: { folders: WorkspaceFolder[] }) {
+function FilesSection({
+  categories,
+  folders,
+  mfaReady,
+  roles,
+}: {
+  categories: WorkspaceCategory[];
+  folders: WorkspaceFolder[];
+  mfaReady: boolean;
+  roles: WorkspaceRoleRow[];
+}) {
+  const roleOptions = roles.filter((role) => role.id && role.role);
+
   return (
     <div className="grid gap-5">
       <div className="flex flex-col gap-3 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-4 md:flex-row md:items-center md:justify-between">
@@ -962,29 +986,107 @@ function FilesSection({ folders }: { folders: WorkspaceFolder[] }) {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm">
+          <button
+            type="button"
+            disabled
+            title="Upload folgt nach den Ordnerrechten"
+            className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm opacity-45"
+          >
             <Upload className="size-4" aria-hidden="true" />
             <span>Hochladen</span>
           </button>
-          <button className="flex h-9 items-center gap-2 rounded-md bg-[var(--foreground)] px-3 text-sm text-white">
-            <Folder className="size-4" aria-hidden="true" />
+          <button
+            type="button"
+            title="Ordner anlegen"
+            className="flex h-9 items-center gap-2 rounded-md bg-[var(--foreground)] px-3 text-sm text-white"
+          >
+            <Plus className="size-4" aria-hidden="true" />
             <span>Ordner</span>
           </button>
         </div>
       </div>
 
       <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+        <SectionHeader icon={Plus} title="Ordner anlegen" />
+        <form
+          action={createFolderAction}
+          className="grid gap-3 border-t border-[var(--line)] p-4 lg:grid-cols-[1fr_1fr_1.2fr_auto]"
+        >
+          <label className="grid gap-2">
+            <span className="text-xs font-medium uppercase text-neutral-500">
+              Kategorie
+            </span>
+            <select
+              name="categoryId"
+              required
+              disabled={!mfaReady || categories.length === 0}
+              defaultValue=""
+              className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <option value="">Kategorie waehlen</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-2">
+            <span className="text-xs font-medium uppercase text-neutral-500">
+              Ueberordner
+            </span>
+            <select
+              name="parentFolderId"
+              disabled={!mfaReady || folders.length === 0}
+              defaultValue=""
+              className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <option value="">Kein Unterordner</option>
+              {folders.map((folder) => (
+                <option key={folder.id} value={folder.id}>
+                  {folder.category} / {folder.folder}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-2">
+            <span className="text-xs font-medium uppercase text-neutral-500">
+              Ordnername
+            </span>
+            <input
+              name="name"
+              required
+              minLength={2}
+              disabled={!mfaReady}
+              className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+            />
+          </label>
+          <div className="flex items-end">
+            <button
+              type="submit"
+              title="Ordner anlegen"
+              disabled={!mfaReady || categories.length === 0}
+              className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45 lg:w-auto"
+            >
+              <Folder className="size-4" aria-hidden="true" />
+              <span>Anlegen</span>
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
         <SectionHeader icon={Folder} title="Ordnerrechte" />
         <div className="overflow-x-auto border-t border-[var(--line)]">
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full min-w-[1180px] text-sm">
             <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
               <tr>
                 <th className="px-4 py-3 font-medium">Kategorie</th>
                 <th className="px-4 py-3 font-medium">Ordner</th>
-                <th className="px-4 py-3 font-medium">Sichtbar fuer</th>
-                <th className="px-4 py-3 font-medium">Upload fuer</th>
+                <th className="px-4 py-3 font-medium">Rechte</th>
                 <th className="px-4 py-3 font-medium">Dateien</th>
-                <th className="px-4 py-3 font-medium">Aktionen</th>
+                <th className="px-4 py-3 font-medium">Recht setzen</th>
+                <th className="px-4 py-3 font-medium">Aktion</th>
               </tr>
             </thead>
             <tbody>
@@ -992,17 +1094,43 @@ function FilesSection({ folders }: { folders: WorkspaceFolder[] }) {
                 folders.map((folder) => (
                   <tr key={folder.id} className="border-t border-[var(--line)]">
                     <td className="px-4 py-3">{folder.category}</td>
-                    <td className="px-4 py-3 font-medium">{folder.folder}</td>
-                    <td className="px-4 py-3">{folder.visibleFor}</td>
-                    <td className="px-4 py-3">{folder.uploadFor}</td>
-                    <td className="px-4 py-3">{folder.files}</td>
                     <td className="px-4 py-3">
-                      <div className="flex gap-2">
-                        <IconButton icon={Eye} label="Oeffnen" />
-                        <IconButton icon={Download} label="Herunterladen" />
-                        <IconButton icon={Pencil} label="Bearbeiten" />
-                        <IconButton icon={Trash2} label="Loeschen" danger />
+                      <div className="font-medium">{folder.folder}</div>
+                      <div className="text-xs text-neutral-500">
+                        Sicht: {folder.visibleFor}
                       </div>
+                      <div className="text-xs text-neutral-500">
+                        Upload: {folder.uploadFor}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <FolderPermissionChips folder={folder} mfaReady={mfaReady} />
+                    </td>
+                    <td className="px-4 py-3">{formatNumber(folder.files)}</td>
+                    <td className="px-4 py-3">
+                      <FolderPermissionForm
+                        folder={folder}
+                        mfaReady={mfaReady}
+                        roles={roleOptions}
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      <form action={deleteFolderAction}>
+                        <input type="hidden" name="folderId" value={folder.id} />
+                        <button
+                          type="submit"
+                          title={
+                            folder.files > 0
+                              ? "Nur leere Ordner loeschen"
+                              : "Ordner loeschen"
+                          }
+                          disabled={!mfaReady || folder.files > 0}
+                          className="flex h-9 items-center gap-2 rounded-md border border-red-200 bg-white px-3 text-sm text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          <Trash2 className="size-4" aria-hidden="true" />
+                          <span>Loeschen</span>
+                        </button>
+                      </form>
                     </td>
                   </tr>
                 ))
@@ -1015,6 +1143,140 @@ function FilesSection({ folders }: { folders: WorkspaceFolder[] }) {
       </section>
     </div>
   );
+}
+
+function FolderPermissionChips({
+  folder,
+  mfaReady,
+}: {
+  folder: WorkspaceFolder;
+  mfaReady: boolean;
+}) {
+  if (folder.permissions.length === 0) {
+    return <span className="text-xs text-neutral-500">Keine Rechte gesetzt</span>;
+  }
+
+  return (
+    <div className="flex max-w-xl flex-wrap gap-1">
+      {folder.permissions.map((permission) => (
+        <form
+          key={permission.roleId}
+          action={setFolderPermissionAction}
+          className="inline-flex"
+        >
+          <input type="hidden" name="folderId" value={folder.id} />
+          <input type="hidden" name="roleId" value={permission.roleId} />
+          <input type="hidden" name="intent" value="remove" />
+          <button
+            type="submit"
+            title={`${permission.role} entziehen`}
+            disabled={!mfaReady}
+            className="flex h-8 items-center gap-1 rounded-md bg-[var(--surface-muted)] px-2 text-xs disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <span className="max-w-56 truncate">
+              {permission.role}: {getFolderPermissionLabel(permission)}
+            </span>
+            <XCircle className="size-3.5 shrink-0" aria-hidden="true" />
+          </button>
+        </form>
+      ))}
+    </div>
+  );
+}
+
+function FolderPermissionForm({
+  folder,
+  mfaReady,
+  roles,
+}: {
+  folder: WorkspaceFolder;
+  mfaReady: boolean;
+  roles: WorkspaceRoleRow[];
+}) {
+  return (
+    <form action={setFolderPermissionAction} className="grid gap-2">
+      <input type="hidden" name="folderId" value={folder.id} />
+      <input type="hidden" name="intent" value="save" />
+      <div className="flex min-w-[300px] items-center gap-2">
+        <select
+          name="roleId"
+          required
+          disabled={!mfaReady || roles.length === 0}
+          defaultValue=""
+          className="h-9 min-w-0 flex-1 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          <option value="">Rolle waehlen</option>
+          {roles.map((role) => (
+            <option key={role.id} value={role.id}>
+              {role.role}
+            </option>
+          ))}
+        </select>
+        <button
+          type="submit"
+          title="Ordnerrecht speichern"
+          disabled={!mfaReady || roles.length === 0}
+          className="flex h-9 items-center gap-2 rounded-md bg-[var(--foreground)] px-3 text-sm text-white disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          <Save className="size-4" aria-hidden="true" />
+          <span>Speichern</span>
+        </button>
+      </div>
+      <div className="grid grid-cols-4 gap-1 text-xs xl:grid-cols-7">
+        <PermissionCheckbox disabled={!mfaReady} label="Sicht" name="canView" />
+        <PermissionCheckbox disabled={!mfaReady} label="Oeffnen" name="canOpen" />
+        <PermissionCheckbox disabled={!mfaReady} label="Upload" name="canUpload" />
+        <PermissionCheckbox
+          disabled={!mfaReady}
+          label="Download"
+          name="canDownload"
+        />
+        <PermissionCheckbox disabled={!mfaReady} label="Edit" name="canEdit" />
+        <PermissionCheckbox disabled={!mfaReady} label="Delete" name="canDelete" />
+        <PermissionCheckbox
+          disabled={!mfaReady}
+          label="Rechte"
+          name="canManagePermissions"
+        />
+      </div>
+    </form>
+  );
+}
+
+function PermissionCheckbox({
+  disabled,
+  label,
+  name,
+}: {
+  disabled: boolean;
+  label: string;
+  name: string;
+}) {
+  return (
+    <label className="flex h-8 items-center gap-1 rounded-md border border-[var(--line)] bg-white px-2">
+      <input
+        type="checkbox"
+        name={name}
+        disabled={disabled}
+        className="size-3.5 accent-[var(--accent)] disabled:cursor-not-allowed"
+      />
+      <span className="truncate">{label}</span>
+    </label>
+  );
+}
+
+function getFolderPermissionLabel(permission: WorkspaceFolderPermission) {
+  const labels = [
+    permission.canView ? "Sicht" : "",
+    permission.canOpen ? "Oeffnen" : "",
+    permission.canUpload ? "Upload" : "",
+    permission.canDownload ? "Download" : "",
+    permission.canEdit ? "Edit" : "",
+    permission.canDelete ? "Delete" : "",
+    permission.canManagePermissions ? "Rechte" : "",
+  ].filter(Boolean);
+
+  return labels.join(", ") || "Keine";
 }
 
 function CategoriesSection({ categories }: { categories: WorkspaceCategory[] }) {
@@ -1577,32 +1839,6 @@ function MetricTile({
       <p className="text-xs text-neutral-500">{label}</p>
       <p className="mt-1 text-lg font-semibold">{value}</p>
     </div>
-  );
-}
-
-function IconButton({
-  danger,
-  icon: Icon,
-  label,
-}: {
-  danger?: boolean;
-  icon: LucideIcon;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      title={label}
-      className={[
-        "flex size-8 items-center justify-center rounded-md border bg-white",
-        danger
-          ? "border-red-200 text-[var(--danger)]"
-          : "border-[var(--line)] text-neutral-700",
-      ].join(" ")}
-    >
-      <Icon className="size-4" aria-hidden="true" />
-      <span className="sr-only">{label}</span>
-    </button>
   );
 }
 

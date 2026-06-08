@@ -174,8 +174,141 @@ export async function setUserRoleAction(formData: FormData) {
   );
 }
 
+export async function createFolderAction(formData: FormData) {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=files&setup=missing-supabase");
+  }
+
+  const categoryId = getFormText(formData, "categoryId");
+  const name = getFormText(formData, "name");
+  const parentFolderId = getFormText(formData, "parentFolderId") || null;
+
+  if (!categoryId || name.length < 2) {
+    redirect("/?section=files&setup=folder-missing");
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data: assuranceLevel } =
+    await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+
+  if (assuranceLevel?.currentLevel !== "aal2") {
+    redirect("/?section=files&setup=folder-aal2");
+  }
+
+  const { error } = await supabase.rpc("create_folder_record", {
+    p_category_id: categoryId,
+    p_name: name,
+    p_parent_folder_id: parentFolderId,
+  });
+
+  if (error) {
+    console.error("create_folder_record failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect(`/?section=files&setup=${getFolderErrorSetup(error)}`);
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/?section=files&setup=folder-created");
+}
+
+export async function setFolderPermissionAction(formData: FormData) {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=files&setup=missing-supabase");
+  }
+
+  const folderId = getFormText(formData, "folderId");
+  const roleId = getFormText(formData, "roleId");
+  const intent = getFormText(formData, "intent");
+  const remove = intent === "remove";
+
+  if (!folderId || !roleId) {
+    redirect("/?section=files&setup=folder-permission-missing");
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data: assuranceLevel } =
+    await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+
+  if (assuranceLevel?.currentLevel !== "aal2") {
+    redirect("/?section=files&setup=folder-aal2");
+  }
+
+  const { error } = await supabase.rpc("set_folder_permission", {
+    p_can_delete: remove ? false : getFormBool(formData, "canDelete"),
+    p_can_download: remove ? false : getFormBool(formData, "canDownload"),
+    p_can_edit: remove ? false : getFormBool(formData, "canEdit"),
+    p_can_manage_permissions: remove
+      ? false
+      : getFormBool(formData, "canManagePermissions"),
+    p_can_open: remove ? false : getFormBool(formData, "canOpen"),
+    p_can_upload: remove ? false : getFormBool(formData, "canUpload"),
+    p_can_view: remove ? false : getFormBool(formData, "canView"),
+    p_folder_id: folderId,
+    p_role_id: roleId,
+  });
+
+  if (error) {
+    console.error("set_folder_permission failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect(`/?section=files&setup=${getFolderErrorSetup(error)}`);
+  }
+
+  revalidatePath("/", "layout");
+  redirect(
+    `/?section=files&setup=${
+      remove ? "folder-permission-removed" : "folder-permission-saved"
+    }`,
+  );
+}
+
+export async function deleteFolderAction(formData: FormData) {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=files&setup=missing-supabase");
+  }
+
+  const folderId = getFormText(formData, "folderId");
+
+  if (!folderId) {
+    redirect("/?section=files&setup=folder-missing");
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data: assuranceLevel } =
+    await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+
+  if (assuranceLevel?.currentLevel !== "aal2") {
+    redirect("/?section=files&setup=folder-aal2");
+  }
+
+  const { error } = await supabase.rpc("delete_empty_folder", {
+    p_folder_id: folderId,
+  });
+
+  if (error) {
+    console.error("delete_empty_folder failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect(`/?section=files&setup=${getFolderErrorSetup(error)}`);
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/?section=files&setup=folder-deleted");
+}
+
 function getFormText(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
+}
+
+function getFormBool(formData: FormData, key: string) {
+  return formData.get(key) === "on";
 }
 
 function getOptionalFormNumber(formData: FormData, key: string) {
@@ -250,4 +383,34 @@ function getUserRoleErrorSetup(error: { message?: string }) {
   }
 
   return "role-assignment-error";
+}
+
+function getFolderErrorSetup(error: { code?: string; message?: string }) {
+  const message = error.message?.toLowerCase() ?? "";
+
+  if (message.includes("not empty")) {
+    return "folder-not-empty";
+  }
+
+  if (message.includes("not found")) {
+    return "folder-missing";
+  }
+
+  if (message.includes("required")) {
+    return "folder-missing";
+  }
+
+  if (message.includes("denied")) {
+    return "folder-permission-denied";
+  }
+
+  if (message.includes("parent folder")) {
+    return "folder-parent";
+  }
+
+  if (error.code === "23505" || message.includes("duplicate")) {
+    return "folder-duplicate";
+  }
+
+  return "folder-error";
 }

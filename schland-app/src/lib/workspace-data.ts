@@ -24,11 +24,27 @@ export type WorkspaceMember = {
 
 export type WorkspaceFolder = {
   category: string;
+  categoryId: string;
   files: number;
   folder: string;
   id: string;
+  parentFolderId: string;
+  permissions: WorkspaceFolderPermission[];
   uploadFor: string;
   visibleFor: string;
+};
+
+export type WorkspaceFolderPermission = {
+  canDelete: boolean;
+  canDownload: boolean;
+  canEdit: boolean;
+  canManagePermissions: boolean;
+  canOpen: boolean;
+  canUpload: boolean;
+  canView: boolean;
+  role: string;
+  roleId: string;
+  roleKey: string;
 };
 
 export type WorkspaceRoleRow = {
@@ -166,32 +182,83 @@ export const demoWorkspaceData: WorkspaceData = {
   folders: [
     {
       id: "folder-demo-1",
+      categoryId: "category-demo-1",
       category: "Mitteilungen",
       folder: "Interne Rundschreiben",
+      parentFolderId: "",
+      permissions: [
+        {
+          roleId: "role-demo-1",
+          role: "Administrator",
+          roleKey: "administrator",
+          canView: true,
+          canOpen: true,
+          canUpload: true,
+          canDownload: true,
+          canEdit: true,
+          canDelete: true,
+          canManagePermissions: true,
+        },
+      ],
       visibleFor: "Standardbenutzer",
       uploadFor: "Administrator",
       files: 42,
     },
     {
       id: "folder-demo-2",
+      categoryId: "category-demo-2",
       category: "Ermittlungen",
       folder: "Aktive Faelle",
+      parentFolderId: "",
+      permissions: [
+        {
+          roleId: "role-demo-3",
+          role: "Mitgliederakten-Bearbeiter",
+          roleKey: "member_case_editor",
+          canView: true,
+          canOpen: true,
+          canUpload: true,
+          canDownload: true,
+          canEdit: true,
+          canDelete: false,
+          canManagePermissions: false,
+        },
+      ],
       visibleFor: "Ermittlungszugriff",
       uploadFor: "Ermittlungszugriff",
       files: 31,
     },
     {
       id: "folder-demo-3",
+      categoryId: "category-demo-3",
       category: "Gesetzgebung",
       folder: "Regelwerke",
+      parentFolderId: "",
+      permissions: [
+        {
+          roleId: "role-demo-4",
+          role: "Dateienzugriff",
+          roleKey: "file_access",
+          canView: true,
+          canOpen: true,
+          canUpload: false,
+          canDownload: true,
+          canEdit: false,
+          canDelete: false,
+          canManagePermissions: false,
+        },
+      ],
       visibleFor: "Alle aktiven Benutzer",
       uploadFor: "Administrator",
       files: 18,
     },
     {
       id: "folder-demo-4",
+      categoryId: "category-demo-4",
       category: "Platzhalter 1",
       folder: "Noch nicht zugeordnet",
+      parentFolderId: "",
+      permissions: [],
       visibleFor: "Administrator",
       uploadFor: "Administrator",
       files: 0,
@@ -394,13 +461,20 @@ export async function getWorkspaceData(
         .select(
           `
             id,
+            category_id,
+            parent_folder_id,
             name,
             file_categories(name),
             files(id),
             folder_permissions(
               can_view,
+              can_open,
               can_upload,
-              roles(name)
+              can_download,
+              can_edit,
+              can_delete,
+              can_manage_permissions,
+              roles(id, role_key, name)
             )
           `,
         )
@@ -532,20 +606,38 @@ function mapCategories(rows: Record<string, unknown>[]): WorkspaceCategory[] {
 
 function mapFolders(rows: Record<string, unknown>[]): WorkspaceFolder[] {
   return rows.map((row) => {
-    const permissions = asArray(row.folder_permissions);
+    const permissions = asArray(row.folder_permissions)
+      .map((permission) => {
+        const role = asObject(permission.roles);
+
+        return {
+          roleId: String(role.id ?? ""),
+          role: String(role.name ?? ""),
+          roleKey: String(role.role_key ?? ""),
+          canView: Boolean(permission.can_view),
+          canOpen: Boolean(permission.can_open),
+          canUpload: Boolean(permission.can_upload),
+          canDownload: Boolean(permission.can_download),
+          canEdit: Boolean(permission.can_edit),
+          canDelete: Boolean(permission.can_delete),
+          canManagePermissions: Boolean(permission.can_manage_permissions),
+        };
+      })
+      .filter((permission) => permission.roleId && permission.role);
     const viewRoles = permissions
-      .filter((permission) => Boolean(permission.can_view))
-      .map((permission) => String(asObject(permission.roles)?.name ?? ""))
-      .filter(Boolean);
+      .filter((permission) => permission.canView)
+      .map((permission) => permission.role);
     const uploadRoles = permissions
-      .filter((permission) => Boolean(permission.can_upload))
-      .map((permission) => String(asObject(permission.roles)?.name ?? ""))
-      .filter(Boolean);
+      .filter((permission) => permission.canUpload)
+      .map((permission) => permission.role);
 
     return {
       id: String(row.id ?? ""),
+      categoryId: String(row.category_id ?? ""),
       category: String(asObject(row.file_categories)?.name ?? "-"),
       folder: String(row.name ?? "Ordner"),
+      parentFolderId: String(row.parent_folder_id ?? ""),
+      permissions,
       visibleFor: viewRoles.join(", ") || "Nicht gesetzt",
       uploadFor: uploadRoles.join(", ") || "Nicht gesetzt",
       files: asArray(row.files).length,

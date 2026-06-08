@@ -208,5 +208,82 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "folder-created") {
+    return {
+      tone: "success" as const,
+      text: "Ordner wurde angelegt.",
+    };
+  }
+
+  if (setup === "folder-deleted") {
+    return {
+      tone: "success" as const,
+      text: "Leerer Ordner wurde geloescht.",
+    };
+  }
+
+  if (setup === "folder-permission-saved") {
+    return {
+      tone: "success" as const,
+      text: "Ordnerrecht wurde gespeichert.",
+    };
+  }
+
+  if (setup === "folder-permission-removed") {
+    return {
+      tone: "success" as const,
+      text: "Ordnerrecht wurde entzogen.",
+    };
+  }
+
+  if (setup === "folder-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum Aendern von Ordnern und Ordnerrechten muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "folder-permission-denied") {
+    return {
+      tone: "error" as const,
+      text: "Ordner konnte nicht geaendert werden. Der Account hat keine Ordnerverwaltung-Berechtigung.",
+    };
+  }
+
+  if (setup === "folder-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Ordner, Kategorie oder Rollenangabe fehlt.",
+    };
+  }
+
+  if (setup === "folder-parent") {
+    return {
+      tone: "warning" as const,
+      text: "Der uebergeordnete Ordner passt nicht zur gewaehlten Kategorie.",
+    };
+  }
+
+  if (setup === "folder-duplicate") {
+    return {
+      tone: "warning" as const,
+      text: "In dieser Kategorie gibt es bereits einen Ordner mit diesem Namen.",
+    };
+  }
+
+  if (setup === "folder-not-empty") {
+    return {
+      tone: "warning" as const,
+      text: "Ordner kann nur geloescht werden, wenn keine Dateien oder Unterordner enthalten sind.",
+    };
+  }
+
+  if (setup === "folder-error") {
+    return {
+      tone: "error" as const,
+      text: "Ordner konnte nicht geaendert werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
   return undefined;
 }
