@@ -34,7 +34,7 @@ export async function GET(request: Request) {
   await supabase
     .from("discord_invite_requests")
     .update({ status: "expired" })
-    .eq("status", "pending")
+    .in("status", ["pending", "created"])
     .lte("expires_at", now);
 
   const { data, error } = await supabase

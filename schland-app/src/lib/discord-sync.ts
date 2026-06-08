@@ -267,20 +267,6 @@ export async function deleteDiscordInviteRequest(inviteId: string) {
   }
 
   const inviteCode = asText(asRecord(data).discord_invite_code);
-
-  if (inviteCode && config.missing.length === 0) {
-    try {
-      await discordRequest(config, `/invites/${inviteCode}`, {
-        method: "DELETE",
-      });
-    } catch (error) {
-      console.error("discord invite revoke failed", {
-        inviteId,
-        message: getErrorMessage(error),
-      });
-    }
-  }
-
   const { error: deleteError } = await supabase
     .from("discord_invite_requests")
     .delete()
@@ -288,6 +274,25 @@ export async function deleteDiscordInviteRequest(inviteId: string) {
 
   if (deleteError) {
     throw new Error(`Invite delete failed: ${deleteError.message}`);
+  }
+
+  if (inviteCode && config.missing.length === 0) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2500);
+
+    try {
+      await discordRequest(config, `/invites/${inviteCode}`, {
+        method: "DELETE",
+        signal: controller.signal,
+      });
+    } catch (error) {
+      console.error("discord invite revoke failed", {
+        inviteId,
+        message: getErrorMessage(error),
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 }
 
