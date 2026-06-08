@@ -6,6 +6,9 @@ import { redirect } from "next/navigation";
 import { hasSupabasePublicEnv } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+const FILE_BUCKET = "schland-files";
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
 export async function claimFirstAdminAction() {
   if (!hasSupabasePublicEnv()) {
     redirect("/?setup=missing-supabase");
@@ -291,12 +294,142 @@ export async function deleteFolderAction(formData: FormData) {
   redirect("/?section=files&setup=folder-deleted");
 }
 
+export async function uploadFileAction(formData: FormData) {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=files&setup=missing-supabase");
+  }
+
+  const file = formData.get("file");
+  const categoryId = getFormText(formData, "categoryId");
+  const folderId = getFormText(formData, "folderId") || null;
+
+  if (!(file instanceof File) || !categoryId) {
+    redirect("/?section=files&setup=file-upload-missing");
+  }
+
+  if (file.size <= 0 || file.size > MAX_UPLOAD_BYTES) {
+    redirect("/?section=files&setup=file-upload-size");
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect("/?section=files&setup=file-upload-aal2");
+  }
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    redirect("/?section=files&setup=file-upload-permission");
+  }
+
+  const originalName = file.name || "upload.bin";
+  const fileType = file.type || "application/octet-stream";
+  const storagePath = buildStoragePath(user.id, originalName);
+  const fileBody = new Uint8Array(await file.arrayBuffer());
+
+  const { error: uploadError } = await supabase.storage
+    .from(FILE_BUCKET)
+    .upload(storagePath, fileBody, {
+      contentType: fileType,
+      upsert: false,
+    });
+
+  if (uploadError) {
+    console.error("storage upload failed", {
+      message: uploadError.message,
+    });
+    redirect("/?section=files&setup=file-upload-storage");
+  }
+
+  const { error } = await supabase.rpc("register_uploaded_file", {
+    p_category_id: categoryId,
+    p_description: getFormText(formData, "description") || null,
+    p_file_size: file.size,
+    p_file_type: fileType,
+    p_folder_id: folderId,
+    p_original_filename: originalName,
+    p_storage_path: storagePath,
+    p_tags: getFormTags(formData, "tags"),
+  });
+
+  if (error) {
+    await supabase.storage.from(FILE_BUCKET).remove([storagePath]);
+    console.error("register_uploaded_file failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect(`/?section=files&setup=${getFileUploadErrorSetup(error)}`);
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/?section=files&setup=file-uploaded");
+}
+
+export async function downloadFileAction(formData: FormData) {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=files&setup=missing-supabase");
+  }
+
+  const fileId = getFormText(formData, "fileId");
+
+  if (!fileId) {
+    redirect("/?section=files&setup=file-download-missing");
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect("/?section=files&setup=file-download-aal2");
+  }
+
+  const { data: fileRow, error: fileError } = await supabase
+    .from("files")
+    .select("storage_path")
+    .eq("id", fileId)
+    .single();
+
+  if (fileError || !fileRow?.storage_path) {
+    console.error("download file lookup failed", {
+      code: fileError?.code,
+      details: fileError?.details,
+      message: fileError?.message,
+    });
+    redirect(`/?section=files&setup=${getFileDownloadErrorSetup(fileError)}`);
+  }
+
+  const { data, error } = await supabase.storage
+    .from(FILE_BUCKET)
+    .createSignedUrl(String(fileRow.storage_path), 60);
+
+  if (error || !data?.signedUrl) {
+    console.error("create signed file url failed", {
+      message: error?.message,
+    });
+    redirect(`/?section=files&setup=${getFileDownloadErrorSetup(error)}`);
+  }
+
+  redirect(data.signedUrl);
+}
+
 function getFormText(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
 
 function getFormBool(formData: FormData, key: string) {
   return formData.get(key) === "on";
+}
+
+function getFormTags(formData: FormData, key: string) {
+  return getFormText(formData, key)
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+    .slice(0, 12);
 }
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
@@ -317,6 +450,20 @@ function getOptionalFormNumber(formData: FormData, key: string) {
   const parsed = Number(value);
 
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function buildStoragePath(userId: string, originalName: string) {
+  const safeName =
+    originalName
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .replace(/\.{2,}/g, ".")
+      .slice(0, 96) || "upload.bin";
+
+  return `${userId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
 }
 
 function getMemberCreateErrorSetup(error: { code?: string; message?: string }) {
@@ -409,4 +556,52 @@ function getFolderErrorSetup(error: { code?: string; message?: string }) {
   }
 
   return "folder-error";
+}
+
+function getFileUploadErrorSetup(error: { code?: string; message?: string }) {
+  const message = error.message?.toLowerCase() ?? "";
+
+  if (message.includes("too large") || message.includes("size")) {
+    return "file-upload-size";
+  }
+
+  if (message.includes("folder")) {
+    return "file-upload-folder";
+  }
+
+  if (message.includes("category")) {
+    return "file-upload-category";
+  }
+
+  if (message.includes("storage")) {
+    return "file-upload-storage";
+  }
+
+  if (message.includes("denied")) {
+    return "file-upload-permission";
+  }
+
+  if (error.code === "23505" || message.includes("duplicate")) {
+    return "file-upload-duplicate";
+  }
+
+  return "file-upload-error";
+}
+
+function getFileDownloadErrorSetup(error?: { code?: string; message?: string } | null) {
+  const message = error?.message?.toLowerCase() ?? "";
+
+  if (error?.code === "PGRST116" || message.includes("not found")) {
+    return "file-download-missing";
+  }
+
+  if (
+    message.includes("permission") ||
+    message.includes("denied") ||
+    message.includes("not authorized")
+  ) {
+    return "file-download-permission";
+  }
+
+  return "file-download-error";
 }

@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Clock,
   Database,
+  Download,
   Eye,
   FileText,
   Folder,
@@ -35,9 +36,11 @@ import {
   createFolderAction,
   createMemberAction,
   deleteFolderAction,
+  downloadFileAction,
   openMemberCaseAction,
   setFolderPermissionAction,
   setUserRoleAction,
+  uploadFileAction,
 } from "@/app/actions";
 import type { AuthStatus } from "@/lib/auth";
 import type { DashboardSnapshot } from "@/lib/dashboard";
@@ -46,6 +49,7 @@ import type {
   MemberStatusLabel,
   WorkspaceCategory,
   WorkspaceData,
+  WorkspaceFile,
   WorkspaceFolder,
   WorkspaceFolderPermission,
   WorkspaceLogRow,
@@ -340,6 +344,7 @@ export function WorkspaceShell({
         return (
           <FilesSection
             categories={workspaceData.categories}
+            files={workspaceData.files}
             folders={workspaceData.folders}
             mfaReady={mfaReady}
             roles={workspaceData.roles}
@@ -962,11 +967,13 @@ function MembersSection({
 
 function FilesSection({
   categories,
+  files,
   folders,
   mfaReady,
   roles,
 }: {
   categories: WorkspaceCategory[];
+  files: WorkspaceFile[];
   folders: WorkspaceFolder[];
   mfaReady: boolean;
   roles: WorkspaceRoleRow[];
@@ -986,27 +993,211 @@ function FilesSection({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            disabled
-            title="Upload folgt nach den Ordnerrechten"
-            className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm opacity-45"
+          <a
+            href="#file-upload"
+            title="Datei hochladen"
+            className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm"
           >
             <Upload className="size-4" aria-hidden="true" />
             <span>Hochladen</span>
-          </button>
-          <button
-            type="button"
+          </a>
+          <a
+            href="#folder-create"
             title="Ordner anlegen"
             className="flex h-9 items-center gap-2 rounded-md bg-[var(--foreground)] px-3 text-sm text-white"
           >
             <Plus className="size-4" aria-hidden="true" />
             <span>Ordner</span>
-          </button>
+          </a>
         </div>
       </div>
 
+      <section
+        id="file-upload"
+        className="rounded-lg border border-[var(--line)] bg-[var(--surface)]"
+      >
+        <SectionHeader icon={Upload} title="Datei hochladen" />
+        <form
+          action={uploadFileAction}
+          encType="multipart/form-data"
+          className="grid gap-3 border-t border-[var(--line)] p-4 xl:grid-cols-[1.25fr_1fr_1fr] 2xl:grid-cols-[1.25fr_1fr_1fr_1fr_1fr_auto]"
+        >
+          <label className="grid gap-2">
+            <span className="text-xs font-medium uppercase text-neutral-500">
+              Datei
+            </span>
+            <input
+              type="file"
+              name="file"
+              required
+              disabled={!mfaReady}
+              className="h-10 rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none file:mr-3 file:rounded-md file:border-0 file:bg-[var(--surface-muted)] file:px-3 file:py-1 file:text-xs file:font-medium disabled:cursor-not-allowed disabled:opacity-45"
+            />
+          </label>
+          <label className="grid gap-2">
+            <span className="text-xs font-medium uppercase text-neutral-500">
+              Kategorie
+            </span>
+            <select
+              name="categoryId"
+              required
+              disabled={!mfaReady || categories.length === 0}
+              defaultValue=""
+              className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <option value="">Kategorie waehlen</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-2">
+            <span className="text-xs font-medium uppercase text-neutral-500">
+              Ordner
+            </span>
+            <select
+              name="folderId"
+              disabled={!mfaReady || folders.length === 0}
+              defaultValue=""
+              className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <option value="">Ohne Ordner</option>
+              {folders.map((folder) => (
+                <option key={folder.id} value={folder.id}>
+                  {folder.category} / {folder.folder}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-2">
+            <span className="text-xs font-medium uppercase text-neutral-500">
+              Beschreibung
+            </span>
+            <input
+              name="description"
+              disabled={!mfaReady}
+              className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+            />
+          </label>
+          <label className="grid gap-2">
+            <span className="text-xs font-medium uppercase text-neutral-500">
+              Tags
+            </span>
+            <input
+              name="tags"
+              disabled={!mfaReady}
+              className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+            />
+          </label>
+          <div className="flex items-end">
+            <button
+              type="submit"
+              title="Datei hochladen"
+              disabled={!mfaReady || categories.length === 0}
+              className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45 2xl:w-auto"
+            >
+              <Upload className="size-4" aria-hidden="true" />
+              <span>Speichern</span>
+            </button>
+          </div>
+        </form>
+        {!mfaReady ? (
+          <div className="border-t border-[var(--line)] px-4 py-3">
+            <div className="rounded-lg border border-amber-200 bg-[#fff4d6] p-3 text-sm text-amber-900">
+              2FA-Sitzung freischalten, bevor Dateien hochgeladen werden.
+            </div>
+          </div>
+        ) : null}
+      </section>
+
       <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+        <SectionHeader
+          icon={FileText}
+          title="Gespeicherte Dateien"
+          action={
+            <span className="rounded-md bg-[var(--surface-muted)] px-2 py-1 text-xs font-medium text-neutral-600">
+              {formatNumber(files.length)}
+            </span>
+          }
+        />
+        <div className="overflow-x-auto border-t border-[var(--line)]">
+          <table className="w-full min-w-[980px] text-sm">
+            <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">Datei</th>
+                <th className="px-4 py-3 font-medium">Ablage</th>
+                <th className="px-4 py-3 font-medium">Typ</th>
+                <th className="px-4 py-3 font-medium">Upload</th>
+                <th className="px-4 py-3 font-medium">Aktion</th>
+              </tr>
+            </thead>
+            <tbody>
+              {files.length > 0 ? (
+                files.map((file) => (
+                  <tr key={file.id} className="border-t border-[var(--line)]">
+                    <td className="px-4 py-3">
+                      <div className="font-medium">{file.originalName}</div>
+                      {file.description ? (
+                        <div className="max-w-md truncate text-xs text-neutral-500">
+                          {file.description}
+                        </div>
+                      ) : null}
+                      {file.tags.length > 0 ? (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {file.tags.slice(0, 4).map((tag) => (
+                            <span
+                              key={tag}
+                              className="rounded-md bg-[var(--surface-muted)] px-2 py-0.5 text-xs text-neutral-600"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div>{file.category}</div>
+                      <div className="text-xs text-neutral-500">{file.folder}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="font-mono text-xs">{file.type}</div>
+                      <div className="text-xs text-neutral-500">{file.sizeLabel}</div>
+                    </td>
+                    <td className="px-4 py-3">{file.createdAt}</td>
+                    <td className="px-4 py-3">
+                      <form action={downloadFileAction}>
+                        <input type="hidden" name="fileId" value={file.id} />
+                        <button
+                          type="submit"
+                          title={
+                            mfaReady
+                              ? "Datei herunterladen"
+                              : "2FA-Sitzung freischalten"
+                          }
+                          disabled={!mfaReady}
+                          className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          <Download className="size-4" aria-hidden="true" />
+                          <span>Download</span>
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <TableEmpty colSpan={5} label="Noch keine Dateien gespeichert." />
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section
+        id="folder-create"
+        className="rounded-lg border border-[var(--line)] bg-[var(--surface)]"
+      >
         <SectionHeader icon={Plus} title="Ordner anlegen" />
         <form
           action={createFolderAction}

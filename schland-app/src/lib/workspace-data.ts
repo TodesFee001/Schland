@@ -47,6 +47,24 @@ export type WorkspaceFolderPermission = {
   roleKey: string;
 };
 
+export type WorkspaceFile = {
+  category: string;
+  categoryId: string;
+  createdAt: string;
+  description: string;
+  folder: string;
+  folderId: string;
+  id: string;
+  name: string;
+  originalName: string;
+  size: number;
+  sizeLabel: string;
+  storagePath: string;
+  tags: string[];
+  type: string;
+  uploadedBy: string;
+};
+
 export type WorkspaceRoleRow = {
   id: string;
   members: number;
@@ -110,6 +128,7 @@ export type WorkspaceSyncStatus = {
 
 export type WorkspaceData = {
   categories: WorkspaceCategory[];
+  files: WorkspaceFile[];
   folders: WorkspaceFolder[];
   logs: WorkspaceLogRow[];
   members: WorkspaceMember[];
@@ -177,6 +196,42 @@ export const demoWorkspaceData: WorkspaceData = {
       messagesMonth: 73,
       voiceHoursMonth: 9,
       linkedFiles: ["Hinweis-2026-06.pdf"],
+    },
+  ],
+  files: [
+    {
+      id: "file-demo-1",
+      categoryId: "category-demo-2",
+      category: "Ermittlungen",
+      createdAt: "Heute, 00:41",
+      description: "Aufnahmebogen fuer die Mitgliederakte.",
+      folder: "Aktive Faelle",
+      folderId: "folder-demo-2",
+      name: "Aufnahmebogen.pdf",
+      originalName: "Aufnahmebogen.pdf",
+      size: 184320,
+      sizeLabel: "180 KB",
+      storagePath: "demo/aufnahmebogen.pdf",
+      tags: ["akte", "aufnahme"],
+      type: "application/pdf",
+      uploadedBy: "Mara Seidel",
+    },
+    {
+      id: "file-demo-2",
+      categoryId: "category-demo-1",
+      category: "Mitteilungen",
+      createdAt: "Gestern, 21:10",
+      description: "Interne Rollenfreigabe.",
+      folder: "Interne Rundschreiben",
+      folderId: "folder-demo-1",
+      name: "Rollenfreigabe.png",
+      originalName: "Rollenfreigabe.png",
+      size: 96256,
+      sizeLabel: "94 KB",
+      storagePath: "demo/rollenfreigabe.png",
+      tags: ["freigabe"],
+      type: "image/png",
+      uploadedBy: "Elias Kramer",
     },
   ],
   folders: [
@@ -424,6 +479,7 @@ export async function getWorkspaceData(
       membersResult,
       categoriesResult,
       foldersResult,
+      filesResult,
       rolesResult,
       profilesResult,
       logsResult,
@@ -481,6 +537,28 @@ export async function getWorkspaceData(
         .order("created_at", { ascending: false })
         .limit(50),
       supabase
+        .from("files")
+        .select(
+          `
+            id,
+            filename,
+            original_filename,
+            file_type,
+            file_size,
+            storage_path,
+            category_id,
+            folder_id,
+            description,
+            tags,
+            uploaded_by,
+            created_at,
+            file_categories(id, name),
+            folders(id, name)
+          `,
+        )
+        .order("created_at", { ascending: false })
+        .limit(60),
+      supabase
         .from("roles")
         .select(
           `
@@ -520,6 +598,7 @@ export async function getWorkspaceData(
     collectWarning(warnings, membersResult.error?.message);
     collectWarning(warnings, categoriesResult.error?.message);
     collectWarning(warnings, foldersResult.error?.message);
+    collectWarning(warnings, filesResult.error?.message);
     collectWarning(warnings, rolesResult.error?.message);
     collectWarning(warnings, profilesResult.error?.message);
     collectWarning(warnings, logsResult.error?.message);
@@ -530,6 +609,7 @@ export async function getWorkspaceData(
       members: mapMembers(membersResult.data ?? []),
       categories: mapCategories(categoriesResult.data ?? []),
       folders: mapFolders(foldersResult.data ?? []),
+      files: mapFiles(filesResult.data ?? []),
       roles: mapRoles(rolesResult.data ?? []),
       users: mapUsers(profilesResult.data ?? []),
       logs: mapLogs(logsResult.data ?? []),
@@ -641,6 +721,37 @@ function mapFolders(rows: Record<string, unknown>[]): WorkspaceFolder[] {
       visibleFor: viewRoles.join(", ") || "Nicht gesetzt",
       uploadFor: uploadRoles.join(", ") || "Nicht gesetzt",
       files: asArray(row.files).length,
+    };
+  });
+}
+
+function mapFiles(rows: Record<string, unknown>[]): WorkspaceFile[] {
+  return rows.map((row) => {
+    const category = asObject(row.file_categories);
+    const folder = asObject(row.folders);
+    const size = Number(row.file_size ?? 0);
+    const originalName = String(
+      row.original_filename ?? row.filename ?? "Datei",
+    );
+
+    return {
+      id: String(row.id ?? ""),
+      categoryId: String(row.category_id ?? ""),
+      category: String(category.name ?? "-"),
+      createdAt: formatDate(String(row.created_at ?? "")),
+      description: String(row.description ?? ""),
+      folder: String(folder.name ?? "-"),
+      folderId: String(row.folder_id ?? ""),
+      name: String(row.filename ?? originalName),
+      originalName,
+      size,
+      sizeLabel: formatFileSize(size),
+      storagePath: String(row.storage_path ?? ""),
+      tags: Array.isArray(row.tags)
+        ? row.tags.map(String).filter(Boolean)
+        : [],
+      type: String(row.file_type ?? "application/octet-stream"),
+      uploadedBy: String(row.uploaded_by ?? "-"),
     };
   });
 }
@@ -803,6 +914,25 @@ function formatDate(value: string) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(date);
+}
+
+function formatFileSize(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0 B";
+  }
+
+  const units = ["B", "KB", "MB", "GB"];
+  let size = value;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${new Intl.NumberFormat("de-DE", {
+    maximumFractionDigits: unitIndex === 0 ? 0 : 1,
+  }).format(size)} ${units[unitIndex]}`;
 }
 
 function asArray(value: unknown): Record<string, unknown>[] {

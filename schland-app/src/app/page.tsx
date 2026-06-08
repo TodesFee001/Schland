@@ -285,5 +285,103 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "file-uploaded") {
+    return {
+      tone: "success" as const,
+      text: "Datei wurde hochgeladen und gespeichert.",
+    };
+  }
+
+  if (setup === "file-upload-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum Hochladen von Dateien muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "file-upload-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte waehle eine Datei und eine Kategorie aus.",
+    };
+  }
+
+  if (setup === "file-upload-size") {
+    return {
+      tone: "warning" as const,
+      text: "Dateien duerfen maximal 50 MB gross sein.",
+    };
+  }
+
+  if (setup === "file-upload-folder") {
+    return {
+      tone: "warning" as const,
+      text: "Der Ordner passt nicht zur Kategorie oder der Account hat dort kein Upload-Recht.",
+    };
+  }
+
+  if (setup === "file-upload-category") {
+    return {
+      tone: "warning" as const,
+      text: "Diese Kategorie wurde nicht gefunden oder ist deaktiviert.",
+    };
+  }
+
+  if (setup === "file-upload-storage") {
+    return {
+      tone: "error" as const,
+      text: "Datei konnte nicht in Supabase Storage gespeichert werden.",
+    };
+  }
+
+  if (setup === "file-upload-permission") {
+    return {
+      tone: "error" as const,
+      text: "Datei konnte nicht hochgeladen werden. Der Account hat keine passende Datei-Berechtigung.",
+    };
+  }
+
+  if (setup === "file-upload-duplicate") {
+    return {
+      tone: "warning" as const,
+      text: "Diese Datei ist bereits unter diesem Speicherpfad registriert.",
+    };
+  }
+
+  if (setup === "file-upload-error") {
+    return {
+      tone: "error" as const,
+      text: "Datei konnte nicht hochgeladen werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
+  if (setup === "file-download-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum Herunterladen von Dateien muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "file-download-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Diese Datei wurde nicht gefunden.",
+    };
+  }
+
+  if (setup === "file-download-permission") {
+    return {
+      tone: "error" as const,
+      text: "Datei konnte nicht heruntergeladen werden. Der Account hat keine passende Download-Berechtigung.",
+    };
+  }
+
+  if (setup === "file-download-error") {
+    return {
+      tone: "error" as const,
+      text: "Datei konnte nicht heruntergeladen werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
   return undefined;
 }
