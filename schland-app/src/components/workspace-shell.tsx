@@ -9,6 +9,7 @@ import {
   Database,
   Download,
   Eye,
+  ExternalLink,
   FileText,
   Folder,
   Gauge,
@@ -22,6 +23,7 @@ import {
   Server,
   Settings,
   Shield,
+  RefreshCw,
   Trash2,
   Upload,
   UserCog,
@@ -40,6 +42,7 @@ import {
   downloadFileAction,
   linkMemberFileAction,
   openMemberCaseAction,
+  runDiscordManualSyncAction,
   setMemberDiscordAnalyticsAction,
   setFolderPermissionAction,
   setUserRoleAction,
@@ -2177,7 +2180,23 @@ function SyncSection({
     <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
       <div className="grid gap-5">
         <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
-          <SectionHeader icon={Bot} title="Discord-Synchronisation" />
+          <SectionHeader
+            icon={Bot}
+            title="Discord-Synchronisation"
+            action={
+              <form action={runDiscordManualSyncAction}>
+                <button
+                  type="submit"
+                  title="Discord-Sync jetzt ausfuehren"
+                  disabled={!mfaReady}
+                  className="flex h-8 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-xs font-medium text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <RefreshCw className="size-3.5" aria-hidden="true" />
+                  <span>Jetzt</span>
+                </button>
+              </form>
+            }
+          />
           <div className="grid gap-4 border-t border-[var(--line)] p-4">
             {sync.rows.map(({ active, label, status }) => (
               <div
@@ -2298,12 +2317,13 @@ function SyncSection({
             </div>
           ) : null}
           <div className="overflow-x-auto border-t border-[var(--line)]">
-            <table className="w-full min-w-[980px] text-sm">
+            <table className="w-full min-w-[1080px] text-sm">
               <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
                 <tr>
                   <th className="px-4 py-3 font-medium">Einladung</th>
                   <th className="px-4 py-3 font-medium">Berechtigung</th>
                   <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Discord-Link</th>
                   <th className="px-4 py-3 font-medium">Gueltigkeit</th>
                   <th className="px-4 py-3 font-medium">Grund</th>
                 </tr>
@@ -2335,6 +2355,25 @@ function SyncSection({
                         </span>
                       </td>
                       <td className="px-4 py-3">
+                        {invite.discordInviteUrl ? (
+                          <a
+                            href={invite.discordInviteUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 rounded-md border border-[var(--line)] px-2 py-1 text-xs font-medium text-[var(--accent-strong)]"
+                          >
+                            <ExternalLink className="size-3" aria-hidden="true" />
+                            <span>Oeffnen</span>
+                          </a>
+                        ) : invite.botError ? (
+                          <span className="block max-w-[180px] truncate text-xs text-[var(--danger)]">
+                            {invite.botError}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-neutral-500">-</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
                         <div>
                           {invite.uses}/{invite.maxUses} genutzt
                         </div>
@@ -2351,7 +2390,7 @@ function SyncSection({
                     </tr>
                   ))
                 ) : (
-                  <TableEmpty colSpan={5} label="Noch keine Discord-Einladungen angelegt." />
+                  <TableEmpty colSpan={6} label="Noch keine Discord-Einladungen angelegt." />
                 )}
               </tbody>
             </table>

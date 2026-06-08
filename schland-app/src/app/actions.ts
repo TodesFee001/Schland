@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { createPendingDiscordInvites } from "@/lib/discord-sync";
+import { createPendingDiscordInvites, runDiscordSync } from "@/lib/discord-sync";
 import { hasSupabasePublicEnv, hasSupabaseServerEnv } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -385,6 +385,30 @@ export async function createDiscordInviteRequestAction(formData: FormData) {
 
   revalidatePath("/", "layout");
   redirect(`/?section=sync&setup=${setup}`);
+}
+
+export async function runDiscordManualSyncAction() {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
+    redirect("/?section=sync&setup=discord-sync-failed");
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect("/?section=sync&setup=discord-sync-aal2");
+  }
+
+  try {
+    await runDiscordSync("manual");
+  } catch (error) {
+    console.error("manual discord sync failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    redirect("/?section=sync&setup=discord-sync-failed");
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/?section=sync&setup=discord-sync-ran");
 }
 
 export async function setUserRoleAction(formData: FormData) {

@@ -299,6 +299,27 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "discord-sync-ran") {
+    return {
+      tone: "success" as const,
+      text: "Discord-Sync wurde ausgefuehrt. Einladungen und Moderationsregister sind aktualisiert.",
+    };
+  }
+
+  if (setup === "discord-sync-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum manuellen Discord-Sync muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "discord-sync-failed") {
+    return {
+      tone: "error" as const,
+      text: "Discord-Sync konnte nicht ausgefuehrt werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
   if (setup === "discord-invite-aal2") {
     return {
       tone: "warning" as const,

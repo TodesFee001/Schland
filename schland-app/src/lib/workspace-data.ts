@@ -92,7 +92,10 @@ export type WorkspacePermissionOption = {
 };
 
 export type WorkspaceDiscordInvite = {
+  botError: string;
   createdAt: string;
+  discordInviteCode: string;
+  discordInviteUrl: string;
   expiresAt: string;
   id: string;
   inviteeName: string;
@@ -463,8 +466,11 @@ export const demoWorkspaceData: WorkspaceData = {
   ],
   discordInvites: [
     {
+      botError: "",
       id: "invite-demo-1",
       inviteeName: "Beispielmitglied",
+      discordInviteCode: "demo",
+      discordInviteUrl: "https://discord.gg/demo",
       targetMemberName: "Noah Becker",
       targetDiscordId: "663180193355",
       reason: "Aufnahme nach Pruefung",
@@ -781,6 +787,9 @@ export async function getWorkspaceData(
             max_uses,
             uses,
             expires_at,
+            discord_invite_code,
+            discord_invite_url,
+            bot_error,
             created_at,
             requested_by_name,
             target_member:members!discord_invite_requests_target_member_id_fkey(name, discord_id),
@@ -1055,6 +1064,9 @@ function mapDiscordInvites(rows: Record<string, unknown>[]): WorkspaceDiscordInv
     return {
       id: String(row.id ?? ""),
       inviteeName: String(row.invitee_name ?? "Unbekannt"),
+      discordInviteCode: String(row.discord_invite_code ?? ""),
+      discordInviteUrl: String(row.discord_invite_url ?? ""),
+      botError: String(row.bot_error ?? ""),
       targetMemberName: String(targetMember.name ?? "-"),
       targetDiscordId: String(targetMember.discord_id ?? "-"),
       reason: String(row.reason ?? "-"),
