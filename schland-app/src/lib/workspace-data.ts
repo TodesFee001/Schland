@@ -108,6 +108,24 @@ export type WorkspaceDiscordInvite = {
   uses: number;
 };
 
+export type WorkspaceModerationEvent = {
+  channel: string;
+  discordId: string;
+  discordName: string;
+  endedAt: string;
+  eventType: string;
+  eventTypeLabel: string;
+  id: string;
+  memberName: string;
+  moderator: string;
+  reason: string;
+  remainingDuration: string;
+  startedAt: string;
+  status: string;
+  statusLabel: string;
+  totalDuration: string;
+};
+
 export type WorkspaceLogRow = {
   action: string;
   id: string;
@@ -168,6 +186,7 @@ export type WorkspaceData = {
   folders: WorkspaceFolder[];
   logs: WorkspaceLogRow[];
   members: WorkspaceMember[];
+  moderationEvents: WorkspaceModerationEvent[];
   permissions: WorkspacePermissionOption[];
   roles: WorkspaceRoleRow[];
   source: "demo" | "supabase";
@@ -460,6 +479,59 @@ export const demoWorkspaceData: WorkspaceData = {
       requestedBy: "Mara Seidel",
     },
   ],
+  moderationEvents: [
+    {
+      id: "mod-demo-1",
+      eventType: "timeout",
+      eventTypeLabel: "Timeout",
+      status: "active",
+      statusLabel: "Aktiv",
+      memberName: "Elias Kramer",
+      discordId: "842109348219",
+      discordName: "elyx",
+      moderator: "Mara Seidel",
+      channel: "-",
+      reason: "Spam im Textkanal",
+      startedAt: "Heute, 13:20",
+      endedAt: "Heute, 15:20",
+      totalDuration: "2 Std.",
+      remainingDuration: "42 Min.",
+    },
+    {
+      id: "mod-demo-2",
+      eventType: "ban",
+      eventTypeLabel: "Ban",
+      status: "active",
+      statusLabel: "Aktiv",
+      memberName: "Noah Becker",
+      discordId: "663180193355",
+      discordName: "nobeck",
+      moderator: "System",
+      channel: "-",
+      reason: "Pruefung laeuft",
+      startedAt: "Gestern, 21:10",
+      endedAt: "-",
+      totalDuration: "Unbegrenzt",
+      remainingDuration: "Unbegrenzt",
+    },
+    {
+      id: "mod-demo-3",
+      eventType: "voice_disconnect",
+      eventTypeLabel: "Verbindung getrennt",
+      status: "recorded",
+      statusLabel: "Erfasst",
+      memberName: "Mara Seidel",
+      discordId: "742101095203",
+      discordName: "mara.s",
+      moderator: "Elias Kramer",
+      channel: "Voice 1",
+      reason: "Stoergeraeusche",
+      startedAt: "Gestern, 19:30",
+      endedAt: "-",
+      totalDuration: "-",
+      remainingDuration: "-",
+    },
+  ],
   logs: [
     {
       id: "log-demo-1",
@@ -568,7 +640,7 @@ export const demoWorkspaceData: WorkspaceData = {
       ["Voice-Sessions", "Tabellen vorbereitet", true],
       ["Datenschutz Opt-out", "Datenbankregel vorbereitet", true],
       ["DB-Einladungen", "Warteschlange vorbereitet", true],
-      ["Moderationsregister", "Kommt mit Bot-Sync", false],
+      ["Moderationsregister", "Datenbankregister vorbereitet", true],
       ["Bot-Implementierung", "Zum Schluss", false],
     ].map(([label, status, active]) => ({
       label: String(label),
@@ -597,6 +669,7 @@ export async function getWorkspaceData(
       rolesResult,
       permissionsResult,
       discordInvitesResult,
+      moderationEventsResult,
       profilesResult,
       logsResult,
       syncResult,
@@ -717,6 +790,27 @@ export async function getWorkspaceData(
         .order("created_at", { ascending: false })
         .limit(20),
       supabase
+        .from("discord_moderation_events")
+        .select(
+          `
+            id,
+            discord_user_id,
+            discord_username,
+            event_type,
+            status,
+            reason,
+            moderator_name,
+            channel_name,
+            started_at,
+            ended_at,
+            duration_seconds,
+            last_synced_at,
+            members(name, discord_id)
+          `,
+        )
+        .order("started_at", { ascending: false })
+        .limit(80),
+      supabase
         .from("profiles")
         .select(
           `
@@ -748,6 +842,7 @@ export async function getWorkspaceData(
     collectWarning(warnings, rolesResult.error?.message);
     collectWarning(warnings, permissionsResult.error?.message);
     collectWarning(warnings, discordInvitesResult.error?.message);
+    collectWarning(warnings, moderationEventsResult.error?.message);
     collectWarning(warnings, profilesResult.error?.message);
     collectWarning(warnings, logsResult.error?.message);
     collectWarning(warnings, syncResult.error?.message);
@@ -761,6 +856,7 @@ export async function getWorkspaceData(
       roles: mapRoles(rolesResult.data ?? []),
       permissions: mapPermissions(permissionsResult.data ?? []),
       discordInvites: mapDiscordInvites(discordInvitesResult.data ?? []),
+      moderationEvents: mapModerationEvents(moderationEventsResult.data ?? []),
       users: mapUsers(profilesResult.data ?? []),
       logs: mapLogs(logsResult.data ?? []),
       sync: mapSync(syncResult.data ?? []),
@@ -975,6 +1071,37 @@ function mapDiscordInvites(rows: Record<string, unknown>[]): WorkspaceDiscordInv
   });
 }
 
+function mapModerationEvents(rows: Record<string, unknown>[]): WorkspaceModerationEvent[] {
+  return rows.map((row) => {
+    const member = asObject(row.members);
+    const eventType = String(row.event_type ?? "kick");
+    const status = String(row.status ?? "recorded");
+    const durationSeconds =
+      row.duration_seconds === null || row.duration_seconds === undefined
+        ? null
+        : Number(row.duration_seconds);
+    const endedAt = String(row.ended_at ?? "");
+
+    return {
+      id: String(row.id ?? ""),
+      eventType,
+      eventTypeLabel: mapModerationEventType(eventType),
+      status,
+      statusLabel: mapModerationStatus(status),
+      memberName: String(member.name ?? row.discord_username ?? "Unbekannt"),
+      discordId: String(member.discord_id ?? row.discord_user_id ?? "-"),
+      discordName: String(row.discord_username ?? "-"),
+      moderator: String(row.moderator_name ?? "-"),
+      channel: String(row.channel_name ?? "-"),
+      reason: String(row.reason ?? "-"),
+      startedAt: formatDate(String(row.started_at ?? "")),
+      endedAt: formatDate(endedAt),
+      totalDuration: formatDurationSeconds(durationSeconds, eventType),
+      remainingDuration: formatRemainingDuration(endedAt, status, eventType),
+    };
+  });
+}
+
 function mapUsers(rows: Record<string, unknown>[]): WorkspaceUserSummary {
   return rows.reduce<WorkspaceUserSummary>(
     (summary, row) => {
@@ -1071,8 +1198,8 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
       },
       {
         label: "Moderationsregister",
-        status: "Kommt mit Bot-Sync",
-        active: false,
+        status: "Datenbankregister vorbereitet",
+        active: true,
       },
       {
         label: "Bot-Implementierung",
@@ -1134,6 +1261,29 @@ function mapDiscordInviteStatus(status: string) {
   return labels[status] ?? status;
 }
 
+function mapModerationEventType(eventType: string) {
+  const labels: Record<string, string> = {
+    ban: "Ban",
+    kick: "Kick",
+    timeout: "Timeout",
+    voice_disconnect: "Verbindung getrennt",
+  };
+
+  return labels[eventType] ?? eventType;
+}
+
+function mapModerationStatus(status: string) {
+  const labels: Record<string, string> = {
+    active: "Aktiv",
+    expired: "Abgelaufen",
+    failed: "Fehler",
+    lifted: "Aufgehoben",
+    recorded: "Erfasst",
+  };
+
+  return labels[status] ?? status;
+}
+
 function formatDate(value: string) {
   if (!value) {
     return "-";
@@ -1149,6 +1299,61 @@ function formatDate(value: string) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(date);
+}
+
+function formatDurationSeconds(value: number | null, eventType: string) {
+  if (value === null || !Number.isFinite(value)) {
+    return eventType === "ban" ? "Unbegrenzt" : "-";
+  }
+
+  if (value <= 0) {
+    return "0 Min.";
+  }
+
+  const days = Math.floor(value / 86_400);
+  const hours = Math.floor((value % 86_400) / 3_600);
+  const minutes = Math.floor((value % 3_600) / 60);
+
+  if (days > 0) {
+    return hours > 0 ? `${days} T ${hours} Std.` : `${days} T`;
+  }
+
+  if (hours > 0) {
+    return minutes > 0 ? `${hours} Std. ${minutes} Min.` : `${hours} Std.`;
+  }
+
+  return `${Math.max(minutes, 1)} Min.`;
+}
+
+function formatRemainingDuration(
+  endedAt: string,
+  status: string,
+  eventType: string,
+) {
+  if (status !== "active") {
+    return "-";
+  }
+
+  if (!endedAt) {
+    return eventType === "ban" ? "Unbegrenzt" : "-";
+  }
+
+  const endDate = new Date(endedAt);
+
+  if (Number.isNaN(endDate.getTime())) {
+    return "-";
+  }
+
+  const remainingSeconds = Math.max(
+    Math.ceil((endDate.getTime() - Date.now()) / 1000),
+    0,
+  );
+
+  if (remainingSeconds === 0) {
+    return "Abgelaufen";
+  }
+
+  return formatDurationSeconds(remainingSeconds, eventType);
 }
 
 function formatFileSize(value: number) {

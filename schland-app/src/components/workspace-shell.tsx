@@ -59,6 +59,7 @@ import type {
   WorkspaceFolderPermission,
   WorkspaceLogRow,
   WorkspaceMember,
+  WorkspaceModerationEvent,
   WorkspacePermissionOption,
   WorkspaceRoleRow,
   WorkspaceSyncStatus,
@@ -73,6 +74,7 @@ type SectionId =
   | "users"
   | "roles"
   | "activity"
+  | "moderation"
   | "sync"
   | "settings";
 
@@ -112,6 +114,7 @@ const sections: Section[] = [
   { id: "users", label: "Benutzer", icon: Users },
   { id: "roles", label: "Rollen & Rechte", icon: KeyRound },
   { id: "activity", label: "Aktivitaet", icon: Activity },
+  { id: "moderation", label: "Moderation", icon: Shield },
   { id: "sync", label: "Synchronisation", icon: Bot },
   { id: "settings", label: "Einstellungen", icon: Settings },
 ];
@@ -371,6 +374,10 @@ export function WorkspaceShell({
         return <RolesSection roles={workspaceData.roles} />;
       case "activity":
         return <ActivitySection members={members} />;
+      case "moderation":
+        return (
+          <ModerationSection moderationEvents={workspaceData.moderationEvents} />
+        );
       case "sync":
         return (
           <SyncSection
@@ -1989,6 +1996,166 @@ function ActivitySection({ members }: { members: WorkspaceMember[] }) {
   );
 }
 
+function ModerationSection({
+  moderationEvents,
+}: {
+  moderationEvents: WorkspaceModerationEvent[];
+}) {
+  const [moderationSearch, setModerationSearch] = useState("");
+  const query = moderationSearch.trim().toLowerCase();
+  const filteredEvents = query
+    ? moderationEvents.filter((event) =>
+        [
+          event.memberName,
+          event.discordId,
+          event.discordName,
+          event.eventTypeLabel,
+          event.statusLabel,
+          event.reason,
+          event.moderator,
+          event.channel,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(query),
+      )
+    : moderationEvents;
+  const activeCount = moderationEvents.filter(
+    (event) => event.status === "active",
+  ).length;
+  const timeoutCount = moderationEvents.filter(
+    (event) => event.eventType === "timeout",
+  ).length;
+  const banCount = moderationEvents.filter(
+    (event) => event.eventType === "ban",
+  ).length;
+  const actionCount = moderationEvents.filter((event) =>
+    ["kick", "voice_disconnect"].includes(event.eventType),
+  ).length;
+
+  return (
+    <div className="grid gap-5">
+      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+        <SectionHeader
+          icon={Shield}
+          title="Moderationsregister"
+          action={
+            <span className="rounded-md bg-[var(--surface-muted)] px-2 py-1 text-xs font-medium text-neutral-600">
+              {formatNumber(moderationEvents.length)}
+            </span>
+          }
+        />
+        <div className="grid gap-3 border-t border-[var(--line)] p-4 md:grid-cols-4">
+          {[
+            ["Aktiv", activeCount],
+            ["Timeouts", timeoutCount],
+            ["Bans", banCount],
+            ["Kicks & Disconnects", actionCount],
+          ].map(([label, value]) => (
+            <article
+              key={label}
+              className="rounded-lg border border-[var(--line)] bg-white p-4"
+            >
+              <p className="text-sm text-neutral-500">{label}</p>
+              <p className="mt-2 text-3xl font-semibold">
+                {formatNumber(Number(value))}
+              </p>
+            </article>
+          ))}
+        </div>
+        <div className="border-t border-[var(--line)] p-4">
+          <label className="grid max-w-xl gap-2">
+            <span className="text-xs font-medium uppercase text-neutral-500">
+              Suche
+            </span>
+            <div className="flex h-10 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3">
+              <Search className="size-4 text-neutral-500" aria-hidden="true" />
+              <input
+                value={moderationSearch}
+                onChange={(event) => setModerationSearch(event.target.value)}
+                placeholder="Mitglied, Discord-ID, Grund"
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+              />
+            </div>
+          </label>
+        </div>
+        <div className="overflow-x-auto border-t border-[var(--line)]">
+          <table className="w-full min-w-[1180px] text-sm">
+            <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">Mitglied</th>
+                <th className="px-4 py-3 font-medium">Art</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Dauer</th>
+                <th className="px-4 py-3 font-medium">Zeitpunkt</th>
+                <th className="px-4 py-3 font-medium">Moderator</th>
+                <th className="px-4 py-3 font-medium">Grund</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredEvents.length > 0 ? (
+                filteredEvents.map((event) => (
+                  <tr key={event.id} className="border-t border-[var(--line)]">
+                    <td className="px-4 py-3">
+                      <div className="font-medium">{event.memberName}</div>
+                      <div className="font-mono text-xs text-neutral-500">
+                        {event.discordName} {"-"} {event.discordId}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={[
+                          "rounded-md px-2 py-1 text-xs font-medium",
+                          getModerationTypeClass(event.eventType),
+                        ].join(" ")}
+                      >
+                        {event.eventTypeLabel}
+                      </span>
+                      {event.channel !== "-" ? (
+                        <div className="mt-1 text-xs text-neutral-500">
+                          {event.channel}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={[
+                          "rounded-md px-2 py-1 text-xs font-medium",
+                          getModerationStatusClass(event.status),
+                        ].join(" ")}
+                      >
+                        {event.statusLabel}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div>{event.totalDuration}</div>
+                      <div className="text-xs text-neutral-500">
+                        Rest: {event.remainingDuration}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div>{event.startedAt}</div>
+                      <div className="text-xs text-neutral-500">
+                        bis {event.endedAt}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">{event.moderator}</td>
+                    <td className="px-4 py-3">
+                      <div className="max-w-sm truncate">{event.reason}</div>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <TableEmpty colSpan={7} label="Keine Moderationsereignisse gefunden." />
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function SyncSection({
   discordInvites,
   members,
@@ -2402,6 +2569,30 @@ function getInviteStatusClass(status: string) {
   }
 
   if (status === "failed" || status === "cancelled") {
+    return "bg-red-50 text-[var(--danger)]";
+  }
+
+  return "bg-[var(--surface-muted)] text-neutral-600";
+}
+
+function getModerationTypeClass(eventType: string) {
+  if (eventType === "ban") {
+    return "bg-red-50 text-[var(--danger)]";
+  }
+
+  if (eventType === "timeout") {
+    return "bg-[#fff4d6] text-[var(--warning)]";
+  }
+
+  return "bg-[var(--surface-muted)] text-neutral-600";
+}
+
+function getModerationStatusClass(status: string) {
+  if (status === "active") {
+    return "bg-[var(--accent-soft)] text-[var(--accent-strong)]";
+  }
+
+  if (status === "failed") {
     return "bg-red-50 text-[var(--danger)]";
   }
 
