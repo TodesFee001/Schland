@@ -159,5 +159,54 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "role-assigned") {
+    return {
+      tone: "success" as const,
+      text: "Rolle wurde zugewiesen.",
+    };
+  }
+
+  if (setup === "role-removed") {
+    return {
+      tone: "success" as const,
+      text: "Rolle wurde entzogen.",
+    };
+  }
+
+  if (setup === "role-assignment-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum Aendern von Rollen muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "role-assignment-permission") {
+    return {
+      tone: "error" as const,
+      text: "Rolle konnte nicht geaendert werden. Der Account hat keine Benutzerverwaltung-Berechtigung.",
+    };
+  }
+
+  if (setup === "role-assignment-last-admin") {
+    return {
+      tone: "warning" as const,
+      text: "Der letzte Administrator kann nicht entfernt werden.",
+    };
+  }
+
+  if (setup === "role-assignment-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Benutzer oder Rolle wurde nicht gefunden.",
+    };
+  }
+
+  if (setup === "role-assignment-error") {
+    return {
+      tone: "error" as const,
+      text: "Rolle konnte nicht geaendert werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
   return undefined;
 }

@@ -130,6 +130,50 @@ export async function openMemberCaseAction(formData: FormData) {
   redirect(`/?section=members&member=${encodeURIComponent(memberId)}&setup=member-opened`);
 }
 
+export async function setUserRoleAction(formData: FormData) {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=users&setup=missing-supabase");
+  }
+
+  const userId = getFormText(formData, "userId");
+  const roleId = getFormText(formData, "roleId");
+  const intent = getFormText(formData, "intent");
+
+  if (!userId || !roleId || (intent !== "assign" && intent !== "remove")) {
+    redirect("/?section=users&setup=role-assignment-missing");
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data: assuranceLevel } =
+    await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+
+  if (assuranceLevel?.currentLevel !== "aal2") {
+    redirect("/?section=users&setup=role-assignment-aal2");
+  }
+
+  const { error } = await supabase.rpc("set_user_role_assignment", {
+    p_assign: intent === "assign",
+    p_role_id: roleId,
+    p_user_id: userId,
+  });
+
+  if (error) {
+    console.error("set_user_role_assignment failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect(`/?section=users&setup=${getUserRoleErrorSetup(error)}`);
+  }
+
+  revalidatePath("/", "layout");
+  redirect(
+    `/?section=users&setup=${
+      intent === "assign" ? "role-assigned" : "role-removed"
+    }`,
+  );
+}
+
 function getFormText(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
@@ -188,4 +232,22 @@ function getMemberOpenErrorSetup(error: { message?: string }) {
   }
 
   return "member-open-error";
+}
+
+function getUserRoleErrorSetup(error: { message?: string }) {
+  const message = error.message?.toLowerCase() ?? "";
+
+  if (message.includes("last administrator")) {
+    return "role-assignment-last-admin";
+  }
+
+  if (message.includes("not found")) {
+    return "role-assignment-missing";
+  }
+
+  if (message.includes("denied")) {
+    return "role-assignment-permission";
+  }
+
+  return "role-assignment-error";
 }

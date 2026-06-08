@@ -36,6 +36,7 @@ export type WorkspaceRoleRow = {
   members: number;
   permissions: string[];
   role: string;
+  roleKey: string;
 };
 
 export type WorkspaceLogRow = {
@@ -56,10 +57,27 @@ export type WorkspaceCategory = {
   sortOrder: number;
 };
 
+export type WorkspaceUserRole = {
+  id: string;
+  role: string;
+  roleKey: string;
+};
+
+export type WorkspaceUserRow = {
+  displayName: string;
+  email: string;
+  id: string;
+  roles: WorkspaceUserRole[];
+  status: string;
+  statusLabel: string;
+  twoFactorEnabled: boolean;
+};
+
 export type WorkspaceUserSummary = {
   active: number;
   disabled: number;
   mfaEnabled: number;
+  rows: WorkspaceUserRow[];
 };
 
 export type WorkspaceSyncStatus = {
@@ -183,24 +201,28 @@ export const demoWorkspaceData: WorkspaceData = {
     {
       id: "role-demo-1",
       role: "Administrator",
+      roleKey: "administrator",
       permissions: ["Benutzer verwalten", "Rollen verwalten", "Dateien loeschen"],
       members: 2,
     },
     {
       id: "role-demo-2",
       role: "Mitgliederakten-Leser",
+      roleKey: "member_case_reader",
       permissions: ["Akten suchen", "Akten oeffnen", "Dateiverknuepfungen sehen"],
       members: 4,
     },
     {
       id: "role-demo-3",
       role: "Mitgliederakten-Bearbeiter",
+      roleKey: "member_case_editor",
       permissions: ["Akten bearbeiten", "Dateien verknuepfen", "Akten exportieren"],
       members: 3,
     },
     {
       id: "role-demo-4",
       role: "Dateienzugriff",
+      roleKey: "file_access",
       permissions: ["Datei-Datenbank anzeigen", "Datei oeffnen", "Datei herunterladen"],
       members: 16,
     },
@@ -254,6 +276,52 @@ export const demoWorkspaceData: WorkspaceData = {
     active: 21,
     mfaEnabled: 18,
     disabled: 3,
+    rows: [
+      {
+        id: "user-demo-1",
+        displayName: "Mara Seidel",
+        email: "mara@example.invalid",
+        status: "active",
+        statusLabel: "Aktiv",
+        twoFactorEnabled: true,
+        roles: [
+          {
+            id: "role-demo-1",
+            role: "Administrator",
+            roleKey: "administrator",
+          },
+          {
+            id: "role-demo-2",
+            role: "Mitgliederakten-Leser",
+            roleKey: "member_case_reader",
+          },
+        ],
+      },
+      {
+        id: "user-demo-2",
+        displayName: "Elias Kramer",
+        email: "elias@example.invalid",
+        status: "active",
+        statusLabel: "Aktiv",
+        twoFactorEnabled: true,
+        roles: [
+          {
+            id: "role-demo-4",
+            role: "Dateienzugriff",
+            roleKey: "file_access",
+          },
+        ],
+      },
+      {
+        id: "user-demo-3",
+        displayName: "Tom Richter",
+        email: "tom@example.invalid",
+        status: "disabled",
+        statusLabel: "Deaktiviert",
+        twoFactorEnabled: false,
+        roles: [],
+      },
+    ],
   },
   sync: {
     lastFullSync: "Noch offen",
@@ -343,13 +411,26 @@ export async function getWorkspaceData(
         .select(
           `
             id,
+            role_key,
             name,
             role_permissions(permissions(description)),
             user_roles(user_id)
           `,
         )
         .order("name", { ascending: true }),
-      supabase.from("profiles").select("id, status, two_factor_enabled"),
+      supabase
+        .from("profiles")
+        .select(
+          `
+            id,
+            display_name,
+            email,
+            status,
+            two_factor_enabled,
+            user_roles(roles(id, role_key, name))
+          `,
+        )
+        .order("display_name", { ascending: true }),
       supabase
         .from("member_case_logs")
         .select("id, username, action, reason, success, created_at, member_id")
@@ -476,6 +557,7 @@ function mapRoles(rows: Record<string, unknown>[]): WorkspaceRoleRow[] {
   return rows.map((row) => ({
     id: String(row.id ?? ""),
     role: String(row.name ?? "Rolle"),
+    roleKey: String(row.role_key ?? ""),
     permissions: asArray(row.role_permissions)
       .map((entry) => String(asObject(entry.permissions)?.description ?? ""))
       .filter(Boolean),
@@ -486,6 +568,19 @@ function mapRoles(rows: Record<string, unknown>[]): WorkspaceRoleRow[] {
 function mapUsers(rows: Record<string, unknown>[]): WorkspaceUserSummary {
   return rows.reduce<WorkspaceUserSummary>(
     (summary, row) => {
+      const status = String(row.status ?? "active");
+      const roles = asArray(row.user_roles)
+        .map((entry) => {
+          const role = asObject(entry.roles);
+
+          return {
+            id: String(role.id ?? ""),
+            role: String(role.name ?? ""),
+            roleKey: String(role.role_key ?? ""),
+          };
+        })
+        .filter((role) => role.id && role.role);
+
       if (row.status === "disabled") {
         summary.disabled += 1;
       } else {
@@ -496,9 +591,19 @@ function mapUsers(rows: Record<string, unknown>[]): WorkspaceUserSummary {
         summary.mfaEnabled += 1;
       }
 
+      summary.rows.push({
+        id: String(row.id ?? ""),
+        displayName: String(row.display_name ?? row.email ?? "Benutzer"),
+        email: String(row.email ?? "-"),
+        status,
+        statusLabel: mapUserStatus(status),
+        twoFactorEnabled: Boolean(row.two_factor_enabled),
+        roles,
+      });
+
       return summary;
     },
-    { active: 0, disabled: 0, mfaEnabled: 0 },
+    { active: 0, disabled: 0, mfaEnabled: 0, rows: [] },
   );
 }
 
@@ -560,6 +665,14 @@ function mapMemberStatus(status: string): MemberStatusLabel {
 
   if (status === "archived") {
     return "Archiv";
+  }
+
+  return "Aktiv";
+}
+
+function mapUserStatus(status: string) {
+  if (status === "disabled") {
+    return "Deaktiviert";
   }
 
   return "Aktiv";

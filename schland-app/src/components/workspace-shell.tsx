@@ -33,6 +33,7 @@ import {
   claimFirstAdminAction,
   createMemberAction,
   openMemberCaseAction,
+  setUserRoleAction,
 } from "@/app/actions";
 import type { AuthStatus } from "@/lib/auth";
 import type { DashboardSnapshot } from "@/lib/dashboard";
@@ -335,7 +336,13 @@ export function WorkspaceShell({
       case "categories":
         return <CategoriesSection categories={workspaceData.categories} />;
       case "users":
-        return <UsersSection users={workspaceData.users} />;
+        return (
+          <UsersSection
+            mfaReady={mfaReady}
+            roles={workspaceData.roles}
+            users={workspaceData.users}
+          />
+        );
       case "roles":
         return <RolesSection roles={workspaceData.roles} />;
       case "activity":
@@ -1040,17 +1047,33 @@ function CategoriesSection({ categories }: { categories: WorkspaceCategory[] }) 
   );
 }
 
-function UsersSection({ users }: { users: WorkspaceUserSummary }) {
+function UsersSection({
+  mfaReady,
+  roles,
+  users,
+}: {
+  mfaReady: boolean;
+  roles: WorkspaceRoleRow[];
+  users: WorkspaceUserSummary;
+}) {
+  const roleOptions = roles.filter((role) => role.id && role.role);
+  const adminAssignments = users.rows.filter((user) =>
+    user.roles.some((role) => role.roleKey === "administrator"),
+  ).length;
+
   return (
     <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
       <SectionHeader
         icon={Users}
         title="Benutzerverwaltung"
         action={
-          <button className="flex h-9 items-center gap-2 rounded-md bg-[var(--foreground)] px-3 text-sm text-white">
-            <UserCog className="size-4" aria-hidden="true" />
-            <span>Benutzer</span>
-          </button>
+          <a
+            href="/security"
+            className="flex h-9 items-center gap-2 rounded-md bg-[var(--foreground)] px-3 text-sm text-white"
+          >
+            <KeyRound className="size-4" aria-hidden="true" />
+            <span>2FA</span>
+          </a>
         }
       />
       <div className="grid gap-3 border-t border-[var(--line)] p-4 md:grid-cols-3">
@@ -1067,6 +1090,142 @@ function UsersSection({ users }: { users: WorkspaceUserSummary }) {
             <p className="mt-2 text-3xl font-semibold">{formatNumber(Number(value))}</p>
           </article>
         ))}
+      </div>
+      {!mfaReady ? (
+        <div className="border-t border-[var(--line)] px-4 py-3">
+          <div className="rounded-lg border border-amber-200 bg-[#fff4d6] p-3 text-sm text-amber-900">
+            2FA-Sitzung freischalten, bevor Rollen geaendert werden.
+          </div>
+        </div>
+      ) : null}
+      <div className="overflow-x-auto border-t border-[var(--line)]">
+        <table className="w-full min-w-[940px] text-sm">
+          <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
+            <tr>
+              <th className="px-4 py-3 font-medium">Benutzer</th>
+              <th className="px-4 py-3 font-medium">Status</th>
+              <th className="px-4 py-3 font-medium">Rollen</th>
+              <th className="px-4 py-3 font-medium">Zuweisen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.rows.length > 0 ? (
+              users.rows.map((user) => (
+                <tr key={user.id} className="border-t border-[var(--line)]">
+                  <td className="px-4 py-3">
+                    <div className="font-medium">{user.displayName}</div>
+                    <div className="truncate font-mono text-xs text-neutral-500">
+                      {user.email}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-2">
+                      <span
+                        className={[
+                          "rounded-md px-2 py-1 text-xs font-medium",
+                          user.status === "disabled"
+                            ? "bg-[var(--surface-muted)] text-neutral-600"
+                            : "bg-[var(--accent-soft)] text-[var(--accent-strong)]",
+                        ].join(" ")}
+                      >
+                        {user.statusLabel}
+                      </span>
+                      <span
+                        className={[
+                          "rounded-md px-2 py-1 text-xs font-medium",
+                          user.twoFactorEnabled
+                            ? "bg-[var(--accent-soft)] text-[var(--accent-strong)]"
+                            : "bg-[#fff4d6] text-[var(--warning)]",
+                        ].join(" ")}
+                      >
+                        {user.twoFactorEnabled ? "2FA aktiv" : "2FA offen"}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      {user.roles.length > 0 ? (
+                        user.roles.map((role) => {
+                          const blocksLastAdmin =
+                            role.roleKey === "administrator" && adminAssignments <= 1;
+
+                          return (
+                            <form
+                              key={role.id}
+                              action={setUserRoleAction}
+                              className="inline-flex"
+                            >
+                              <input type="hidden" name="userId" value={user.id} />
+                              <input type="hidden" name="roleId" value={role.id} />
+                              <input type="hidden" name="intent" value="remove" />
+                              <button
+                                type="submit"
+                                title={
+                                  blocksLastAdmin
+                                    ? "Letzter Administrator bleibt aktiv"
+                                    : `${role.role} entziehen`
+                                }
+                                disabled={!mfaReady || blocksLastAdmin}
+                                className="flex h-8 items-center gap-1 rounded-md bg-[var(--surface-muted)] px-2 text-xs disabled:cursor-not-allowed disabled:opacity-45"
+                              >
+                                <span>{role.role}</span>
+                                <XCircle className="size-3.5" aria-hidden="true" />
+                              </button>
+                            </form>
+                          );
+                        })
+                      ) : (
+                        <span className="text-xs text-neutral-500">
+                          Keine Rollen
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <form
+                      action={setUserRoleAction}
+                      className="flex min-w-[280px] items-center gap-2"
+                    >
+                      <input type="hidden" name="userId" value={user.id} />
+                      <input type="hidden" name="intent" value="assign" />
+                      <select
+                        name="roleId"
+                        required
+                        disabled={!mfaReady || roleOptions.length === 0}
+                        defaultValue=""
+                        className="h-9 min-w-0 flex-1 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        <option value="">Rolle waehlen</option>
+                        {roleOptions.map((role) => (
+                          <option
+                            key={role.id}
+                            value={role.id}
+                            disabled={user.roles.some(
+                              (assignedRole) => assignedRole.id === role.id,
+                            )}
+                          >
+                            {role.role}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="submit"
+                        title="Rolle zuweisen"
+                        disabled={!mfaReady || roleOptions.length === 0}
+                        className="flex h-9 items-center gap-2 rounded-md bg-[var(--foreground)] px-3 text-sm text-white disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        <UserCog className="size-4" aria-hidden="true" />
+                        <span>Zuweisen</span>
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <TableEmpty colSpan={4} label="Noch keine Benutzer sichtbar." />
+            )}
+          </tbody>
+        </table>
       </div>
     </section>
   );
