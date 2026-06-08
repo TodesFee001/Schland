@@ -161,14 +161,20 @@ export async function PATCH(request: Request) {
     }
   }
 
+  const previousSync = await getLatestMemberSyncMetadata(supabase);
+
   await recordLiveMemberSync(supabase, {
     guildMemberEstimate:
       asInteger(body?.guildMemberEstimate ?? body?.guild_member_estimate) ??
+      previousSync.guildMemberEstimate ??
       ids.length,
-    guildName: asText(body?.guildName ?? body?.guild_name),
+    guildName:
+      asText(body?.guildName ?? body?.guild_name) ?? previousSync.guildName,
     scanned: ids.length,
     skippedBots:
-      asInteger(body?.skippedBots ?? body?.skipped_bots) ?? 0,
+      asInteger(body?.skippedBots ?? body?.skipped_bots) ??
+      previousSync.skippedBots ??
+      0,
   });
 
   return NextResponse.json({
@@ -264,6 +270,48 @@ async function writeDiscordMember(
     },
     rolesSynced: roles?.length ?? null,
   };
+}
+
+async function getLatestMemberSyncMetadata(supabase: SupabaseAdminClient) {
+  const fallback = {
+    guildMemberEstimate: null as number | null,
+    guildName: null as string | null,
+    skippedBots: null as number | null,
+  };
+  const { data, error } = await supabase
+    .from("sync_runs")
+    .select("metadata")
+    .eq("status", "success")
+    .order("started_at", { ascending: false })
+    .limit(5);
+
+  if (error) {
+    console.error("discord previous sync metadata lookup failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+
+    return fallback;
+  }
+
+  for (const row of data ?? []) {
+    const metadata = asRecord(asRecord(row).metadata);
+    const members = asRecord(metadata.members);
+    const guildMemberEstimate = asInteger(members.guildMemberEstimate);
+    const skippedBots = asInteger(members.skippedBots);
+    const guildName = asText(members.guildName);
+
+    if (guildMemberEstimate !== null || skippedBots !== null || guildName) {
+      return {
+        guildMemberEstimate,
+        guildName,
+        skippedBots,
+      };
+    }
+  }
+
+  return fallback;
 }
 
 async function recordLiveMemberSync(
