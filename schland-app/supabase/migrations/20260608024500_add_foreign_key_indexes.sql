@@ -1,0 +1,17 @@
+create index if not exists idx_files_category_id on public.files(category_id);
+create index if not exists idx_files_folder_id on public.files(folder_id);
+create index if not exists idx_files_uploaded_by on public.files(uploaded_by);
+create index if not exists idx_folder_permissions_role_id on public.folder_permissions(role_id);
+create index if not exists idx_folders_created_by on public.folders(created_by);
+create index if not exists idx_folders_parent_folder_id on public.folders(parent_folder_id);
+create index if not exists idx_member_case_logs_member_id on public.member_case_logs(member_id);
+create index if not exists idx_member_case_logs_related_file_id on public.member_case_logs(related_file_id);
+create index if not exists idx_member_case_logs_user_id on public.member_case_logs(user_id);
+create index if not exists idx_member_discord_roles_discord_role_id on public.member_discord_roles(discord_role_id);
+create index if not exists idx_member_files_created_by on public.member_files(created_by);
+create index if not exists idx_member_files_file_id on public.member_files(file_id);
+create index if not exists idx_members_image_file_id on public.members(image_file_id);
+create index if not exists idx_members_invited_by_member_id on public.members(invited_by_member_id);
+create index if not exists idx_role_permissions_permission_id on public.role_permissions(permission_id);
+create index if not exists idx_user_roles_role_id on public.user_roles(role_id);
+create index if not exists idx_voice_sessions_member_id on public.voice_sessions(member_id);

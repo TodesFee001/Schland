@@ -1,0 +1,29 @@
+# dependencies
+node_modules
+schland-app/node_modules
+
+# Next.js
+.next
+schland-app/.next
+out
+schland-app/out
+
+# env
+.env*
+schland-app/.env*
+
+# Vercel
+.vercel
+schland-app/.vercel
+
+# local agent tooling
+.agents
+skills-lock.json
+
+# misc
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+.vercel

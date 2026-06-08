@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix schland-app run build",
+    "dev": "npm --prefix schland-app run dev",
+    "lint": "npm --prefix schland-app run lint",
+    "start": "npm --prefix schland-app run start"
+  }
+}
