@@ -29,14 +29,13 @@ export async function getAuthStatus(): Promise<AuthStatus> {
     };
   }
 
-  const { data: assuranceLevel } =
-    await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  const { data: mfaReady } = await supabase.rpc("has_mfa_level2");
 
   return {
     configured: true,
     signedIn: true,
     email: user.email ?? undefined,
-    mfaLevel: assuranceLevel?.currentLevel ?? "aal1",
+    mfaLevel: mfaReady ? "aal2" : "aal1",
     userId: user.id,
   };
 }

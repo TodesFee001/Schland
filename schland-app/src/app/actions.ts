@@ -49,10 +49,8 @@ export async function createMemberAction(formData: FormData) {
   }
 
   const supabase = await createSupabaseServerClient();
-  const { data: assuranceLevel } =
-    await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
 
-  if (assuranceLevel?.currentLevel !== "aal2") {
+  if (!(await hasMfaLevel2(supabase))) {
     redirect("/?section=members&setup=member-create-aal2");
   }
 
@@ -105,10 +103,8 @@ export async function openMemberCaseAction(formData: FormData) {
   }
 
   const supabase = await createSupabaseServerClient();
-  const { data: assuranceLevel } =
-    await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
 
-  if (assuranceLevel?.currentLevel !== "aal2") {
+  if (!(await hasMfaLevel2(supabase))) {
     redirect("/?section=members&setup=member-open-aal2");
   }
 
@@ -144,10 +140,8 @@ export async function setUserRoleAction(formData: FormData) {
   }
 
   const supabase = await createSupabaseServerClient();
-  const { data: assuranceLevel } =
-    await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
 
-  if (assuranceLevel?.currentLevel !== "aal2") {
+  if (!(await hasMfaLevel2(supabase))) {
     redirect("/?section=users&setup=role-assignment-aal2");
   }
 
@@ -188,10 +182,8 @@ export async function createFolderAction(formData: FormData) {
   }
 
   const supabase = await createSupabaseServerClient();
-  const { data: assuranceLevel } =
-    await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
 
-  if (assuranceLevel?.currentLevel !== "aal2") {
+  if (!(await hasMfaLevel2(supabase))) {
     redirect("/?section=files&setup=folder-aal2");
   }
 
@@ -229,10 +221,8 @@ export async function setFolderPermissionAction(formData: FormData) {
   }
 
   const supabase = await createSupabaseServerClient();
-  const { data: assuranceLevel } =
-    await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
 
-  if (assuranceLevel?.currentLevel !== "aal2") {
+  if (!(await hasMfaLevel2(supabase))) {
     redirect("/?section=files&setup=folder-aal2");
   }
 
@@ -279,10 +269,8 @@ export async function deleteFolderAction(formData: FormData) {
   }
 
   const supabase = await createSupabaseServerClient();
-  const { data: assuranceLevel } =
-    await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
 
-  if (assuranceLevel?.currentLevel !== "aal2") {
+  if (!(await hasMfaLevel2(supabase))) {
     redirect("/?section=files&setup=folder-aal2");
   }
 
@@ -309,6 +297,14 @@ function getFormText(formData: FormData, key: string) {
 
 function getFormBool(formData: FormData, key: string) {
   return formData.get(key) === "on";
+}
+
+type SupabaseServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
+
+async function hasMfaLevel2(supabase: SupabaseServerClient) {
+  const { data } = await supabase.rpc("has_mfa_level2");
+
+  return data === true;
 }
 
 function getOptionalFormNumber(formData: FormData, key: string) {
