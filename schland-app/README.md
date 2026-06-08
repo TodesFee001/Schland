@@ -51,9 +51,22 @@ Wenn bereits ein Admin existiert, ist der Erststart automatisch geschlossen.
 NEXT_PUBLIC_SUPABASE_URL=https://ovfhieumrllwtghpvwem.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_fCEJWNSfV7SEt46MYRS0xg_BNvfLTyg
 SUPABASE_SERVICE_ROLE_KEY=
+DISCORD_BOT_SYNC_TOKEN=
 ```
 
 `SUPABASE_SERVICE_ROLE_KEY` ist nur fuer serverseitige Admin-Aufgaben noetig und darf niemals im Browser genutzt werden.
+`DISCORD_BOT_SYNC_TOKEN` schuetzt die internen Bot-Endpunkte und muss spaeter identisch im Bot hinterlegt werden.
+
+## Interne Discord-Bot-Schnittstelle
+
+Die eigentliche Bot-Implementierung bleibt der letzte Schritt. Vorbereitet sind aber bereits geschuetzte Endpunkte unter `/api/discord-bot/*`:
+
+- `GET /api/discord-bot/privacy` liefert Mitglieder mit Discord-ID und ob deren Auswertung erlaubt ist.
+- `GET /api/discord-bot/invites` liefert offene Datenbank-Einladungen fuer den Bot.
+- `PATCH /api/discord-bot/invites` meldet erstellte, genutzte, abgelaufene oder fehlgeschlagene Einladungen zurueck.
+- `POST /api/discord-bot/moderation-events` schreibt Timeouts, Bans, Kicks und Voice-Disconnects in das Moderationsregister.
+
+Alle Endpunkte erwarten `Authorization: Bearer <DISCORD_BOT_SYNC_TOKEN>` oder den Header `x-schland-bot-token`.
 
 Der aktuelle Production-Deploy liegt auf `https://schland.vercel.app`. Wenn Deployment Protection aktiv ist, verlangt Vercel vor dem Aufruf eine Vercel-Anmeldung oder einen Bypass.
 

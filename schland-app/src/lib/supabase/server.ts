@@ -4,7 +4,36 @@ import { cookies } from "next/headers";
 
 import { getSupabasePublishableKey } from "@/lib/env";
 
-let adminClient: ReturnType<typeof createClient> | null = null;
+type UntypedSupabaseDatabase = {
+  public: {
+    Functions: Record<
+      string,
+      {
+        Args: Record<string, unknown>;
+        Returns: unknown;
+      }
+    >;
+    Tables: Record<
+      string,
+      {
+        Insert: Record<string, unknown>;
+        Relationships: [];
+        Row: Record<string, unknown>;
+        Update: Record<string, unknown>;
+      }
+    >;
+    Views: Record<
+      string,
+      {
+        Relationships: [];
+        Row: Record<string, unknown>;
+      }
+    >;
+  };
+};
+
+let adminClient: ReturnType<typeof createClient<UntypedSupabaseDatabase>> | null =
+  null;
 
 export async function createSupabaseServerClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -43,12 +72,16 @@ export function getSupabaseAdminClient() {
   }
 
   if (!adminClient) {
-    adminClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
+    adminClient = createClient<UntypedSupabaseDatabase>(
+      supabaseUrl,
+      serviceRoleKey,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
       },
-    });
+    );
   }
 
   return adminClient;

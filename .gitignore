@@ -11,6 +11,8 @@ schland-app/out
 # env
 .env*
 schland-app/.env*
+!.env.example
+!schland-app/.env.example
 
 # Vercel
 .vercel

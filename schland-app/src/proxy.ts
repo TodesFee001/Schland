@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getSupabasePublishableKey, hasSupabasePublicEnv } from "@/lib/env";
 
-const PUBLIC_PATHS = ["/login", "/api/health"];
+const PUBLIC_PATHS = ["/login", "/api/health", "/api/discord-bot"];
 
 export async function proxy(request: NextRequest) {
   if (!hasSupabasePublicEnv()) {

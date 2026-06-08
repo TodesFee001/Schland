@@ -1,4 +1,5 @@
 export type EnvironmentStatus = {
+  discordBotSyncToken: boolean;
   supabaseUrl: boolean;
   supabasePublishableKey: boolean;
   supabaseServiceRole: boolean;
@@ -7,6 +8,7 @@ export type EnvironmentStatus = {
 
 export function getEnvironmentStatus(): EnvironmentStatus {
   return {
+    discordBotSyncToken: Boolean(process.env.DISCORD_BOT_SYNC_TOKEN),
     supabaseUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
     supabasePublishableKey: Boolean(getSupabasePublishableKey()),
     supabaseServiceRole: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
