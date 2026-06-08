@@ -19,6 +19,7 @@ const INVITE_STATUSES = new Set([
   "failed",
   "used",
 ]);
+const DM_STATUSES = new Set(["failed", "pending", "sent", "skipped"]);
 
 export async function GET(request: Request) {
   const authError = getDiscordBotAuthError(request);
@@ -42,12 +43,16 @@ export async function GET(request: Request) {
       `
         id,
         invitee_name,
+        invitee_discord_id,
         reason,
         requested_by_name,
         max_uses,
         uses,
         expires_at,
         created_at,
+        dm_status,
+        dm_error,
+        dm_sent_at,
         target_member:members!discord_invite_requests_target_member_id_fkey(id,name,discord_id,discord_username,discord_display_name),
         requested_permission:permissions!discord_invite_requests_requested_permission_id_fkey(id,permission_key,description)
       `,
@@ -122,6 +127,14 @@ export async function PATCH(request: Request) {
     update.bot_error = asText(body?.botError) ?? "Discord invite creation failed";
   }
 
+  const dmStatus = asText(body?.dmStatus ?? body?.dm_status);
+
+  if (dmStatus && DM_STATUSES.has(dmStatus)) {
+    update.dm_status = dmStatus;
+    update.dm_error = asText(body?.dmError ?? body?.dm_error);
+    update.dm_sent_at = dmStatus === "sent" ? new Date().toISOString() : null;
+  }
+
   if (status === "used") {
     update.uses = 1;
   } else if (body && "uses" in body) {
@@ -137,6 +150,7 @@ export async function PATCH(request: Request) {
       `
         id,
         invitee_name,
+        invitee_discord_id,
         reason,
         requested_by_name,
         status,
@@ -146,6 +160,9 @@ export async function PATCH(request: Request) {
         created_at,
         discord_invite_code,
         discord_invite_url,
+        dm_status,
+        dm_error,
+        dm_sent_at,
         bot_error,
         target_member:members!discord_invite_requests_target_member_id_fkey(id,name,discord_id,discord_username,discord_display_name),
         requested_permission:permissions!discord_invite_requests_requested_permission_id_fkey(id,permission_key,description)
@@ -182,8 +199,12 @@ function mapInviteRequest(row: unknown) {
     discordInviteUrl: String(invite.discord_invite_url ?? ""),
     expiresAt: String(invite.expires_at ?? ""),
     id: String(invite.id ?? ""),
+    inviteeDiscordId: String(invite.invitee_discord_id ?? ""),
     inviteeName: String(invite.invitee_name ?? ""),
     maxUses: Number(invite.max_uses ?? 1),
+    dmError: String(invite.dm_error ?? ""),
+    dmSentAt: String(invite.dm_sent_at ?? ""),
+    dmStatus: String(invite.dm_status ?? "pending"),
     permission: {
       description: String(permission.description ?? ""),
       id: String(permission.id ?? ""),

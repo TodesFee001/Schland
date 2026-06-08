@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { createPendingDiscordInvites, runDiscordSync } from "@/lib/discord-sync";
+import {
+  createPendingDiscordInvites,
+  executeDiscordModerationAction,
+  runDiscordSync,
+} from "@/lib/discord-sync";
 import { hasSupabasePublicEnv, hasSupabaseServerEnv } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -310,22 +314,97 @@ export async function setMemberDiscordAnalyticsAction(formData: FormData) {
   );
 }
 
+export async function updateMemberCaseAction(formData: FormData) {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=members&setup=missing-supabase");
+  }
+
+  const memberId = getFormText(formData, "memberId");
+  const reason = getFormText(formData, "reason");
+  const name = getFormText(formData, "name");
+  const status = getFormText(formData, "status") || "active";
+
+  if (!memberId) {
+    redirect("/?section=members&setup=member-update-missing");
+  }
+
+  if (!name) {
+    redirect(
+      `/?section=members&member=${encodeURIComponent(memberId)}&setup=member-update-name`,
+    );
+  }
+
+  if (reason.length < 8) {
+    redirect(
+      `/?section=members&member=${encodeURIComponent(memberId)}&setup=member-update-reason`,
+    );
+  }
+
+  const age = getOptionalFormNumber(formData, "age");
+
+  if (age !== null && age < 0) {
+    redirect(
+      `/?section=members&member=${encodeURIComponent(memberId)}&setup=member-update-age`,
+    );
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect(
+      `/?section=members&member=${encodeURIComponent(memberId)}&setup=member-update-aal2`,
+    );
+  }
+
+  const { error } = await supabase.rpc("update_member_case", {
+    p_age: age,
+    p_discord_display_name: getFormText(formData, "discordDisplayName") || null,
+    p_discord_id: getFormText(formData, "discordId") || null,
+    p_discord_username: getFormText(formData, "discordUsername") || null,
+    p_ea: getFormText(formData, "ea") || null,
+    p_instagram: getFormText(formData, "instagram") || null,
+    p_member_id: memberId,
+    p_name: name,
+    p_notes: getFormText(formData, "notes") || null,
+    p_phone: getFormText(formData, "phone") || null,
+    p_profession: getFormText(formData, "profession") || null,
+    p_reason: reason,
+    p_residence: getFormText(formData, "residence") || null,
+    p_snapchat: getFormText(formData, "snapchat") || null,
+    p_status: isMemberStatus(status) ? status : "active",
+    p_stream: getFormText(formData, "stream") || null,
+    p_tiktok: getFormText(formData, "tiktok") || null,
+    p_ubisoft: getFormText(formData, "ubisoft") || null,
+  });
+
+  if (error) {
+    console.error("update_member_case failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect(
+      `/?section=members&member=${encodeURIComponent(memberId)}&setup=${getMemberUpdateErrorSetup(error)}`,
+    );
+  }
+
+  revalidatePath("/", "layout");
+  redirect(
+    `/?section=members&member=${encodeURIComponent(memberId)}&setup=member-updated`,
+  );
+}
+
 export async function createDiscordInviteRequestAction(formData: FormData) {
   if (!hasSupabasePublicEnv()) {
     redirect("/?section=sync&setup=missing-supabase");
   }
 
+  const inviteeDiscordId = getFormText(formData, "inviteeDiscordId");
   const inviteeName = getFormText(formData, "inviteeName");
-  const permissionId = getFormText(formData, "permissionId");
   const reason = getFormText(formData, "reason");
-  const targetMemberId = getFormText(formData, "targetMemberId") || null;
 
-  if (inviteeName.length < 2) {
+  if (!/^[0-9]{15,25}$/.test(inviteeDiscordId)) {
     redirect("/?section=sync&setup=discord-invite-name");
-  }
-
-  if (!permissionId) {
-    redirect("/?section=sync&setup=discord-invite-permission");
   }
 
   if (reason.length < 8) {
@@ -341,10 +420,9 @@ export async function createDiscordInviteRequestAction(formData: FormData) {
   const { data: inviteId, error } = await supabase.rpc(
     "create_discord_invite_request",
     {
+      p_invitee_discord_id: inviteeDiscordId,
       p_invitee_name: inviteeName,
-      p_permission_id: permissionId,
       p_reason: reason,
-      p_target_member_id: targetMemberId,
     },
   );
 
@@ -367,7 +445,11 @@ export async function createDiscordInviteRequestAction(formData: FormData) {
         limit: 1,
       });
 
-      if (liveSync.failed > 0 || liveSync.created === 0) {
+      if (
+        liveSync.failed > 0 ||
+        liveSync.dmFailed > 0 ||
+        liveSync.created === 0
+      ) {
         setup = "discord-invite-live-failed";
       }
     } catch (liveSyncError) {
@@ -451,6 +533,206 @@ export async function setUserRoleAction(formData: FormData) {
       intent === "assign" ? "role-assigned" : "role-removed"
     }`,
   );
+}
+
+export async function saveCategoryAction(formData: FormData) {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=categories&setup=missing-supabase");
+  }
+
+  const categoryId = getFormText(formData, "categoryId") || null;
+  const name = getFormText(formData, "name");
+  const sortOrder = getOptionalFormNumber(formData, "sortOrder");
+
+  if (name.length < 2) {
+    redirect("/?section=categories&setup=category-name");
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect("/?section=categories&setup=category-aal2");
+  }
+
+  const { error } = await supabase.rpc("upsert_file_category", {
+    p_active: getFormBool(formData, "active"),
+    p_category_id: categoryId,
+    p_description: getFormText(formData, "description") || null,
+    p_name: name,
+    p_sort_order: sortOrder,
+  });
+
+  if (error) {
+    console.error("upsert_file_category failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect(`/?section=categories&setup=${getCategoryErrorSetup(error)}`);
+  }
+
+  revalidatePath("/", "layout");
+  redirect(
+    `/?section=categories&setup=${categoryId ? "category-saved" : "category-created"}`,
+  );
+}
+
+export async function saveRoleAction(formData: FormData) {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=roles&setup=missing-supabase");
+  }
+
+  const roleId = getFormText(formData, "roleId") || null;
+  const roleKey = getFormText(formData, "roleKey");
+  const name = getFormText(formData, "name");
+
+  if (name.length < 2) {
+    redirect("/?section=roles&setup=role-name");
+  }
+
+  if (!roleId && roleKey.length < 2) {
+    redirect("/?section=roles&setup=role-key");
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect("/?section=roles&setup=role-aal2");
+  }
+
+  const { error } = await supabase.rpc("save_role", {
+    p_active: getFormBool(formData, "active"),
+    p_description: getFormText(formData, "description") || null,
+    p_name: name,
+    p_role_id: roleId,
+    p_role_key: roleKey || name,
+  });
+
+  if (error) {
+    console.error("save_role failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect(`/?section=roles&setup=${getRoleErrorSetup(error)}`);
+  }
+
+  revalidatePath("/", "layout");
+  redirect(`/?section=roles&setup=${roleId ? "role-saved" : "role-created"}`);
+}
+
+export async function setRolePermissionAction(formData: FormData) {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=roles&setup=missing-supabase");
+  }
+
+  const roleId = getFormText(formData, "roleId");
+  const permissionId = getFormText(formData, "permissionId");
+  const intent = getFormText(formData, "intent");
+
+  if (!roleId || !permissionId || (intent !== "assign" && intent !== "remove")) {
+    redirect("/?section=roles&setup=role-permission-missing");
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect("/?section=roles&setup=role-aal2");
+  }
+
+  const { error } = await supabase.rpc("set_role_permission_assignment", {
+    p_assign: intent === "assign",
+    p_permission_id: permissionId,
+    p_role_id: roleId,
+  });
+
+  if (error) {
+    console.error("set_role_permission_assignment failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect(`/?section=roles&setup=${getRolePermissionErrorSetup(error)}`);
+  }
+
+  revalidatePath("/", "layout");
+  redirect(
+    `/?section=roles&setup=${
+      intent === "assign" ? "role-permission-added" : "role-permission-removed"
+    }`,
+  );
+}
+
+export async function runModerationAction(formData: FormData) {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
+    redirect("/?section=moderation&setup=moderation-action-failed");
+  }
+
+  const memberId = getFormText(formData, "memberId");
+  const actionType = getFormText(formData, "actionType");
+  const reason = getFormText(formData, "reason");
+  const durationMinutes = getOptionalFormNumber(formData, "durationMinutes");
+
+  if (!memberId || !isModerationAction(actionType)) {
+    redirect("/?section=moderation&setup=moderation-action-missing");
+  }
+
+  if (reason.length < 8) {
+    redirect("/?section=moderation&setup=moderation-action-reason");
+  }
+
+  if (actionType === "timeout" && (!durationMinutes || durationMinutes < 1)) {
+    redirect("/?section=moderation&setup=moderation-action-duration");
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect("/?section=moderation&setup=moderation-action-aal2");
+  }
+
+  const { data: canManage } = await supabase.rpc("has_permission", {
+    required_key: "moderation.manage",
+  });
+
+  if (canManage !== true) {
+    redirect("/?section=moderation&setup=moderation-action-denied");
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: profile } = user
+    ? await supabase
+        .from("profiles")
+        .select("display_name,username,email")
+        .eq("id", user.id)
+        .maybeSingle()
+    : { data: null };
+  const moderatorName = profile
+    ? String(
+        profile.display_name ?? profile.username ?? profile.email ?? "Website",
+      )
+    : "Website";
+
+  try {
+    await executeDiscordModerationAction({
+      actionType,
+      durationSeconds:
+        actionType === "timeout" ? Number(durationMinutes) * 60 : null,
+      memberId,
+      moderatorName,
+      reason,
+    });
+  } catch (error) {
+    console.error("discord moderation action failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    redirect("/?section=moderation&setup=moderation-action-failed");
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/?section=moderation&setup=moderation-action-done");
 }
 
 export async function createFolderAction(formData: FormData) {
@@ -734,6 +1016,22 @@ function getOptionalFormNumber(formData: FormData, key: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function isMemberStatus(value: string): value is "active" | "archived" | "review" {
+  return value === "active" || value === "archived" || value === "review";
+}
+
+function isModerationAction(
+  value: string,
+): value is "ban" | "kick" | "timeout" | "voice_disconnect" | "warn" {
+  return (
+    value === "ban" ||
+    value === "kick" ||
+    value === "timeout" ||
+    value === "voice_disconnect" ||
+    value === "warn"
+  );
+}
+
 function buildStoragePath(userId: string, originalName: string) {
   const safeName =
     originalName
@@ -848,6 +1146,36 @@ function getMemberDiscordAnalyticsErrorSetup(error: { message?: string }) {
   return "member-analytics-error";
 }
 
+function getMemberUpdateErrorSetup(error: { code?: string; message?: string }) {
+  const message = error.message?.toLowerCase() ?? "";
+
+  if (message.includes("reason")) {
+    return "member-update-reason";
+  }
+
+  if (message.includes("name")) {
+    return "member-update-name";
+  }
+
+  if (message.includes("age")) {
+    return "member-update-age";
+  }
+
+  if (message.includes("not found")) {
+    return "member-update-missing";
+  }
+
+  if (message.includes("denied") || message.includes("permission")) {
+    return "member-update-permission";
+  }
+
+  if (error.code === "23505" || message.includes("duplicate")) {
+    return "member-update-duplicate";
+  }
+
+  return "member-update-error";
+}
+
 function getDiscordInviteErrorSetup(error: { message?: string }) {
   const message = error.message?.toLowerCase() ?? "";
 
@@ -894,6 +1222,64 @@ function getUserRoleErrorSetup(error: { message?: string }) {
   }
 
   return "role-assignment-error";
+}
+
+function getCategoryErrorSetup(error: { code?: string; message?: string }) {
+  const message = error.message?.toLowerCase() ?? "";
+
+  if (message.includes("name") || message.includes("required")) {
+    return "category-name";
+  }
+
+  if (message.includes("denied") || message.includes("permission")) {
+    return "category-permission";
+  }
+
+  if (error.code === "23505" || message.includes("duplicate")) {
+    return "category-duplicate";
+  }
+
+  return "category-error";
+}
+
+function getRoleErrorSetup(error: { code?: string; message?: string }) {
+  const message = error.message?.toLowerCase() ?? "";
+
+  if (message.includes("name")) {
+    return "role-name";
+  }
+
+  if (message.includes("administrator")) {
+    return "role-admin-core";
+  }
+
+  if (message.includes("denied") || message.includes("permission")) {
+    return "role-permission";
+  }
+
+  if (error.code === "23505" || message.includes("duplicate")) {
+    return "role-duplicate";
+  }
+
+  return "role-error";
+}
+
+function getRolePermissionErrorSetup(error: { message?: string }) {
+  const message = error.message?.toLowerCase() ?? "";
+
+  if (message.includes("administrator")) {
+    return "role-admin-core";
+  }
+
+  if (message.includes("not found")) {
+    return "role-permission-missing";
+  }
+
+  if (message.includes("denied") || message.includes("permission")) {
+    return "role-permission";
+  }
+
+  return "role-error";
 }
 
 function getFolderErrorSetup(error: { code?: string; message?: string }) {

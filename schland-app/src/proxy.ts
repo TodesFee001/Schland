@@ -3,7 +3,15 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getSupabasePublishableKey, hasSupabasePublicEnv } from "@/lib/env";
 
-const PUBLIC_PATHS = ["/login", "/api/health", "/api/discord-bot"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/register",
+  "/forgot-password",
+  "/update-password",
+  "/auth/callback",
+  "/api/health",
+  "/api/discord-bot",
+];
 
 export async function proxy(request: NextRequest) {
   if (!hasSupabasePublicEnv()) {
@@ -52,7 +60,12 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (user && request.nextUrl.pathname === "/login") {
+  if (
+    user &&
+    ["/login", "/register", "/forgot-password"].includes(
+      request.nextUrl.pathname,
+    )
+  ) {
     const appUrl = request.nextUrl.clone();
     appUrl.pathname = "/";
     appUrl.search = "";

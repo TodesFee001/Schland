@@ -34,7 +34,6 @@ import type { LucideIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
-  claimFirstAdminAction,
   createDiscordInviteRequestAction,
   createFolderAction,
   createMemberAction,
@@ -42,11 +41,16 @@ import {
   downloadFileAction,
   linkMemberFileAction,
   openMemberCaseAction,
+  runModerationAction,
   runDiscordManualSyncAction,
+  saveCategoryAction,
+  saveRoleAction,
   setMemberDiscordAnalyticsAction,
   setFolderPermissionAction,
+  setRolePermissionAction,
   setUserRoleAction,
   unlinkMemberFileAction,
+  updateMemberCaseAction,
   uploadFileAction,
 } from "@/app/actions";
 import type { AuthStatus } from "@/lib/auth";
@@ -364,7 +368,12 @@ export function WorkspaceShell({
           />
         );
       case "categories":
-        return <CategoriesSection categories={workspaceData.categories} />;
+        return (
+          <CategoriesSection
+            categories={workspaceData.categories}
+            mfaReady={mfaReady}
+          />
+        );
       case "users":
         return (
           <UsersSection
@@ -374,20 +383,28 @@ export function WorkspaceShell({
           />
         );
       case "roles":
-        return <RolesSection roles={workspaceData.roles} />;
+        return (
+          <RolesSection
+            mfaReady={mfaReady}
+            permissions={workspaceData.permissions}
+            roles={workspaceData.roles}
+          />
+        );
       case "activity":
         return <ActivitySection members={members} />;
       case "moderation":
         return (
-          <ModerationSection moderationEvents={workspaceData.moderationEvents} />
+          <ModerationSection
+            members={members}
+            mfaReady={mfaReady}
+            moderationEvents={workspaceData.moderationEvents}
+          />
         );
       case "sync":
         return (
           <SyncSection
             discordInvites={workspaceData.discordInvites}
-            members={members}
             mfaReady={mfaReady}
-            permissions={workspaceData.permissions}
             sync={workspaceData.sync}
           />
         );
@@ -942,9 +959,219 @@ function MembersSection({
                   <DetailRow label="Wohnort" value={selectedMember.residence} />
                   <DetailRow label="Berufsfeld" value={selectedMember.profession} />
                   <DetailRow label="Discord" value={selectedMember.discordName} />
+                  <DetailRow
+                    label="Server"
+                    value={selectedMember.discordOnServer ? "Auf Server" : "Nicht gesehen"}
+                  />
+                  <DetailRow
+                    label="Beigetreten"
+                    value={selectedMember.discordJoinedAt}
+                  />
                   <DetailRow label="Eingeladen von" value={selectedMember.invitedBy} />
                 </dl>
               </div>
+
+              <details className="rounded-lg border border-[var(--line)] bg-[var(--surface-muted)] p-3">
+                <summary className="cursor-pointer text-sm font-semibold">
+                  Akte bearbeiten
+                </summary>
+                <form action={updateMemberCaseAction} className="mt-3 grid gap-3">
+                  <input type="hidden" name="memberId" value={selectedMember.id} />
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <label className="grid gap-1">
+                      <span className="text-xs font-medium uppercase text-neutral-500">
+                        Name
+                      </span>
+                      <input
+                        name="name"
+                        defaultValue={selectedMember.name}
+                        required
+                        className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                      />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-xs font-medium uppercase text-neutral-500">
+                        Status
+                      </span>
+                      <select
+                        name="status"
+                        defaultValue={selectedMember.statusKey}
+                        className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                      >
+                        <option value="active">Aktiv</option>
+                        <option value="review">Pruefung</option>
+                        <option value="archived">Archiv</option>
+                      </select>
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-xs font-medium uppercase text-neutral-500">
+                        Alter
+                      </span>
+                      <input
+                        name="age"
+                        type="number"
+                        min={0}
+                        defaultValue={selectedMember.age ?? ""}
+                        className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                      />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-xs font-medium uppercase text-neutral-500">
+                        Telefon
+                      </span>
+                      <input
+                        name="phone"
+                        defaultValue={selectedMember.phone}
+                        className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                      />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-xs font-medium uppercase text-neutral-500">
+                        Wohnort
+                      </span>
+                      <input
+                        name="residence"
+                        defaultValue={selectedMember.residence === "-" ? "" : selectedMember.residence}
+                        className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                      />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-xs font-medium uppercase text-neutral-500">
+                        Berufsfeld
+                      </span>
+                      <input
+                        name="profession"
+                        defaultValue={selectedMember.profession === "-" ? "" : selectedMember.profession}
+                        className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                      />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-xs font-medium uppercase text-neutral-500">
+                        Discord-ID
+                      </span>
+                      <input
+                        name="discordId"
+                        defaultValue={selectedMember.discordId === "-" ? "" : selectedMember.discordId}
+                        className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                      />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-xs font-medium uppercase text-neutral-500">
+                        Discord-Name
+                      </span>
+                      <input
+                        name="discordUsername"
+                        defaultValue={selectedMember.discordName === "-" ? "" : selectedMember.discordName}
+                        className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                      />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-xs font-medium uppercase text-neutral-500">
+                        Anzeigename
+                      </span>
+                      <input
+                        name="discordDisplayName"
+                        defaultValue={selectedMember.displayName === "-" ? "" : selectedMember.displayName}
+                        className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                      />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-xs font-medium uppercase text-neutral-500">
+                        Instagram
+                      </span>
+                      <input
+                        name="instagram"
+                        defaultValue={selectedMember.instagram}
+                        className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                      />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-xs font-medium uppercase text-neutral-500">
+                        Snapchat
+                      </span>
+                      <input
+                        name="snapchat"
+                        defaultValue={selectedMember.snapchat}
+                        className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                      />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-xs font-medium uppercase text-neutral-500">
+                        TikTok
+                      </span>
+                      <input
+                        name="tiktok"
+                        defaultValue={selectedMember.tiktok}
+                        className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                      />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-xs font-medium uppercase text-neutral-500">
+                        Stream
+                      </span>
+                      <input
+                        name="stream"
+                        defaultValue={selectedMember.stream}
+                        className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                      />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-xs font-medium uppercase text-neutral-500">
+                        Ubisoft
+                      </span>
+                      <input
+                        name="ubisoft"
+                        defaultValue={selectedMember.ubisoft}
+                        className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                      />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-xs font-medium uppercase text-neutral-500">
+                        EA
+                      </span>
+                      <input
+                        name="ea"
+                        defaultValue={selectedMember.ea}
+                        className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                      />
+                    </label>
+                  </div>
+                  <label className="grid gap-1">
+                    <span className="text-xs font-medium uppercase text-neutral-500">
+                      Notizen
+                    </span>
+                    <textarea
+                      name="notes"
+                      defaultValue={selectedMember.notes}
+                      rows={3}
+                      className="rounded-md border border-[var(--line)] bg-white px-2 py-2 text-sm outline-none focus:border-[var(--accent)]"
+                    />
+                  </label>
+                  <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                    <label className="grid gap-1">
+                      <span className="text-xs font-medium uppercase text-neutral-500">
+                        Grund
+                      </span>
+                      <input
+                        name="reason"
+                        required
+                        minLength={8}
+                        className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                      />
+                    </label>
+                    <div className="flex items-end">
+                      <button
+                        type="submit"
+                        disabled={!mfaReady}
+                        className="flex h-9 items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-3 text-sm text-white disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        <Save className="size-4" aria-hidden="true" />
+                        <span>Speichern</span>
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </details>
 
               <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-muted)] p-3">
                 <div className="flex items-start justify-between gap-3">
@@ -1684,33 +1911,154 @@ function getFolderPermissionLabel(permission: WorkspaceFolderPermission) {
   return labels.join(", ") || "Keine";
 }
 
-function CategoriesSection({ categories }: { categories: WorkspaceCategory[] }) {
+function CategoriesSection({
+  categories,
+  mfaReady,
+}: {
+  categories: WorkspaceCategory[];
+  mfaReady: boolean;
+}) {
   return (
-    <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
-      <SectionHeader icon={Folder} title="Kategorien" />
-      <div className="grid gap-2 border-t border-[var(--line)] p-4 md:grid-cols-2 xl:grid-cols-4">
-        {categories.length > 0 ? (
-          categories.map((category, index) => (
-            <article
-              key={category.id}
-              className="rounded-lg border border-[var(--line)] bg-white p-4"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <p className="font-medium">{category.name}</p>
-                <span className="font-mono text-xs text-neutral-500">
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-              </div>
-              <p className="mt-3 text-sm text-neutral-500">
-                {category.description}
-              </p>
-            </article>
-          ))
-        ) : (
-          <EmptyPanel label="Noch keine Kategorien angelegt." />
-        )}
-      </div>
-    </section>
+    <div className="grid gap-5">
+      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+        <SectionHeader icon={Plus} title="Kategorie anlegen" />
+        <form
+          action={saveCategoryAction}
+          className="grid gap-3 border-t border-[var(--line)] p-4 lg:grid-cols-[1fr_1.6fr_120px_auto_auto]"
+        >
+          <fieldset disabled={!mfaReady} className="contents disabled:opacity-60">
+            <label className="grid gap-2">
+              <span className="text-xs font-medium uppercase text-neutral-500">
+                Name
+              </span>
+              <input
+                name="name"
+                required
+                minLength={2}
+                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+              />
+            </label>
+            <label className="grid gap-2">
+              <span className="text-xs font-medium uppercase text-neutral-500">
+                Beschreibung
+              </span>
+              <input
+                name="description"
+                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+              />
+            </label>
+            <label className="grid gap-2">
+              <span className="text-xs font-medium uppercase text-neutral-500">
+                Reihenfolge
+              </span>
+              <input
+                name="sortOrder"
+                type="number"
+                min={0}
+                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+              />
+            </label>
+            <label className="flex items-end gap-2 pb-2 text-sm">
+              <input
+                name="active"
+                type="checkbox"
+                defaultChecked
+                className="size-4 accent-[var(--accent)]"
+              />
+              <span>Aktiv</span>
+            </label>
+            <div className="flex items-end">
+              <button
+                type="submit"
+                disabled={!mfaReady}
+                className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45 lg:w-auto"
+              >
+                <Save className="size-4" aria-hidden="true" />
+                <span>Anlegen</span>
+              </button>
+            </div>
+          </fieldset>
+        </form>
+      </section>
+
+      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+        <SectionHeader icon={Folder} title="Kategorien" />
+        <div className="grid gap-3 border-t border-[var(--line)] p-4 lg:grid-cols-2">
+          {categories.length > 0 ? (
+            categories.map((category) => (
+              <form
+                key={category.id}
+                action={saveCategoryAction}
+                className="grid gap-3 rounded-lg border border-[var(--line)] bg-white p-4"
+              >
+                <input type="hidden" name="categoryId" value={category.id} />
+                <div className="grid gap-2 sm:grid-cols-[1fr_110px]">
+                  <label className="grid gap-1">
+                    <span className="text-xs font-medium uppercase text-neutral-500">
+                      Name
+                    </span>
+                    <input
+                      name="name"
+                      defaultValue={category.name}
+                      required
+                      minLength={2}
+                      disabled={!mfaReady}
+                      className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                    />
+                  </label>
+                  <label className="grid gap-1">
+                    <span className="text-xs font-medium uppercase text-neutral-500">
+                      Reihenfolge
+                    </span>
+                    <input
+                      name="sortOrder"
+                      type="number"
+                      min={0}
+                      defaultValue={category.sortOrder}
+                      disabled={!mfaReady}
+                      className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                    />
+                  </label>
+                </div>
+                <label className="grid gap-1">
+                  <span className="text-xs font-medium uppercase text-neutral-500">
+                    Beschreibung
+                  </span>
+                  <input
+                    name="description"
+                    defaultValue={category.description}
+                    disabled={!mfaReady}
+                    className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                  />
+                </label>
+                <div className="flex items-center justify-between gap-3">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      name="active"
+                      type="checkbox"
+                      defaultChecked={category.active}
+                      disabled={!mfaReady}
+                      className="size-4 accent-[var(--accent)] disabled:cursor-not-allowed"
+                    />
+                    <span>Aktiv</span>
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={!mfaReady}
+                    className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <Save className="size-4" aria-hidden="true" />
+                    <span>Speichern</span>
+                  </button>
+                </div>
+              </form>
+            ))
+          ) : (
+            <EmptyPanel label="Noch keine Kategorien angelegt." />
+          )}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -1781,6 +2129,9 @@ function UsersSection({
                 <tr key={user.id} className="border-t border-[var(--line)]">
                   <td className="px-4 py-3">
                     <div className="font-medium">{user.displayName}</div>
+                    <div className="font-mono text-xs text-neutral-700">
+                      @{user.username}
+                    </div>
                     <div className="truncate font-mono text-xs text-neutral-500">
                       {user.email}
                     </div>
@@ -1898,59 +2249,245 @@ function UsersSection({
   );
 }
 
-function RolesSection({ roles }: { roles: WorkspaceRoleRow[] }) {
+function RolesSection({
+  mfaReady,
+  permissions,
+  roles,
+}: {
+  mfaReady: boolean;
+  permissions: WorkspacePermissionOption[];
+  roles: WorkspaceRoleRow[];
+}) {
+  const permissionOptions = permissions.filter(
+    (permission) => permission.id && permission.key,
+  );
+
   return (
-    <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
-      <SectionHeader icon={KeyRound} title="Rollen & Berechtigungen" />
-      <div className="overflow-x-auto border-t border-[var(--line)]">
-        <table className="w-full min-w-[760px] text-sm">
-          <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
-            <tr>
-              <th className="px-4 py-3 font-medium">Rolle</th>
-              <th className="px-4 py-3 font-medium">Berechtigungen</th>
-              <th className="px-4 py-3 font-medium">Benutzer</th>
-              <th className="px-4 py-3 font-medium">Aktion</th>
-            </tr>
-          </thead>
-          <tbody>
-            {roles.length > 0 ? (
-              roles.map((row) => (
-                <tr key={row.id} className="border-t border-[var(--line)]">
-                  <td className="px-4 py-3 font-medium">{row.role}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {row.permissions.length > 0 ? (
-                        row.permissions.slice(0, 5).map((permission) => (
-                          <span
-                            key={permission}
-                            className="rounded-md bg-[var(--surface-muted)] px-2 py-1 text-xs"
-                          >
-                            {permission}
+    <div className="grid gap-5">
+      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+        <SectionHeader icon={Plus} title="Rolle anlegen" />
+        <form
+          action={saveRoleAction}
+          className="grid gap-3 border-t border-[var(--line)] p-4 lg:grid-cols-[180px_1fr_1.4fr_auto_auto]"
+        >
+          <fieldset disabled={!mfaReady} className="contents disabled:opacity-60">
+            <label className="grid gap-2">
+              <span className="text-xs font-medium uppercase text-neutral-500">
+                Schluessel
+              </span>
+              <input
+                name="roleKey"
+                required
+                minLength={2}
+                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+              />
+            </label>
+            <label className="grid gap-2">
+              <span className="text-xs font-medium uppercase text-neutral-500">
+                Name
+              </span>
+              <input
+                name="name"
+                required
+                minLength={2}
+                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+              />
+            </label>
+            <label className="grid gap-2">
+              <span className="text-xs font-medium uppercase text-neutral-500">
+                Beschreibung
+              </span>
+              <input
+                name="description"
+                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+              />
+            </label>
+            <label className="flex items-end gap-2 pb-2 text-sm">
+              <input
+                name="active"
+                type="checkbox"
+                defaultChecked
+                className="size-4 accent-[var(--accent)]"
+              />
+              <span>Aktiv</span>
+            </label>
+            <div className="flex items-end">
+              <button
+                type="submit"
+                disabled={!mfaReady}
+                className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45 lg:w-auto"
+              >
+                <Save className="size-4" aria-hidden="true" />
+                <span>Anlegen</span>
+              </button>
+            </div>
+          </fieldset>
+        </form>
+      </section>
+
+      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+        <SectionHeader icon={KeyRound} title="Rollen & Berechtigungen" />
+        <div className="overflow-x-auto border-t border-[var(--line)]">
+          <table className="w-full min-w-[1180px] text-sm">
+            <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">Rolle</th>
+                <th className="px-4 py-3 font-medium">Berechtigungen</th>
+                <th className="px-4 py-3 font-medium">Benutzer</th>
+                <th className="px-4 py-3 font-medium">Recht hinzufuegen</th>
+              </tr>
+            </thead>
+            <tbody>
+              {roles.length > 0 ? (
+                roles.map((row) => (
+                  <tr key={row.id} className="border-t border-[var(--line)] align-top">
+                    <td className="px-4 py-3">
+                      <form action={saveRoleAction} className="grid min-w-[320px] gap-2">
+                        <input type="hidden" name="roleId" value={row.id} />
+                        {row.roleKey === "administrator" ? (
+                          <input type="hidden" name="active" value="on" />
+                        ) : null}
+                        <label className="grid gap-1">
+                          <span className="text-xs font-medium uppercase text-neutral-500">
+                            Schluessel
                           </span>
-                        ))
-                      ) : (
-                        <span className="text-xs text-neutral-500">
-                          Keine Rechte sichtbar
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">{row.members}</td>
-                  <td className="px-4 py-3">
-                    <button className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm">
-                      <Pencil className="size-4" aria-hidden="true" />
-                      <span>Bearbeiten</span>
-                    </button>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <TableEmpty colSpan={4} label="Noch keine Rollen sichtbar." />
-            )}
-          </tbody>
-        </table>
-      </div>
-    </section>
+                          <input
+                            name="roleKey"
+                            defaultValue={row.roleKey}
+                            readOnly={row.roleKey === "administrator"}
+                            disabled={!mfaReady}
+                            className="h-9 rounded-md border border-[var(--line)] bg-white px-2 font-mono text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                          />
+                        </label>
+                        <label className="grid gap-1">
+                          <span className="text-xs font-medium uppercase text-neutral-500">
+                            Name
+                          </span>
+                          <input
+                            name="name"
+                            defaultValue={row.role}
+                            required
+                            disabled={!mfaReady}
+                            className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                          />
+                        </label>
+                        <label className="grid gap-1">
+                          <span className="text-xs font-medium uppercase text-neutral-500">
+                            Beschreibung
+                          </span>
+                          <input
+                            name="description"
+                            defaultValue={row.description}
+                            disabled={!mfaReady}
+                            className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                          />
+                        </label>
+                        <div className="flex items-center justify-between gap-3">
+                          <label className="flex items-center gap-2 text-sm">
+                            <input
+                              name="active"
+                              type="checkbox"
+                              defaultChecked={row.active}
+                              disabled={!mfaReady || row.roleKey === "administrator"}
+                              className="size-4 accent-[var(--accent)] disabled:cursor-not-allowed"
+                            />
+                            <span>Aktiv</span>
+                          </label>
+                          <button
+                            type="submit"
+                            disabled={!mfaReady}
+                            className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm disabled:cursor-not-allowed disabled:opacity-45"
+                          >
+                            <Pencil className="size-4" aria-hidden="true" />
+                            <span>Speichern</span>
+                          </button>
+                        </div>
+                      </form>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex max-w-[520px] flex-wrap gap-1">
+                        {row.permissionsDetailed.length > 0 ? (
+                          row.permissionsDetailed.map((permission) => (
+                            <form
+                              key={permission.id}
+                              action={setRolePermissionAction}
+                              className="inline-flex"
+                            >
+                              <input type="hidden" name="roleId" value={row.id} />
+                              <input
+                                type="hidden"
+                                name="permissionId"
+                                value={permission.id}
+                              />
+                              <input type="hidden" name="intent" value="remove" />
+                              <button
+                                type="submit"
+                                title={`${permission.description} entfernen`}
+                                disabled={!mfaReady}
+                                className="flex h-8 items-center gap-1 rounded-md bg-[var(--surface-muted)] px-2 text-xs disabled:cursor-not-allowed disabled:opacity-45"
+                              >
+                                <span>{permission.description}</span>
+                                <XCircle className="size-3.5" aria-hidden="true" />
+                              </button>
+                            </form>
+                          ))
+                        ) : (
+                          <span className="text-xs text-neutral-500">
+                            Keine Rechte sichtbar
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">{row.members}</td>
+                    <td className="px-4 py-3">
+                      <form
+                        action={setRolePermissionAction}
+                        className="flex min-w-[300px] items-center gap-2"
+                      >
+                        <input type="hidden" name="roleId" value={row.id} />
+                        <input type="hidden" name="intent" value="assign" />
+                        <select
+                          name="permissionId"
+                          required
+                          defaultValue=""
+                          disabled={!mfaReady || permissionOptions.length === 0}
+                          className="h-9 min-w-0 flex-1 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          <option value="">Recht waehlen</option>
+                          {permissionOptions.map((permission) => (
+                            <option
+                              key={permission.id}
+                              value={permission.id}
+                              disabled={row.permissionsDetailed.some(
+                                (assignedPermission) =>
+                                  assignedPermission.id === permission.id,
+                              )}
+                            >
+                              {permission.description}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="submit"
+                          title="Recht hinzufuegen"
+                          disabled={!mfaReady || permissionOptions.length === 0}
+                          className="flex h-9 items-center gap-2 rounded-md bg-[var(--foreground)] px-3 text-sm text-white disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          <Plus className="size-4" aria-hidden="true" />
+                          <span>Hinzufuegen</span>
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <TableEmpty colSpan={4} label="Noch keine Rollen sichtbar." />
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -2000,11 +2537,18 @@ function ActivitySection({ members }: { members: WorkspaceMember[] }) {
 }
 
 function ModerationSection({
+  members,
+  mfaReady,
   moderationEvents,
 }: {
+  members: WorkspaceMember[];
+  mfaReady: boolean;
   moderationEvents: WorkspaceModerationEvent[];
 }) {
   const [moderationSearch, setModerationSearch] = useState("");
+  const moderationMembers = members.filter(
+    (member) => member.discordId && member.discordId !== "-",
+  );
   const query = moderationSearch.trim().toLowerCase();
   const filteredEvents = query
     ? moderationEvents.filter((event) =>
@@ -2038,6 +2582,87 @@ function ModerationSection({
 
   return (
     <div className="grid gap-5">
+      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+        <SectionHeader icon={Shield} title="Moderation ausfuehren" />
+        <form
+          action={runModerationAction}
+          className="grid gap-3 border-t border-[var(--line)] p-4 lg:grid-cols-[1.3fr_180px_140px_1.5fr_auto]"
+        >
+          <fieldset disabled={!mfaReady} className="contents disabled:opacity-60">
+            <label className="grid gap-2">
+              <span className="text-xs font-medium uppercase text-neutral-500">
+                Mitglied
+              </span>
+              <select
+                name="memberId"
+                required
+                defaultValue=""
+                disabled={!mfaReady || moderationMembers.length === 0}
+                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <option value="">Mitglied waehlen</option>
+                {moderationMembers.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name} ({member.discordId})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-2">
+              <span className="text-xs font-medium uppercase text-neutral-500">
+                Aktion
+              </span>
+              <select
+                name="actionType"
+                required
+                defaultValue="warn"
+                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <option value="warn">Warn</option>
+                <option value="timeout">Mute / Timeout</option>
+                <option value="kick">Kick</option>
+                <option value="voice_disconnect">Disconnect</option>
+                <option value="ban">Ban</option>
+              </select>
+            </label>
+            <label className="grid gap-2">
+              <span className="text-xs font-medium uppercase text-neutral-500">
+                Minuten
+              </span>
+              <input
+                name="durationMinutes"
+                type="number"
+                min={1}
+                placeholder="Timeout"
+                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+              />
+            </label>
+            <label className="grid gap-2">
+              <span className="text-xs font-medium uppercase text-neutral-500">
+                Grund
+              </span>
+              <input
+                name="reason"
+                required
+                minLength={8}
+                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+              />
+            </label>
+            <div className="flex items-end">
+              <button
+                type="submit"
+                title="Moderation ausfuehren"
+                disabled={!mfaReady || moderationMembers.length === 0}
+                className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45 lg:w-auto"
+              >
+                <Shield className="size-4" aria-hidden="true" />
+                <span>Ausfuehren</span>
+              </button>
+            </div>
+          </fieldset>
+        </form>
+      </section>
+
       <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
         <SectionHeader
           icon={Shield}
@@ -2161,21 +2786,13 @@ function ModerationSection({
 
 function SyncSection({
   discordInvites,
-  members,
   mfaReady,
-  permissions,
   sync,
 }: {
   discordInvites: WorkspaceDiscordInvite[];
-  members: WorkspaceMember[];
   mfaReady: boolean;
-  permissions: WorkspacePermissionOption[];
   sync: WorkspaceSyncStatus;
 }) {
-  const permissionOptions = permissions.filter(
-    (permission) => permission.id && permission.key,
-  );
-
   return (
     <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
       <div className="grid gap-5">
@@ -2232,7 +2849,7 @@ function SyncSection({
           />
           <form
             action={createDiscordInviteRequestAction}
-            className="grid gap-3 border-t border-[var(--line)] p-4 xl:grid-cols-[1fr_1fr_1fr_1.4fr_auto]"
+            className="grid gap-3 border-t border-[var(--line)] p-4 xl:grid-cols-[1fr_1fr_1.4fr_auto]"
           >
             <fieldset
               disabled={!mfaReady}
@@ -2240,50 +2857,24 @@ function SyncSection({
             >
               <label className="grid gap-2">
                 <span className="text-xs font-medium uppercase text-neutral-500">
-                  Wen einladen
+                  Discord User-ID
                 </span>
                 <input
-                  name="inviteeName"
+                  name="inviteeDiscordId"
                   required
-                  minLength={2}
+                  inputMode="numeric"
                   className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
                 />
               </label>
               <label className="grid gap-2">
                 <span className="text-xs font-medium uppercase text-neutral-500">
-                  Mitglied
+                  Name
                 </span>
-                <select
-                  name="targetMemberId"
-                  defaultValue=""
+                <input
+                  name="inviteeName"
+                  minLength={2}
                   className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  <option value="">Ohne Akte</option>
-                  {members.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="grid gap-2">
-                <span className="text-xs font-medium uppercase text-neutral-500">
-                  Berechtigung
-                </span>
-                <select
-                  name="permissionId"
-                  required
-                  disabled={!mfaReady || permissionOptions.length === 0}
-                  defaultValue=""
-                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  <option value="">Recht waehlen</option>
-                  {permissionOptions.map((permission) => (
-                    <option key={permission.id} value={permission.id}>
-                      {permission.description}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
               <label className="grid gap-2">
                 <span className="text-xs font-medium uppercase text-neutral-500">
@@ -2300,7 +2891,7 @@ function SyncSection({
                 <button
                   type="submit"
                   title="Einladung als Datenbankauftrag anlegen"
-                  disabled={!mfaReady || permissionOptions.length === 0}
+                  disabled={!mfaReady}
                   className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45 xl:w-auto"
                 >
                   <Save className="size-4" aria-hidden="true" />
@@ -2321,8 +2912,8 @@ function SyncSection({
               <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
                 <tr>
                   <th className="px-4 py-3 font-medium">Einladung</th>
-                  <th className="px-4 py-3 font-medium">Berechtigung</th>
                   <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">DM</th>
                   <th className="px-4 py-3 font-medium">Discord-Link</th>
                   <th className="px-4 py-3 font-medium">Gueltigkeit</th>
                   <th className="px-4 py-3 font-medium">Grund</th>
@@ -2335,13 +2926,7 @@ function SyncSection({
                       <td className="px-4 py-3">
                         <div className="font-medium">{invite.inviteeName}</div>
                         <div className="font-mono text-xs text-neutral-500">
-                          {invite.targetMemberName} {"-"} {invite.targetDiscordId}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div>{invite.permission}</div>
-                        <div className="font-mono text-xs text-neutral-500">
-                          {invite.permissionKey}
+                          {invite.inviteeDiscordId || "-"}
                         </div>
                       </td>
                       <td className="px-4 py-3">
@@ -2353,6 +2938,25 @@ function SyncSection({
                         >
                           {invite.statusLabel}
                         </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={[
+                            "rounded-md px-2 py-1 text-xs font-medium",
+                            getInviteDmStatusClass(invite.dmStatus),
+                          ].join(" ")}
+                        >
+                          {mapInviteDmStatus(invite.dmStatus)}
+                        </span>
+                        {invite.dmError ? (
+                          <div className="mt-1 max-w-[180px] truncate text-xs text-[var(--danger)]">
+                            {invite.dmError}
+                          </div>
+                        ) : invite.dmSentAt !== "-" ? (
+                          <div className="mt-1 text-xs text-neutral-500">
+                            {invite.dmSentAt}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3">
                         {invite.discordInviteUrl ? (
@@ -2481,22 +3085,31 @@ function SettingsSection({
       </section>
 
       <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
-        <SectionHeader icon={UserCog} title="Erststart" />
-        <div className="grid gap-4 border-t border-[var(--line)] p-4 text-sm">
-          <p className="text-neutral-600">
-            Der erste echte Benutzer kann einmalig Administrator werden. Danach
-            ist dieser Startknopf wirkungslos.
-          </p>
-          <form action={claimFirstAdminAction}>
-            <button
-              type="submit"
-              disabled={!authStatus.signedIn}
-              className="flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              <Shield className="size-4" aria-hidden="true" />
-              <span>Administrator aktivieren</span>
-            </button>
-          </form>
+        <SectionHeader icon={Bot} title="Discord-Betrieb" />
+        <div className="grid gap-3 border-t border-[var(--line)] p-4 text-sm">
+          <StatusLine
+            active={environmentStatus.discordBotToken}
+            label="Bot-Token"
+          />
+          <StatusLine
+            active={environmentStatus.discordGuildId}
+            label="Server-ID"
+          />
+          <StatusLine
+            active={environmentStatus.discordInviteChannelId}
+            label="Invite-Kanal"
+          />
+          <StatusLine active={environmentStatus.cronSecret} label="Cron-Schutz" />
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+        <SectionHeader icon={Database} title="Datenhaltung" />
+        <div className="grid gap-3 border-t border-[var(--line)] p-4 text-sm">
+          <StatusLine active label="Mitgliederakten per Discord-ID" />
+          <StatusLine active label="Bots ausgeschlossen" />
+          <StatusLine active label="Moderationsregister dauerhaft" />
+          <StatusLine active label="Einladungen per Discord-DM" />
         </div>
       </section>
     </div>
@@ -2614,7 +3227,34 @@ function getInviteStatusClass(status: string) {
   return "bg-[var(--surface-muted)] text-neutral-600";
 }
 
+function mapInviteDmStatus(status: string) {
+  const labels: Record<string, string> = {
+    failed: "Fehler",
+    pending: "Offen",
+    sent: "Gesendet",
+    skipped: "Nicht gesendet",
+  };
+
+  return labels[status] ?? status;
+}
+
+function getInviteDmStatusClass(status: string) {
+  if (status === "sent") {
+    return "bg-[var(--accent-soft)] text-[var(--accent-strong)]";
+  }
+
+  if (status === "failed") {
+    return "bg-red-50 text-[var(--danger)]";
+  }
+
+  return "bg-[var(--surface-muted)] text-neutral-600";
+}
+
 function getModerationTypeClass(eventType: string) {
+  if (eventType === "warn") {
+    return "bg-[var(--surface-muted)] text-neutral-600";
+  }
+
   if (eventType === "ban") {
     return "bg-red-50 text-[var(--danger)]";
   }

@@ -1,20 +1,19 @@
-import { Database, KeyRound, Lock, Shield } from "lucide-react";
+import { Database, Lock, Shield } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { signInAction } from "@/app/login/actions";
+import { signUpAction } from "@/app/login/actions";
 import { hasSupabasePublicEnv } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-type LoginPageProps = {
+type RegisterPageProps = {
   searchParams: Promise<{
     error?: string;
-    message?: string;
     next?: string;
   }>;
 };
 
-export default async function LoginPage({ searchParams }: LoginPageProps) {
+export default async function RegisterPage({ searchParams }: RegisterPageProps) {
   const params = await searchParams;
   const configured = hasSupabasePublicEnv();
   const nextPath = sanitizeNextPath(params.next ?? "/");
@@ -40,41 +39,26 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             </div>
             <div>
               <p className="text-sm font-semibold">Schland Intern</p>
-              <p className="text-xs text-neutral-500">Vercel + Supabase</p>
+              <p className="text-xs text-neutral-500">Website-Zugriff</p>
             </div>
           </div>
           <div className="max-w-2xl">
             <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
-              Geschuetzter Zugang
+              Account erstellen
             </h1>
             <p className="mt-3 text-neutral-600">
-              Login per Benutzername, 2FA-Freigabe und Rollenpruefung fuer die
-              Verwaltung.
+              Die E-Mail bleibt fuer interne Account- und Passwortvorgaenge
+              hinterlegt.
             </p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            {[
-              ["Login", "Benutzername"],
-              ["2FA", "MFA/AAL2"],
-              ["Akten", "Grund + Log"],
-            ].map(([label, value]) => (
-              <div
-                key={label}
-                className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-4"
-              >
-                <p className="text-sm text-neutral-500">{label}</p>
-                <p className="mt-2 font-semibold">{value}</p>
-              </div>
-            ))}
           </div>
         </section>
 
         <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
           <div className="flex items-center gap-3 border-b border-[var(--line)] px-5 py-4">
             <Lock className="size-5 text-[var(--accent)]" aria-hidden="true" />
-            <h2 className="font-semibold">Anmelden</h2>
+            <h2 className="font-semibold">Registrieren</h2>
           </div>
-          <form action={signInAction} className="grid gap-4 p-5">
+          <form action={signUpAction} className="grid gap-4 p-5">
             <input type="hidden" name="next" value={nextPath} />
 
             {!configured ? (
@@ -89,12 +73,6 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               </div>
             ) : null}
 
-            {params.message ? (
-              <div className="rounded-lg border border-[var(--accent)] bg-[var(--accent-soft)] p-3 text-sm text-[var(--accent-strong)]">
-                {params.message}
-              </div>
-            ) : null}
-
             <label className="grid gap-2">
               <span className="text-xs font-medium uppercase text-neutral-500">
                 Benutzername
@@ -103,6 +81,33 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                 name="username"
                 type="text"
                 autoComplete="username"
+                minLength={3}
+                maxLength={32}
+                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+                required
+              />
+            </label>
+
+            <label className="grid gap-2">
+              <span className="text-xs font-medium uppercase text-neutral-500">
+                Anzeigename
+              </span>
+              <input
+                name="displayName"
+                type="text"
+                autoComplete="name"
+                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+              />
+            </label>
+
+            <label className="grid gap-2">
+              <span className="text-xs font-medium uppercase text-neutral-500">
+                E-Mail
+              </span>
+              <input
+                name="email"
+                type="email"
+                autoComplete="email"
                 className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
                 required
               />
@@ -115,7 +120,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               <input
                 name="password"
                 type="password"
-                autoComplete="current-password"
+                autoComplete="new-password"
+                minLength={8}
                 className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
                 required
               />
@@ -126,25 +132,15 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               className="flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white"
             >
               <Shield className="size-4" aria-hidden="true" />
-              <span>Anmelden</span>
+              <span>Account erstellen</span>
             </button>
 
-            <div className="grid gap-2 sm:grid-cols-2">
-              <Link
-                href={`/register?next=${encodeURIComponent(nextPath)}`}
-                className="flex h-10 items-center justify-center gap-2 rounded-md border border-[var(--line)] bg-white px-4 text-sm font-medium text-[var(--foreground)]"
-              >
-                <Lock className="size-4" aria-hidden="true" />
-                <span>Registrieren</span>
-              </Link>
-              <Link
-                href="/forgot-password"
-                className="flex h-10 items-center justify-center gap-2 rounded-md border border-[var(--line)] bg-white px-4 text-sm font-medium text-[var(--foreground)]"
-              >
-                <KeyRound className="size-4" aria-hidden="true" />
-                <span>Passwort vergessen</span>
-              </Link>
-            </div>
+            <Link
+              href={`/login?next=${encodeURIComponent(nextPath)}`}
+              className="flex h-10 items-center justify-center rounded-md border border-[var(--line)] bg-white px-4 text-sm font-medium text-[var(--foreground)]"
+            >
+              Zur Anmeldung
+            </Link>
           </form>
         </section>
       </div>

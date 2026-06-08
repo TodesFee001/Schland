@@ -6,6 +6,8 @@ const DISCORD_AUDIT_LOG_SOURCE = "discord-audit-log";
 const INVITE_MAX_AGE_SECONDS = 24 * 60 * 60;
 const INVITE_BATCH_LIMIT = 10;
 const AUDIT_LOG_BATCH_LIMIT = 100;
+const MEMBER_PAGE_LIMIT = 1000;
+const MEMBER_MAX_PAGES = 10;
 const DISCORD_EPOCH = BigInt("1420070400000");
 
 const AUDIT_LOG_ACTIONS = {
@@ -33,10 +35,27 @@ type DiscordInvite = {
 };
 
 type DiscordUser = {
+  bot?: boolean | null;
   discriminator?: string | null;
   global_name?: string | null;
   id?: string | null;
   username?: string | null;
+};
+
+type DiscordGuildMember = {
+  joined_at?: string | null;
+  nick?: string | null;
+  roles?: string[] | null;
+  user?: DiscordUser | null;
+};
+
+type DiscordGuildRole = {
+  id?: string | null;
+  name?: string | null;
+};
+
+type DiscordDmChannel = {
+  id?: string | null;
 };
 
 type DiscordAuditLogChange = {
@@ -62,6 +81,9 @@ type DiscordAuditLogResponse = {
 
 type InviteSyncSummary = {
   created: number;
+  dmFailed: number;
+  dmSent: number;
+  dmSkipped: number;
   expired: number;
   failed: number;
   scanned: number;
@@ -79,6 +101,14 @@ type ModerationSyncSummary = {
   recorded: number;
   scanned: number;
   skipped: number;
+};
+
+type MemberSyncSummary = {
+  failed: number;
+  rolesSynced: number;
+  scanned: number;
+  skippedBots: number;
+  upserted: number;
 };
 
 type ModerationEventPayload = {
@@ -100,6 +130,7 @@ type ModerationEventPayload = {
 
 export type DiscordSyncSummary = {
   invites: InviteSyncSummary;
+  members: MemberSyncSummary;
   missingConfig: string[];
   moderation: ModerationSyncSummary;
   status: DiscordSyncStatus;
@@ -111,7 +142,22 @@ export async function runDiscordSync(trigger = "cron"): Promise<DiscordSyncSumma
   const syncRunId = await startSyncRun(supabase, trigger);
   const config = getDiscordSyncConfig();
   const summary: DiscordSyncSummary = {
-    invites: { created: 0, expired: 0, failed: 0, scanned: 0 },
+    invites: {
+      created: 0,
+      dmFailed: 0,
+      dmSent: 0,
+      dmSkipped: 0,
+      expired: 0,
+      failed: 0,
+      scanned: 0,
+    },
+    members: {
+      failed: 0,
+      rolesSynced: 0,
+      scanned: 0,
+      skippedBots: 0,
+      upserted: 0,
+    },
     missingConfig: config.missing,
     moderation: {
       failed: 0,
@@ -131,6 +177,15 @@ export async function runDiscordSync(trigger = "cron"): Promise<DiscordSyncSumma
   }
 
   try {
+    try {
+      summary.members = await syncDiscordMembers(supabase, config);
+    } catch (memberSyncError) {
+      summary.members.failed += 1;
+      console.error("discord member sync failed", {
+        message: getErrorMessage(memberSyncError),
+      });
+    }
+
     summary.invites = await syncInviteRequests(supabase, config);
     summary.moderation = await syncModerationAuditLogs(
       supabase,
@@ -138,7 +193,10 @@ export async function runDiscordSync(trigger = "cron"): Promise<DiscordSyncSumma
       syncRunId,
     );
     summary.status =
-      summary.invites.failed > 0 || summary.moderation.failed > 0
+      summary.invites.failed > 0 ||
+      summary.invites.dmFailed > 0 ||
+      summary.members.failed > 0 ||
+      summary.moderation.failed > 0
         ? "partial"
         : "success";
 
@@ -218,6 +276,7 @@ async function finishSyncRun(
         implementation: "vercel-cron-discord-rest",
         invites: summary.invites,
         lastAuditLogId: summary.moderation.lastAuditLogId,
+        members: summary.members,
         missingConfig: summary.missingConfig,
         moderation: summary.moderation,
       },
@@ -242,6 +301,9 @@ async function syncInviteRequests(
   const now = new Date().toISOString();
   const summary: InviteSyncSummary = {
     created: 0,
+    dmFailed: 0,
+    dmSent: 0,
+    dmSkipped: 0,
     expired: 0,
     failed: 0,
     scanned: 0,
@@ -264,7 +326,9 @@ async function syncInviteRequests(
 
   let query = supabase
     .from("discord_invite_requests")
-    .select("id,invitee_name,reason,requested_by_name,expires_at,created_at")
+    .select(
+      "id,invitee_name,invitee_discord_id,reason,requested_by_name,expires_at,created_at",
+    )
     .eq("status", "pending")
     .gt("expires_at", now)
     .order("created_at", { ascending: true });
@@ -304,14 +368,43 @@ async function syncInviteRequests(
         throw new Error("Discord returned no invite code.");
       }
 
+      const inviteUrl = `https://discord.gg/${code}`;
+      const inviteeDiscordId = asText(invite.invitee_discord_id);
+      const dmUpdate: Record<string, unknown> = {
+        dm_error: null,
+        dm_sent_at: null,
+        dm_status: inviteeDiscordId ? "pending" : "skipped",
+      };
+
+      if (inviteeDiscordId) {
+        try {
+          await sendDiscordInviteDm(config, {
+            inviteUrl,
+            reason: asText(invite.reason),
+            recipientId: inviteeDiscordId,
+            requestedByName: asText(invite.requested_by_name),
+          });
+          dmUpdate.dm_sent_at = new Date().toISOString();
+          dmUpdate.dm_status = "sent";
+          summary.dmSent += 1;
+        } catch (dmError) {
+          dmUpdate.dm_error = truncateMessage(getErrorMessage(dmError));
+          dmUpdate.dm_status = "failed";
+          summary.dmFailed += 1;
+        }
+      } else {
+        summary.dmSkipped += 1;
+      }
+
       const { error: updateError } = await supabase
         .from("discord_invite_requests")
         .update({
           bot_error: null,
           discord_invite_code: code,
-          discord_invite_url: `https://discord.gg/${code}`,
+          discord_invite_url: inviteUrl,
           status: "created",
           uses: 0,
+          ...dmUpdate,
         })
         .eq("id", id);
 
@@ -387,6 +480,342 @@ async function markInviteFailed(
       details: error.details,
       message: error.message,
     });
+  }
+}
+
+async function syncDiscordMembers(
+  supabase: SupabaseAdminClient,
+  config: DiscordSyncConfig,
+): Promise<MemberSyncSummary> {
+  const summary: MemberSyncSummary = {
+    failed: 0,
+    rolesSynced: 0,
+    scanned: 0,
+    skippedBots: 0,
+    upserted: 0,
+  };
+  const roleMap = await syncGuildRoles(supabase, config);
+  let after = "0";
+
+  for (let page = 0; page < MEMBER_MAX_PAGES; page += 1) {
+    const members = await fetchGuildMembers(config, after);
+
+    if (members.length === 0) {
+      break;
+    }
+
+    for (const member of members) {
+      summary.scanned += 1;
+
+      try {
+        const result = await upsertDiscordMember(supabase, member, roleMap);
+
+        if (result === "bot") {
+          summary.skippedBots += 1;
+        } else if (result) {
+          summary.upserted += 1;
+          summary.rolesSynced += result.rolesSynced;
+        }
+      } catch (error) {
+        summary.failed += 1;
+        console.error("discord member upsert failed", {
+          error: getErrorMessage(error),
+          userId: asText(member.user?.id),
+        });
+      }
+    }
+
+    const lastMember = members[members.length - 1];
+    const lastUserId = asText(lastMember?.user?.id);
+
+    if (!lastUserId || members.length < MEMBER_PAGE_LIMIT) {
+      break;
+    }
+
+    after = lastUserId;
+  }
+
+  return summary;
+}
+
+async function syncGuildRoles(
+  supabase: SupabaseAdminClient,
+  config: DiscordSyncConfig,
+) {
+  const roles = await discordRequest<DiscordGuildRole[]>(
+    config,
+    `/guilds/${config.guildId}/roles`,
+    { method: "GET" },
+  );
+  const rows = roles
+    .map((role) => ({
+      discord_role_id: asText(role.id),
+      last_synced_at: new Date().toISOString(),
+      role_name: asText(role.name),
+    }))
+    .filter((role) => role.discord_role_id && role.role_name);
+
+  if (rows.length === 0) {
+    return new Map<string, string>();
+  }
+
+  const { data, error } = await supabase
+    .from("discord_roles")
+    .upsert(rows, { onConflict: "discord_role_id" })
+    .select("id,discord_role_id");
+
+  if (error) {
+    throw new Error(`Discord role sync failed: ${error.message}`);
+  }
+
+  const roleMap = new Map<string, string>();
+
+  for (const row of data ?? []) {
+    const discordRoleId = asText(asRecord(row).discord_role_id);
+    const id = asText(asRecord(row).id);
+
+    if (discordRoleId && id) {
+      roleMap.set(discordRoleId, id);
+    }
+  }
+
+  return roleMap;
+}
+
+async function fetchGuildMembers(
+  config: DiscordSyncConfig,
+  after: string,
+) {
+  const searchParams = new URLSearchParams({
+    after,
+    limit: String(MEMBER_PAGE_LIMIT),
+  });
+
+  return discordRequest<DiscordGuildMember[]>(
+    config,
+    `/guilds/${config.guildId}/members?${searchParams.toString()}`,
+    { method: "GET" },
+  );
+}
+
+async function upsertDiscordMember(
+  supabase: SupabaseAdminClient,
+  member: DiscordGuildMember,
+  roleMap: Map<string, string>,
+) {
+  const user = member.user;
+  const discordId = asText(user?.id);
+
+  if (!discordId) {
+    return null;
+  }
+
+  if (user?.bot) {
+    return "bot" as const;
+  }
+
+  const discordUsername = formatDiscordUser(user ?? {});
+  const displayName =
+    asText(member.nick) ??
+    asText(user?.global_name) ??
+    asText(user?.username) ??
+    discordId;
+  const now = new Date().toISOString();
+  const joinedAt = asIsoDate(member.joined_at);
+  const payload = {
+    discord_display_name: displayName,
+    discord_id: discordId,
+    discord_is_bot: false,
+    discord_joined_at: joinedAt,
+    discord_last_seen_at: now,
+    discord_on_server: true,
+    discord_username: discordUsername,
+    name: displayName,
+    notes: "Automatisch durch Discord-Sync angelegt.",
+  };
+
+  const { data, error } = await supabase
+    .from("members")
+    .upsert(payload, { onConflict: "discord_id" })
+    .select("id")
+    .single();
+
+  if (error) {
+    throw new Error(`Member upsert failed: ${error.message}`);
+  }
+
+  const memberId = asText(asRecord(data).id);
+
+  if (!memberId) {
+    return null;
+  }
+
+  const roleIds = Array.isArray(member.roles) ? member.roles : [];
+  const mappedRoleIds = roleIds
+    .map((roleId) => roleMap.get(roleId))
+    .filter((roleId): roleId is string => Boolean(roleId));
+
+  const { error: deleteError } = await supabase
+    .from("member_discord_roles")
+    .delete()
+    .eq("member_id", memberId);
+
+  if (deleteError) {
+    throw new Error(`Member role cleanup failed: ${deleteError.message}`);
+  }
+
+  if (mappedRoleIds.length > 0) {
+    const { error: insertError } = await supabase
+      .from("member_discord_roles")
+      .insert(
+        mappedRoleIds.map((discordRoleId) => ({
+          discord_role_id: discordRoleId,
+          member_id: memberId,
+          synced_at: now,
+        })),
+      );
+
+    if (insertError) {
+      throw new Error(`Member role write failed: ${insertError.message}`);
+    }
+  }
+
+  return { memberId, rolesSynced: mappedRoleIds.length };
+}
+
+async function sendDiscordInviteDm(
+  config: DiscordSyncConfig,
+  invite: {
+    inviteUrl: string;
+    reason: string | null;
+    recipientId: string;
+    requestedByName: string | null;
+  },
+) {
+  const channel = await discordRequest<DiscordDmChannel>(
+    config,
+    "/users/@me/channels",
+    {
+      body: JSON.stringify({ recipient_id: invite.recipientId }),
+      method: "POST",
+    },
+  );
+  const channelId = asText(channel.id);
+
+  if (!channelId) {
+    throw new Error("Discord returned no DM channel.");
+  }
+
+  await discordRequest(config, `/channels/${channelId}/messages`, {
+    body: JSON.stringify({
+      content: [
+        "Du wurdest auf den Schland Discord eingeladen.",
+        invite.inviteUrl,
+        invite.requestedByName ? `Angelegt von: ${invite.requestedByName}` : null,
+        invite.reason ? `Grund: ${invite.reason}` : null,
+        "Der Link ist einmal verwendbar und 1 Tag gueltig.",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    }),
+    method: "POST",
+  });
+}
+
+export async function executeDiscordModerationAction(input: {
+  actionType: "ban" | "kick" | "timeout" | "voice_disconnect" | "warn";
+  durationSeconds: number | null;
+  memberId: string;
+  moderatorName?: string | null;
+  reason: string;
+}) {
+  const supabase = getSupabaseAdminClient();
+  const config = getDiscordSyncConfig();
+
+  if (config.missing.length > 0) {
+    throw new Error(
+      `Discord moderation missing config: ${config.missing.join(", ")}`,
+    );
+  }
+
+  const { data: memberRow, error: memberError } = await supabase
+    .from("members")
+    .select("id,name,discord_id,discord_username,discord_display_name")
+    .eq("id", input.memberId)
+    .single();
+
+  if (memberError || !memberRow?.discord_id) {
+    throw new Error("Discord member not found.");
+  }
+
+  const member = asRecord(memberRow);
+  const discordUserId = String(member.discord_id);
+  const reason = input.reason.trim();
+  const auditReason = encodeAuditReason(
+    `Schland moderation | ${input.actionType} | reason: ${reason}`,
+  );
+  const startedAt = new Date();
+  const endedAt =
+    input.actionType === "timeout" && input.durationSeconds
+      ? new Date(startedAt.getTime() + input.durationSeconds * 1000)
+      : null;
+
+  if (input.actionType === "timeout") {
+    await discordRequest(config, `/guilds/${config.guildId}/members/${discordUserId}`, {
+      body: JSON.stringify({
+        communication_disabled_until: endedAt?.toISOString() ?? null,
+      }),
+      headers: { "X-Audit-Log-Reason": auditReason },
+      method: "PATCH",
+    });
+  } else if (input.actionType === "kick") {
+    await discordRequest(config, `/guilds/${config.guildId}/members/${discordUserId}`, {
+      headers: { "X-Audit-Log-Reason": auditReason },
+      method: "DELETE",
+    });
+  } else if (input.actionType === "ban") {
+    await discordRequest(config, `/guilds/${config.guildId}/bans/${discordUserId}`, {
+      body: JSON.stringify({ delete_message_seconds: 0 }),
+      headers: { "X-Audit-Log-Reason": auditReason },
+      method: "PUT",
+    });
+  } else if (input.actionType === "voice_disconnect") {
+    await discordRequest(config, `/guilds/${config.guildId}/members/${discordUserId}`, {
+      body: JSON.stringify({ channel_id: null }),
+      headers: { "X-Audit-Log-Reason": auditReason },
+      method: "PATCH",
+    });
+  }
+
+  const payload = {
+    discord_user_id: discordUserId,
+    discord_username: String(
+      member.discord_display_name ?? member.discord_username ?? member.name ?? "",
+    ),
+    duration_seconds:
+      input.actionType === "timeout" ? input.durationSeconds : null,
+    ended_at: endedAt?.toISOString() ?? null,
+    event_type: input.actionType,
+    external_event_id: `web-${crypto.randomUUID()}`,
+    last_synced_at: new Date().toISOString(),
+    member_id: input.memberId,
+    metadata: {
+      actionSource: "web",
+    },
+    moderator_name: input.moderatorName ?? "Website",
+    reason,
+    source: "schland-web-action",
+    started_at: startedAt.toISOString(),
+    status:
+      input.actionType === "ban" || input.actionType === "timeout"
+        ? "active"
+        : "recorded",
+  };
+
+  const { error } = await supabase.from("discord_moderation_events").insert(payload);
+
+  if (error) {
+    throw new Error(`Moderation event write failed: ${error.message}`);
   }
 }
 

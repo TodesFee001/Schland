@@ -12,7 +12,7 @@ import { getSupabaseAdminClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-const EVENT_TYPES = new Set(["ban", "kick", "timeout", "voice_disconnect"]);
+const EVENT_TYPES = new Set(["ban", "kick", "timeout", "voice_disconnect", "warn"]);
 const EVENT_STATUSES = new Set([
   "active",
   "expired",
@@ -51,6 +51,8 @@ export async function POST(request: Request) {
     requestedStatus && EVENT_STATUSES.has(requestedStatus)
       ? requestedStatus
       : eventType === "kick" || eventType === "voice_disconnect"
+        ? "recorded"
+        : eventType === "warn"
         ? "recorded"
         : "active";
   const source = asText(body?.source) ?? "discord";

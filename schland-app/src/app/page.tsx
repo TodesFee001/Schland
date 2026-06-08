@@ -278,10 +278,73 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "member-updated") {
+    return {
+      tone: "success" as const,
+      text: "Mitgliederakte wurde gespeichert und protokolliert.",
+    };
+  }
+
+  if (setup === "member-update-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum Bearbeiten einer Mitgliederakte muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "member-update-name") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte gib einen Namen fuer die Mitgliederakte an.",
+    };
+  }
+
+  if (setup === "member-update-reason") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte gib fuer die Aenderung einen Grund mit mindestens 8 Zeichen an.",
+    };
+  }
+
+  if (setup === "member-update-age") {
+    return {
+      tone: "warning" as const,
+      text: "Das Alter darf nicht negativ sein.",
+    };
+  }
+
+  if (setup === "member-update-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Diese Mitgliederakte wurde nicht gefunden.",
+    };
+  }
+
+  if (setup === "member-update-permission") {
+    return {
+      tone: "error" as const,
+      text: "Mitgliederakte konnte nicht bearbeitet werden. Dem Account fehlt die passende Berechtigung.",
+    };
+  }
+
+  if (setup === "member-update-duplicate") {
+    return {
+      tone: "warning" as const,
+      text: "Diese Discord-ID ist bereits in einer anderen Mitgliederakte hinterlegt.",
+    };
+  }
+
+  if (setup === "member-update-error") {
+    return {
+      tone: "error" as const,
+      text: "Mitgliederakte konnte nicht bearbeitet werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
   if (setup === "discord-invite-created") {
     return {
       tone: "success" as const,
-      text: "Discord-Einladung wurde angelegt und sofort als 1x nutzbarer Link mit 1 Tag Gueltigkeit erstellt.",
+      text: "Discord-Einladung wurde angelegt, als 1x-Link erstellt und per Discord-DM versendet.",
     };
   }
 
@@ -295,7 +358,7 @@ function getSetupNotice(setup?: string) {
   if (setup === "discord-invite-live-failed") {
     return {
       tone: "error" as const,
-      text: "Discord-Einladung wurde gespeichert, aber der Live-Sync konnte den Link nicht erstellen. Der genaue Fehler wurde protokolliert.",
+      text: "Discord-Einladung wurde gespeichert, aber Link-Erstellung oder Discord-DM ist fehlgeschlagen. Der genaue Fehler wurde protokolliert.",
     };
   }
 
@@ -320,6 +383,55 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "moderation-action-done") {
+    return {
+      tone: "success" as const,
+      text: "Moderationsaktion wurde ausgefuehrt und im Register gespeichert.",
+    };
+  }
+
+  if (setup === "moderation-action-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte waehle Mitglied und Moderationsaktion aus.",
+    };
+  }
+
+  if (setup === "moderation-action-reason") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte gib fuer die Moderationsaktion einen Grund mit mindestens 8 Zeichen an.",
+    };
+  }
+
+  if (setup === "moderation-action-duration") {
+    return {
+      tone: "warning" as const,
+      text: "Timeout/Mute braucht eine Dauer in Minuten.",
+    };
+  }
+
+  if (setup === "moderation-action-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum Ausfuehren von Moderation muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "moderation-action-denied") {
+    return {
+      tone: "error" as const,
+      text: "Moderationsaktion wurde abgelehnt. Dem Account fehlt die passende Berechtigung.",
+    };
+  }
+
+  if (setup === "moderation-action-failed") {
+    return {
+      tone: "error" as const,
+      text: "Moderationsaktion konnte nicht ausgefuehrt werden. Bot-Rechte und Discord-Ziel pruefen.",
+    };
+  }
+
   if (setup === "discord-invite-aal2") {
     return {
       tone: "warning" as const,
@@ -330,7 +442,7 @@ function getSetupNotice(setup?: string) {
   if (setup === "discord-invite-name") {
     return {
       tone: "warning" as const,
-      text: "Bitte gib an, wen du einladen moechtest.",
+      text: "Bitte gib die Discord User-ID der Person ein.",
     };
   }
 
@@ -412,6 +524,132 @@ function getSetupNotice(setup?: string) {
   }
 
   if (setup === "role-assignment-error") {
+    return {
+      tone: "error" as const,
+      text: "Rolle konnte nicht geaendert werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
+  if (setup === "category-created") {
+    return {
+      tone: "success" as const,
+      text: "Kategorie wurde angelegt.",
+    };
+  }
+
+  if (setup === "category-saved") {
+    return {
+      tone: "success" as const,
+      text: "Kategorie wurde gespeichert.",
+    };
+  }
+
+  if (setup === "category-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum Aendern von Kategorien muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "category-name") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte gib einen Kategorienamen mit mindestens 2 Zeichen an.",
+    };
+  }
+
+  if (setup === "category-permission") {
+    return {
+      tone: "error" as const,
+      text: "Kategorie konnte nicht geaendert werden. Dem Account fehlt die passende Berechtigung.",
+    };
+  }
+
+  if (setup === "category-duplicate") {
+    return {
+      tone: "warning" as const,
+      text: "Eine Kategorie mit diesem Namen existiert bereits.",
+    };
+  }
+
+  if (setup === "category-error") {
+    return {
+      tone: "error" as const,
+      text: "Kategorie konnte nicht geaendert werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
+  if (setup === "role-created") {
+    return {
+      tone: "success" as const,
+      text: "Rolle wurde angelegt.",
+    };
+  }
+
+  if (setup === "role-saved") {
+    return {
+      tone: "success" as const,
+      text: "Rolle wurde gespeichert.",
+    };
+  }
+
+  if (setup === "role-permission-added") {
+    return {
+      tone: "success" as const,
+      text: "Berechtigung wurde der Rolle hinzugefuegt.",
+    };
+  }
+
+  if (setup === "role-permission-removed") {
+    return {
+      tone: "success" as const,
+      text: "Berechtigung wurde aus der Rolle entfernt.",
+    };
+  }
+
+  if (setup === "role-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum Aendern von Rollen und Rechten muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "role-name" || setup === "role-key") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte gib Rollenname und Rollenschluessel an.",
+    };
+  }
+
+  if (setup === "role-permission-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Rolle oder Berechtigung wurde nicht gefunden.",
+    };
+  }
+
+  if (setup === "role-admin-core") {
+    return {
+      tone: "warning" as const,
+      text: "Kernrechte der Administratorrolle bleiben aktiv.",
+    };
+  }
+
+  if (setup === "role-permission") {
+    return {
+      tone: "error" as const,
+      text: "Rolle konnte nicht geaendert werden. Dem Account fehlt die passende Berechtigung.",
+    };
+  }
+
+  if (setup === "role-duplicate") {
+    return {
+      tone: "warning" as const,
+      text: "Eine Rolle mit diesem Namen oder Schluessel existiert bereits.",
+    };
+  }
+
+  if (setup === "role-error") {
     return {
       tone: "error" as const,
       text: "Rolle konnte nicht geaendert werden. Der genaue Fehler wurde protokolliert.",

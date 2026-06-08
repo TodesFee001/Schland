@@ -11,17 +11,29 @@ export type WorkspaceMember = {
   discordAnalyticsDisabledReason: string;
   discordAnalyticsEnabled: boolean;
   discordId: string;
+  discordJoinedAt: string;
+  discordLastSeenAt: string;
   discordName: string;
+  discordOnServer: boolean;
   displayName: string;
+  ea: string;
+  instagram: string;
   invitedBy: string;
   lastActivity: string;
   linkedFiles: WorkspaceMemberFile[];
   messagesMonth: number;
   name: string;
+  notes: string;
+  phone: string;
   profession: string;
   residence: string;
   roles: string[];
+  snapchat: string;
   status: MemberStatusLabel;
+  statusKey: "active" | "archived" | "review";
+  stream: string;
+  tiktok: string;
+  ubisoft: string;
   voiceHoursMonth: number;
 };
 
@@ -78,9 +90,12 @@ export type WorkspaceFile = {
 };
 
 export type WorkspaceRoleRow = {
+  active: boolean;
+  description: string;
   id: string;
   members: number;
   permissions: string[];
+  permissionsDetailed: WorkspacePermissionOption[];
   role: string;
   roleKey: string;
 };
@@ -94,10 +109,14 @@ export type WorkspacePermissionOption = {
 export type WorkspaceDiscordInvite = {
   botError: string;
   createdAt: string;
+  dmError: string;
+  dmSentAt: string;
+  dmStatus: string;
   discordInviteCode: string;
   discordInviteUrl: string;
   expiresAt: string;
   id: string;
+  inviteeDiscordId: string;
   inviteeName: string;
   maxUses: number;
   permission: string;
@@ -161,6 +180,7 @@ export type WorkspaceUserRow = {
   status: string;
   statusLabel: string;
   twoFactorEnabled: boolean;
+  username: string;
 };
 
 export type WorkspaceUserSummary = {
@@ -214,11 +234,23 @@ export const demoWorkspaceData: WorkspaceData = {
       discordAnalyticsEnabled: true,
       residence: "Gera",
       profession: "IT-Service",
+      phone: "-",
       discordId: "842109348219",
+      discordJoinedAt: "Heute, 00:20",
+      discordLastSeenAt: "Heute, 00:42",
       discordName: "elyx",
+      discordOnServer: true,
       displayName: "Elias",
+      instagram: "",
+      snapchat: "",
+      tiktok: "",
+      stream: "",
+      ubisoft: "",
+      ea: "",
+      notes: "",
       invitedBy: "Mara Seidel",
       status: "Aktiv",
+      statusKey: "active",
       lastActivity: "Heute, 00:42",
       roles: ["Mitglied", "Voice Aktiv", "Dateienzugriff"],
       messagesMonth: 418,
@@ -251,11 +283,23 @@ export const demoWorkspaceData: WorkspaceData = {
       discordAnalyticsEnabled: true,
       residence: "Jena",
       profession: "Medien",
+      phone: "-",
       discordId: "742101095203",
+      discordJoinedAt: "Gestern, 20:10",
+      discordLastSeenAt: "Gestern, 22:18",
       discordName: "mara.s",
+      discordOnServer: true,
       displayName: "Mara",
+      instagram: "",
+      snapchat: "",
+      tiktok: "",
+      stream: "",
+      ubisoft: "",
+      ea: "",
+      notes: "",
       invitedBy: "System",
       status: "Aktiv",
+      statusKey: "active",
       lastActivity: "Gestern, 22:18",
       roles: ["Moderator", "Ermittlungszugriff", "Mitgliederakten-Leser"],
       messagesMonth: 912,
@@ -280,11 +324,23 @@ export const demoWorkspaceData: WorkspaceData = {
       discordAnalyticsEnabled: false,
       residence: "Leipzig",
       profession: "Logistik",
+      phone: "-",
       discordId: "663180193355",
+      discordJoinedAt: "02.06.2026, 18:20",
+      discordLastSeenAt: "02.06.2026, 19:04",
       discordName: "nobeck",
+      discordOnServer: true,
       displayName: "Noah",
+      instagram: "",
+      snapchat: "",
+      tiktok: "",
+      stream: "",
+      ubisoft: "",
+      ea: "",
+      notes: "Datenschutz-Widerspruch hinterlegt.",
       invitedBy: "Elias Kramer",
       status: "Pruefung",
+      statusKey: "review",
       lastActivity: "Auswertung deaktiviert",
       roles: ["Mitglied", "Bilderzugriff"],
       messagesMonth: 0,
@@ -425,30 +481,42 @@ export const demoWorkspaceData: WorkspaceData = {
   roles: [
     {
       id: "role-demo-1",
+      active: true,
+      description: "Vollzugriff auf Systemverwaltung",
       role: "Administrator",
       roleKey: "administrator",
       permissions: ["Benutzer verwalten", "Rollen verwalten", "Dateien loeschen"],
+      permissionsDetailed: [],
       members: 2,
     },
     {
       id: "role-demo-2",
+      active: true,
+      description: "Lesender Zugriff auf Mitgliederakten",
       role: "Mitgliederakten-Leser",
       roleKey: "member_case_reader",
       permissions: ["Akten suchen", "Akten oeffnen", "Dateiverknuepfungen sehen"],
+      permissionsDetailed: [],
       members: 4,
     },
     {
       id: "role-demo-3",
+      active: true,
+      description: "Bearbeitender Zugriff auf Mitgliederakten",
       role: "Mitgliederakten-Bearbeiter",
       roleKey: "member_case_editor",
       permissions: ["Akten bearbeiten", "Dateien verknuepfen", "Akten exportieren"],
+      permissionsDetailed: [],
       members: 3,
     },
     {
       id: "role-demo-4",
+      active: true,
+      description: "Zugriff auf Datei-Datenbank",
       role: "Dateienzugriff",
       roleKey: "file_access",
       permissions: ["Datei-Datenbank anzeigen", "Datei oeffnen", "Datei herunterladen"],
+      permissionsDetailed: [],
       members: 16,
     },
   ],
@@ -467,7 +535,11 @@ export const demoWorkspaceData: WorkspaceData = {
   discordInvites: [
     {
       botError: "",
+      dmError: "",
+      dmSentAt: "-",
+      dmStatus: "pending",
       id: "invite-demo-1",
+      inviteeDiscordId: "123456789012345678",
       inviteeName: "Beispielmitglied",
       discordInviteCode: "demo",
       discordInviteUrl: "https://discord.gg/demo",
@@ -595,6 +667,7 @@ export const demoWorkspaceData: WorkspaceData = {
         status: "active",
         statusLabel: "Aktiv",
         twoFactorEnabled: true,
+        username: "mara",
         roles: [
           {
             id: "role-demo-1",
@@ -615,6 +688,7 @@ export const demoWorkspaceData: WorkspaceData = {
         status: "active",
         statusLabel: "Aktiv",
         twoFactorEnabled: true,
+        username: "elias",
         roles: [
           {
             id: "role-demo-4",
@@ -630,6 +704,7 @@ export const demoWorkspaceData: WorkspaceData = {
         status: "disabled",
         statusLabel: "Deaktiviert",
         twoFactorEnabled: false,
+        username: "tom",
         roles: [],
       },
     ],
@@ -641,7 +716,7 @@ export const demoWorkspaceData: WorkspaceData = {
     botState: "nicht gestartet",
     rows: [
       ["Rollen-Sync", "Schema vorbereitet", true],
-      ["Neue Mitglieder", "Backend-Endpunkt spaeter", false],
+      ["Neue Mitglieder", "Auto-Aktenabgleich aktiv", true],
       ["Nachrichtenzaehler", "Monatsmodell vorbereitet", true],
       ["Voice-Sessions", "Tabellen vorbereitet", true],
       ["Datenschutz Opt-out", "Datenbankregel vorbereitet", true],
@@ -689,12 +764,23 @@ export async function getWorkspaceData(
             age,
             residence,
             profession,
+            phone,
             discord_id,
             discord_username,
             discord_display_name,
+            discord_joined_at,
+            discord_last_seen_at,
+            discord_on_server,
             discord_analytics_enabled,
             discord_analytics_disabled_reason,
             discord_analytics_disabled_at,
+            instagram,
+            snapchat,
+            tiktok,
+            stream,
+            ubisoft,
+            ea,
+            notes,
             status,
             updated_at,
             invited_by:invited_by_member_id(name),
@@ -767,7 +853,9 @@ export async function getWorkspaceData(
             id,
             role_key,
             name,
-            role_permissions(permissions(description)),
+            description,
+            active,
+            role_permissions(permissions(id, permission_key, description)),
             user_roles(user_id)
           `,
         )
@@ -782,6 +870,7 @@ export async function getWorkspaceData(
           `
             id,
             invitee_name,
+            invitee_discord_id,
             reason,
             status,
             max_uses,
@@ -789,6 +878,9 @@ export async function getWorkspaceData(
             expires_at,
             discord_invite_code,
             discord_invite_url,
+            dm_status,
+            dm_error,
+            dm_sent_at,
             bot_error,
             created_at,
             requested_by_name,
@@ -817,13 +909,13 @@ export async function getWorkspaceData(
             members(name, discord_id)
           `,
         )
-        .order("started_at", { ascending: false })
-        .limit(80),
+        .order("started_at", { ascending: false }),
       supabase
         .from("profiles")
         .select(
           `
             id,
+            username,
             display_name,
             email,
             status,
@@ -916,11 +1008,23 @@ function mapMembers(rows: Record<string, unknown>[]): WorkspaceMember[] {
       discordAnalyticsEnabled,
       residence: String(row.residence ?? "-"),
       profession: String(row.profession ?? "-"),
+      phone: String(row.phone ?? ""),
       discordId: String(row.discord_id ?? "-"),
+      discordJoinedAt: formatDate(String(row.discord_joined_at ?? "")),
+      discordLastSeenAt: formatDate(String(row.discord_last_seen_at ?? "")),
       discordName: String(row.discord_username ?? "-"),
+      discordOnServer: Boolean(row.discord_on_server),
       displayName: String(row.discord_display_name ?? row.discord_username ?? "-"),
+      instagram: String(row.instagram ?? ""),
+      snapchat: String(row.snapchat ?? ""),
+      tiktok: String(row.tiktok ?? ""),
+      stream: String(row.stream ?? ""),
+      ubisoft: String(row.ubisoft ?? ""),
+      ea: String(row.ea ?? ""),
+      notes: String(row.notes ?? ""),
       invitedBy: String(asObject(row.invited_by)?.name ?? "-"),
       status: mapMemberStatus(String(row.status ?? "active")),
+      statusKey: mapMemberStatusKey(String(row.status ?? "active")),
       lastActivity: discordAnalyticsEnabled
         ? formatDate(lastActivityAt)
         : "Auswertung deaktiviert",
@@ -1036,15 +1140,34 @@ function mapFiles(rows: Record<string, unknown>[]): WorkspaceFile[] {
 }
 
 function mapRoles(rows: Record<string, unknown>[]): WorkspaceRoleRow[] {
-  return rows.map((row) => ({
-    id: String(row.id ?? ""),
-    role: String(row.name ?? "Rolle"),
-    roleKey: String(row.role_key ?? ""),
-    permissions: asArray(row.role_permissions)
-      .map((entry) => String(asObject(entry.permissions)?.description ?? ""))
-      .filter(Boolean),
-    members: asArray(row.user_roles).length,
-  }));
+  return rows.map((row) => {
+    const permissionsDetailed = asArray(row.role_permissions)
+      .map((entry) => {
+        const permission = asObject(entry.permissions);
+
+        return {
+          description: String(
+            permission.description ?? permission.permission_key ?? "",
+          ),
+          id: String(permission.id ?? ""),
+          key: String(permission.permission_key ?? ""),
+        };
+      })
+      .filter((permission) => permission.id && permission.description);
+
+    return {
+      active: Boolean(row.active ?? true),
+      description: String(row.description ?? ""),
+      id: String(row.id ?? ""),
+      role: String(row.name ?? "Rolle"),
+      roleKey: String(row.role_key ?? ""),
+      permissions: permissionsDetailed.map(
+        (permission) => permission.description,
+      ),
+      permissionsDetailed,
+      members: asArray(row.user_roles).length,
+    };
+  });
 }
 
 function mapPermissions(rows: Record<string, unknown>[]): WorkspacePermissionOption[] {
@@ -1064,8 +1187,12 @@ function mapDiscordInvites(rows: Record<string, unknown>[]): WorkspaceDiscordInv
     return {
       id: String(row.id ?? ""),
       inviteeName: String(row.invitee_name ?? "Unbekannt"),
+      inviteeDiscordId: String(row.invitee_discord_id ?? ""),
       discordInviteCode: String(row.discord_invite_code ?? ""),
       discordInviteUrl: String(row.discord_invite_url ?? ""),
+      dmStatus: String(row.dm_status ?? "pending"),
+      dmError: String(row.dm_error ?? ""),
+      dmSentAt: formatDate(String(row.dm_sent_at ?? "")),
       botError: String(row.bot_error ?? ""),
       targetMemberName: String(targetMember.name ?? "-"),
       targetDiscordId: String(targetMember.discord_id ?? "-"),
@@ -1147,6 +1274,7 @@ function mapUsers(rows: Record<string, unknown>[]): WorkspaceUserSummary {
         status,
         statusLabel: mapUserStatus(status),
         twoFactorEnabled: Boolean(row.two_factor_enabled),
+        username: String(row.username ?? "-"),
         roles,
       });
 
@@ -1185,7 +1313,7 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
       },
       {
         label: "Neue Mitglieder",
-        status: "Backend vorbereitet",
+        status: latest ? "Auto-Aktenabgleich aktiv" : "Schema vorbereitet",
         active: true,
       },
       {
@@ -1234,6 +1362,14 @@ function mapMemberStatus(status: string): MemberStatusLabel {
   return "Aktiv";
 }
 
+function mapMemberStatusKey(status: string): "active" | "archived" | "review" {
+  if (status === "review" || status === "archived") {
+    return status;
+  }
+
+  return "active";
+}
+
 function mapUserStatus(status: string) {
   if (status === "disabled") {
     return "Deaktiviert";
@@ -1275,6 +1411,7 @@ function mapDiscordInviteStatus(status: string) {
 
 function mapModerationEventType(eventType: string) {
   const labels: Record<string, string> = {
+    warn: "Warnung",
     ban: "Ban",
     kick: "Kick",
     timeout: "Timeout",
