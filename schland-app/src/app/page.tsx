@@ -404,6 +404,41 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "discord-invite-deleted") {
+    return {
+      tone: "success" as const,
+      text: "Discord-Einladung wurde geloescht. Ein vorhandener Discord-Link wurde widerrufen, sofern Discord das erlaubt hat.",
+    };
+  }
+
+  if (setup === "discord-invite-delete-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Die Discord-Einladung wurde nicht gefunden.",
+    };
+  }
+
+  if (setup === "discord-invite-delete-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum Loeschen einer Discord-Einladung muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "discord-invite-delete-denied") {
+    return {
+      tone: "error" as const,
+      text: "Discord-Einladung konnte nicht geloescht werden. Dem Account fehlt die passende Berechtigung.",
+    };
+  }
+
+  if (setup === "discord-invite-delete-failed") {
+    return {
+      tone: "error" as const,
+      text: "Discord-Einladung konnte nicht geloescht werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
   if (setup === "discord-sync-ran") {
     return {
       tone: "success" as const,
@@ -415,6 +450,13 @@ function getSetupNotice(setup?: string) {
     return {
       tone: "warning" as const,
       text: "Zum manuellen Discord-Sync muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "discord-sync-denied") {
+    return {
+      tone: "error" as const,
+      text: "Discord-Live-Sync wurde abgelehnt. Dem Account fehlt die passende Sync- oder Einladungsberechtigung.",
     };
   }
 

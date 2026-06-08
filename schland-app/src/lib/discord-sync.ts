@@ -85,6 +85,11 @@ type DiscordAuditLogResponse = {
   users?: DiscordUser[];
 };
 
+type DiscordUserInfo = {
+  isBot: boolean;
+  name: string;
+};
+
 type InviteSyncSummary = {
   created: number;
   dmFailed: number;
@@ -92,6 +97,7 @@ type InviteSyncSummary = {
   dmSkipped: number;
   expired: number;
   failed: number;
+  purged: number;
   scanned: number;
 };
 
@@ -161,6 +167,7 @@ export async function runDiscordSync(trigger = "cron"): Promise<DiscordSyncSumma
       dmSkipped: 0,
       expired: 0,
       failed: 0,
+      purged: 0,
       scanned: 0,
     },
     members: {
@@ -240,6 +247,48 @@ export async function createPendingDiscordInvites(
   }
 
   return syncInviteRequests(supabase, config, options);
+}
+
+export async function deleteDiscordInviteRequest(inviteId: string) {
+  const supabase = getSupabaseAdminClient();
+  const config = getDiscordSyncConfig();
+  const { data, error } = await supabase
+    .from("discord_invite_requests")
+    .select("id,discord_invite_code")
+    .eq("id", inviteId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Invite lookup failed: ${error.message}`);
+  }
+
+  if (!data?.id) {
+    throw new Error("Invite not found.");
+  }
+
+  const inviteCode = asText(asRecord(data).discord_invite_code);
+
+  if (inviteCode && config.missing.length === 0) {
+    try {
+      await discordRequest(config, `/invites/${inviteCode}`, {
+        method: "DELETE",
+      });
+    } catch (error) {
+      console.error("discord invite revoke failed", {
+        inviteId,
+        message: getErrorMessage(error),
+      });
+    }
+  }
+
+  const { error: deleteError } = await supabase
+    .from("discord_invite_requests")
+    .delete()
+    .eq("id", inviteId);
+
+  if (deleteError) {
+    throw new Error(`Invite delete failed: ${deleteError.message}`);
+  }
 }
 
 function getDiscordSyncConfig(): DiscordSyncConfig {
@@ -324,6 +373,7 @@ async function syncInviteRequests(
     dmSkipped: 0,
     expired: 0,
     failed: 0,
+    purged: 0,
     scanned: 0,
   };
 
@@ -331,7 +381,7 @@ async function syncInviteRequests(
     const { data: expiredRows, error: expireError } = await supabase
       .from("discord_invite_requests")
       .update({ status: "expired" })
-      .eq("status", "pending")
+      .in("status", ["pending", "created"])
       .lte("expires_at", now)
       .select("id");
 
@@ -341,6 +391,20 @@ async function syncInviteRequests(
 
     summary.expired = Array.isArray(expiredRows) ? expiredRows.length : 0;
   }
+
+  const cleanupCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { data: purgedRows, error: purgeError } = await supabase
+    .from("discord_invite_requests")
+    .delete()
+    .in("status", ["cancelled", "expired", "failed", "used"])
+    .lte("created_at", cleanupCutoff)
+    .select("id");
+
+  if (purgeError) {
+    throw new Error(`Invite cleanup failed: ${purgeError.message}`);
+  }
+
+  summary.purged = Array.isArray(purgedRows) ? purgedRows.length : 0;
 
   let query = supabase
     .from("discord_invite_requests")
@@ -1007,7 +1071,7 @@ async function fetchAuditLogs(
 
 function mapAuditLogEntry(
   entry: DiscordAuditLogEntry,
-  users: Map<string, string>,
+  users: Map<string, DiscordUserInfo>,
 ): ModerationEventPayload | null {
   const id = asText(entry.id);
   const actionType = Number(entry.action_type);
@@ -1018,11 +1082,19 @@ function mapAuditLogEntry(
     asText(options.target_id) ??
     asText(options.user_id) ??
     "unknown";
+  const moderator = asText(entry.user_id)
+    ? users.get(String(entry.user_id))
+    : null;
+
+  if (moderator?.isBot) {
+    return null;
+  }
+
   const base = {
     channelId: asText(options.channel_id),
     channelName: asText(options.channel_name),
     discordUserId: targetId,
-    discordUsername: users.get(targetId) ?? null,
+    discordUsername: users.get(targetId)?.name ?? null,
     externalEventId: id ?? crypto.randomUUID(),
     metadata: {
       auditActionType: actionType,
@@ -1030,7 +1102,7 @@ function mapAuditLogEntry(
       options,
     },
     moderatorDiscordId: asText(entry.user_id),
-    moderatorName: asText(entry.user_id) ? users.get(String(entry.user_id)) ?? null : null,
+    moderatorName: moderator?.name ?? null,
     reason: asText(entry.reason),
     startedAt,
   };
@@ -1211,13 +1283,16 @@ async function discordRequest<T>(
 }
 
 function createUserMap(users: DiscordUser[]) {
-  const map = new Map<string, string>();
+  const map = new Map<string, DiscordUserInfo>();
 
   for (const user of users) {
     const id = asText(user.id);
 
     if (id) {
-      map.set(id, formatDiscordUser(user));
+      map.set(id, {
+        isBot: user.bot === true,
+        name: formatDiscordUser(user),
+      });
     }
   }
 

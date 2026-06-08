@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import {
   createPendingDiscordInvites,
+  deleteDiscordInviteRequest,
   executeDiscordModerationAction,
   runDiscordSync,
 } from "@/lib/discord-sync";
@@ -521,9 +522,15 @@ export async function runDiscordManualSyncAction() {
   }
 
   const supabase = await createSupabaseServerClient();
+  const { data: canSync } = await supabase.rpc("has_permission", {
+    required_key: "sync.manage",
+  });
+  const { data: canInvite } = await supabase.rpc("has_permission", {
+    required_key: "discord.invites.create",
+  });
 
-  if (!(await hasMfaLevel2(supabase))) {
-    redirect("/?section=sync&setup=discord-sync-aal2");
+  if (canSync !== true && canInvite !== true) {
+    redirect("/?section=sync&setup=discord-sync-denied");
   }
 
   try {
@@ -537,6 +544,47 @@ export async function runDiscordManualSyncAction() {
 
   revalidatePath("/", "layout");
   redirect("/?section=sync&setup=discord-sync-ran");
+}
+
+export async function deleteDiscordInviteRequestAction(formData: FormData) {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
+    redirect("/?section=sync&setup=discord-invite-delete-failed");
+  }
+
+  const inviteId = getFormText(formData, "inviteId");
+
+  if (!inviteId) {
+    redirect("/?section=sync&setup=discord-invite-delete-missing");
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect("/?section=sync&setup=discord-invite-delete-aal2");
+  }
+
+  const { data: canInvite } = await supabase.rpc("has_permission", {
+    required_key: "discord.invites.create",
+  });
+  const { data: canSync } = await supabase.rpc("has_permission", {
+    required_key: "sync.manage",
+  });
+
+  if (canInvite !== true && canSync !== true) {
+    redirect("/?section=sync&setup=discord-invite-delete-denied");
+  }
+
+  try {
+    await deleteDiscordInviteRequest(inviteId);
+  } catch (error) {
+    console.error("discord invite delete failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    redirect("/?section=sync&setup=discord-invite-delete-failed");
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/?section=sync&setup=discord-invite-deleted");
 }
 
 export async function setUserRoleAction(formData: FormData) {

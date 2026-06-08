@@ -142,8 +142,10 @@ export type WorkspaceModerationEvent = {
   lifetime: boolean;
   memberName: string;
   moderator: string;
+  moderatorDiscordId: string;
   reason: string;
   remainingDuration: string;
+  source: string;
   startedAt: string;
   status: string;
   statusLabel: string;
@@ -580,8 +582,10 @@ export const demoWorkspaceData: WorkspaceData = {
       discordId: "842109348219",
       discordName: "elyx",
       moderator: "Mara Seidel",
+      moderatorDiscordId: "demo-mod-1",
       channel: "-",
       reason: "Spam im Textkanal",
+      source: "demo",
       startedAt: "Heute, 13:20",
       endedAt: "Heute, 15:20",
       totalDuration: "2 Std.",
@@ -599,8 +603,10 @@ export const demoWorkspaceData: WorkspaceData = {
       discordId: "663180193355",
       discordName: "nobeck",
       moderator: "System",
+      moderatorDiscordId: "demo-system",
       channel: "-",
       reason: "Pruefung laeuft",
+      source: "demo",
       startedAt: "Gestern, 21:10",
       endedAt: "-",
       totalDuration: "Lifetime",
@@ -618,8 +624,10 @@ export const demoWorkspaceData: WorkspaceData = {
       discordId: "742101095203",
       discordName: "mara.s",
       moderator: "Elias Kramer",
+      moderatorDiscordId: "demo-mod-2",
       channel: "Voice 1",
       reason: "Stoergeraeusche",
+      source: "demo",
       startedAt: "Gestern, 19:30",
       endedAt: "-",
       totalDuration: "-",
@@ -925,7 +933,9 @@ export async function getWorkspaceData(
             status,
             reason,
             moderator_name,
+            moderator_discord_id,
             channel_name,
+            source,
             started_at,
             ended_at,
             duration_seconds,
@@ -1017,8 +1027,7 @@ function mapMembers(rows: Record<string, unknown>[]): WorkspaceMember[] {
     );
     const lastActivityAt =
       String(currentVoiceRow?.last_voice_at ?? "") ||
-      String(currentMessageRow?.last_message_at ?? "") ||
-      String(row.updated_at ?? "");
+      String(currentMessageRow?.last_message_at ?? "");
 
     return {
       id: String(row.id ?? ""),
@@ -1236,11 +1245,20 @@ function mapDiscordInvites(rows: Record<string, unknown>[]): WorkspaceDiscordInv
 }
 
 function mapModerationEvents(rows: Record<string, unknown>[]): WorkspaceModerationEvent[] {
-  return rows.map((row) => {
+  return rows
+    .map((row) => {
     const member = asObject(row.members);
     const metadata = asObject(row.metadata);
     const eventType = String(row.event_type ?? "kick");
     const status = String(row.status ?? "recorded");
+    const source = String(row.source ?? "");
+    const moderator = String(row.moderator_name ?? "-");
+    const moderatorDiscordId = String(row.moderator_discord_id ?? "");
+
+    if (isHiddenBotModerationEvent(source, moderator, moderatorDiscordId)) {
+      return null;
+    }
+
     const durationSeconds =
       row.duration_seconds === null || row.duration_seconds === undefined
         ? null
@@ -1264,9 +1282,11 @@ function mapModerationEvents(rows: Record<string, unknown>[]): WorkspaceModerati
       memberName: String(member.name ?? row.discord_username ?? "Unbekannt"),
       discordId: String(member.discord_id ?? row.discord_user_id ?? "-"),
       discordName: String(row.discord_username ?? "-"),
-      moderator: String(row.moderator_name ?? "-"),
+      moderator,
+      moderatorDiscordId,
       channel: String(row.channel_name ?? "-"),
       reason: String(row.reason ?? "-"),
+      source,
       startedAt: formatDate(String(row.started_at ?? "")),
       endedAt: formatDate(endedAt),
       totalDuration: lifetime
@@ -1277,7 +1297,8 @@ function mapModerationEvents(rows: Record<string, unknown>[]): WorkspaceModerati
           ? "Dauerhaft"
           : formatRemainingDuration(endedAt, status, eventType),
     };
-  });
+  })
+  .filter((event): event is WorkspaceModerationEvent => Boolean(event));
 }
 
 function mapUsers(rows: Record<string, unknown>[]): WorkspaceUserSummary {
@@ -1503,6 +1524,28 @@ function mapModerationStatus(status: string) {
   };
 
   return labels[status] ?? status;
+}
+
+function isHiddenBotModerationEvent(
+  source: string,
+  moderator: string,
+  moderatorDiscordId: string,
+) {
+  if (source !== "discord-audit-log") {
+    return false;
+  }
+
+  const normalizedName = moderator.toLowerCase();
+  const knownBotNames = ["overdrive", "schland-music", "quark logger"];
+
+  return (
+    knownBotNames.includes(normalizedName) ||
+    normalizedName.includes(" bot") ||
+    normalizedName.endsWith("bot") ||
+    normalizedName.includes("logger") ||
+    normalizedName.includes("music") ||
+    moderatorDiscordId === process.env.DISCORD_BOT_USER_ID
+  );
 }
 
 function formatDate(value: string) {

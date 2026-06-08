@@ -36,6 +36,7 @@ import { useMemo, useState } from "react";
 import {
   createDiscordInviteRequestAction,
   createFolderAction,
+  deleteDiscordInviteRequestAction,
   createMemberAction,
   deleteFolderAction,
   deleteMemberCaseAction,
@@ -1587,10 +1588,36 @@ function FilesSection({
   roles: WorkspaceRoleRow[];
 }) {
   const roleOptions = roles.filter((role) => role.id && role.role);
+  const [fileSearch, setFileSearch] = useState("");
+  const [fileCategoryFilter, setFileCategoryFilter] = useState("all");
+  const filteredFiles = useMemo(() => {
+    const query = fileSearch.trim().toLowerCase();
+
+    return files.filter((file) => {
+      const matchesCategory =
+        fileCategoryFilter === "all" || file.categoryId === fileCategoryFilter;
+      const matchesQuery =
+        !query ||
+        [
+          file.originalName,
+          file.description,
+          file.category,
+          file.folder,
+          file.type,
+          file.tags.join(" "),
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(query);
+
+      return matchesCategory && matchesQuery;
+    });
+  }, [fileCategoryFilter, fileSearch, files]);
+  const totalFileSize = files.reduce((sum, file) => sum + file.size, 0);
 
   return (
-    <div className="grid gap-5">
-      <div className="flex flex-col gap-3 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-4 md:flex-row md:items-center md:justify-between">
+    <div className="grid gap-4">
+      <div className="flex flex-col gap-3 border border-[var(--line-strong)] bg-[var(--surface)] p-3 md:flex-row md:items-center md:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <FileText className="size-5 text-[var(--accent)]" aria-hidden="true" />
           <div className="min-w-0">
@@ -1604,7 +1631,7 @@ function FilesSection({
           <a
             href="#file-upload"
             title="Datei hochladen"
-            className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm"
+            className="flex h-9 items-center gap-2 border border-[var(--line)] bg-white px-3 text-sm"
           >
             <Upload className="size-4" aria-hidden="true" />
             <span>Hochladen</span>
@@ -1612,7 +1639,7 @@ function FilesSection({
           <a
             href="#folder-create"
             title="Ordner anlegen"
-            className="flex h-9 items-center gap-2 rounded-md bg-[var(--foreground)] px-3 text-sm text-white"
+            className="flex h-9 items-center gap-2 border border-[var(--line-strong)] bg-[var(--foreground)] px-3 text-sm text-white"
           >
             <Plus className="size-4" aria-hidden="true" />
             <span>Ordner</span>
@@ -1620,11 +1647,21 @@ function FilesSection({
         </div>
       </div>
 
-      <section
+      <div className="grid gap-3 md:grid-cols-4">
+        <DetailBox label="Dateien" value={formatNumber(files.length)} />
+        <DetailBox label="Ordner" value={formatNumber(folders.length)} />
+        <DetailBox label="Kategorien" value={formatNumber(categories.length)} />
+        <DetailBox label="Speicher" value={formatFileSize(totalFileSize)} />
+      </div>
+
+      <details
         id="file-upload"
-        className="rounded-lg border border-[var(--line)] bg-[var(--surface)]"
+        className="border border-[var(--line-strong)] bg-[var(--surface)]"
       >
-        <SectionHeader icon={Upload} title="Datei hochladen" />
+        <summary className="flex cursor-pointer items-center gap-2 border-b border-[var(--line)] px-3 py-2 text-sm font-bold uppercase">
+          <Upload className="size-4" aria-hidden="true" />
+          <span>Datei hochladen</span>
+        </summary>
         <form
           action={uploadFileAction}
           encType="multipart/form-data"
@@ -1718,18 +1755,51 @@ function FilesSection({
             </div>
           </div>
         ) : null}
-      </section>
+      </details>
 
-      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+      <section className="border border-[var(--line-strong)] bg-[var(--surface)]">
         <SectionHeader
           icon={FileText}
           title="Gespeicherte Dateien"
           action={
             <span className="rounded-md bg-[var(--surface-muted)] px-2 py-1 text-xs font-medium text-neutral-600">
-              {formatNumber(files.length)}
+              {formatNumber(filteredFiles.length)} / {formatNumber(files.length)}
             </span>
           }
         />
+        <div className="grid gap-3 border-t border-[var(--line)] p-3 lg:grid-cols-[1fr_260px]">
+          <label className="grid gap-2">
+            <span className="text-xs font-medium uppercase text-neutral-500">
+              Suche
+            </span>
+            <div className="flex h-9 items-center gap-2 border border-[var(--line)] bg-white px-2">
+              <Search className="size-4 text-neutral-500" aria-hidden="true" />
+              <input
+                value={fileSearch}
+                onChange={(event) => setFileSearch(event.target.value)}
+                placeholder="Datei, Ordner, Tag, Typ"
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+              />
+            </div>
+          </label>
+          <label className="grid gap-2">
+            <span className="text-xs font-medium uppercase text-neutral-500">
+              Kategorie
+            </span>
+            <select
+              value={fileCategoryFilter}
+              onChange={(event) => setFileCategoryFilter(event.target.value)}
+              className="h-9 border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+            >
+              <option value="all">Alle Kategorien</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <div className="overflow-x-auto border-t border-[var(--line)]">
           <table className="w-full min-w-[980px] text-sm">
             <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
@@ -1742,8 +1812,8 @@ function FilesSection({
               </tr>
             </thead>
             <tbody>
-              {files.length > 0 ? (
-                files.map((file) => (
+              {filteredFiles.length > 0 ? (
+                filteredFiles.map((file) => (
                   <tr key={file.id} className="border-t border-[var(--line)]">
                     <td className="px-4 py-3">
                       <div className="font-medium">{file.originalName}</div>
@@ -1795,18 +1865,21 @@ function FilesSection({
                   </tr>
                 ))
               ) : (
-                <TableEmpty colSpan={5} label="Noch keine Dateien gespeichert." />
+                <TableEmpty colSpan={5} label="Keine Dateien fuer diesen Filter." />
               )}
             </tbody>
           </table>
         </div>
       </section>
 
-      <section
+      <details
         id="folder-create"
-        className="rounded-lg border border-[var(--line)] bg-[var(--surface)]"
+        className="border border-[var(--line-strong)] bg-[var(--surface)]"
       >
-        <SectionHeader icon={Plus} title="Ordner anlegen" />
+        <summary className="flex cursor-pointer items-center gap-2 border-b border-[var(--line)] px-3 py-2 text-sm font-bold uppercase">
+          <Folder className="size-4" aria-hidden="true" />
+          <span>Ordner anlegen</span>
+        </summary>
         <form
           action={createFolderAction}
           className="grid gap-3 border-t border-[var(--line)] p-4 lg:grid-cols-[1fr_1fr_1.2fr_auto]"
@@ -1872,9 +1945,9 @@ function FilesSection({
             </button>
           </div>
         </form>
-      </section>
+      </details>
 
-      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+      <section className="border border-[var(--line-strong)] bg-[var(--surface)]">
         <SectionHeader icon={Folder} title="Ordnerrechte" />
         <div className="overflow-x-auto border-t border-[var(--line)]">
           <table className="w-full min-w-[1180px] text-sm">
@@ -2085,13 +2158,25 @@ function CategoriesSection({
   categories: WorkspaceCategory[];
   mfaReady: boolean;
 }) {
+  const activeCount = categories.filter((category) => category.active).length;
+  const inactiveCount = categories.length - activeCount;
+
   return (
-    <div className="grid gap-5">
-      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
-        <SectionHeader icon={Plus} title="Kategorie anlegen" />
+    <div className="grid gap-4">
+      <div className="grid gap-3 md:grid-cols-3">
+        <DetailBox label="Kategorien" value={formatNumber(categories.length)} />
+        <DetailBox label="Aktiv" value={formatNumber(activeCount)} />
+        <DetailBox label="Deaktiviert" value={formatNumber(inactiveCount)} />
+      </div>
+
+      <details className="border border-[var(--line-strong)] bg-[var(--surface)]">
+        <summary className="flex cursor-pointer items-center gap-2 border-b border-[var(--line)] px-3 py-2 text-sm font-bold uppercase">
+          <Plus className="size-4" aria-hidden="true" />
+          <span>Kategorie anlegen</span>
+        </summary>
         <form
           action={saveCategoryAction}
-          className="grid gap-3 border-t border-[var(--line)] p-4 lg:grid-cols-[1fr_1.6fr_120px_auto_auto]"
+          className="grid gap-3 p-3 lg:grid-cols-[1fr_1.6fr_120px_auto_auto]"
         >
           <fieldset disabled={!mfaReady} className="contents disabled:opacity-60">
             <label className="grid gap-2">
@@ -2102,7 +2187,7 @@ function CategoriesSection({
                 name="name"
                 required
                 minLength={2}
-                  className="h-9 border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                className="h-9 border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
               />
             </label>
             <label className="grid gap-2">
@@ -2111,7 +2196,7 @@ function CategoriesSection({
               </span>
               <input
                 name="description"
-                  className="h-9 border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                className="h-9 border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
               />
             </label>
             <label className="grid gap-2">
@@ -2146,61 +2231,63 @@ function CategoriesSection({
             </div>
           </fieldset>
         </form>
-      </section>
+      </details>
 
-      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+      <section className="border border-[var(--line-strong)] bg-[var(--surface)]">
         <SectionHeader icon={Folder} title="Kategorien" />
-        <div className="grid gap-3 border-t border-[var(--line)] p-4 lg:grid-cols-2">
+        <div className="overflow-x-auto border-t border-[var(--line)]">
+          <table className="w-full min-w-[900px] text-sm">
+            <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">Name</th>
+                <th className="px-4 py-3 font-medium">Beschreibung</th>
+                <th className="px-4 py-3 font-medium">Reihenfolge</th>
+                <th className="px-4 py-3 font-medium">Aktiv</th>
+                <th className="px-4 py-3 font-medium">Aktion</th>
+              </tr>
+            </thead>
+            <tbody>
           {categories.length > 0 ? (
-            categories.map((category) => (
-              <form
-                key={category.id}
-                action={saveCategoryAction}
-                className="grid gap-3 rounded-lg border border-[var(--line)] bg-white p-4"
-              >
-                <input type="hidden" name="categoryId" value={category.id} />
-                <div className="grid gap-2 sm:grid-cols-[1fr_110px]">
-                  <label className="grid gap-1">
-                    <span className="text-xs font-medium uppercase text-neutral-500">
-                      Name
-                    </span>
+            categories.map((category) => {
+              const formId = `category-${category.id}`;
+
+              return (
+                <tr key={category.id} className="border-t border-[var(--line)]">
+                  <td className="px-4 py-3">
                     <input
+                      form={formId}
                       name="name"
                       defaultValue={category.name}
                       required
                       minLength={2}
                       disabled={!mfaReady}
-                      className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                      className="h-9 w-full border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
                     />
-                  </label>
-                  <label className="grid gap-1">
-                    <span className="text-xs font-medium uppercase text-neutral-500">
-                      Reihenfolge
-                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                  <input
+                    form={formId}
+                    name="description"
+                    defaultValue={category.description}
+                    disabled={!mfaReady}
+                    className="h-9 w-full border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                  />
+                  </td>
+                  <td className="px-4 py-3">
                     <input
+                      form={formId}
                       name="sortOrder"
                       type="number"
                       min={0}
                       defaultValue={category.sortOrder}
                       disabled={!mfaReady}
-                      className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                      className="h-9 w-24 border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
                     />
-                  </label>
-                </div>
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium uppercase text-neutral-500">
-                    Beschreibung
-                  </span>
-                  <input
-                    name="description"
-                    defaultValue={category.description}
-                    disabled={!mfaReady}
-                    className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
-                  />
-                </label>
-                <div className="flex items-center justify-between gap-3">
+                  </td>
+                  <td className="px-4 py-3">
                   <label className="flex items-center gap-2 text-sm">
                     <input
+                      form={formId}
                       name="active"
                       type="checkbox"
                       defaultChecked={category.active}
@@ -2209,20 +2296,28 @@ function CategoriesSection({
                     />
                     <span>Aktiv</span>
                   </label>
+                  </td>
+                  <td className="px-4 py-3">
+                  <form id={formId} action={saveCategoryAction}>
+                    <input type="hidden" name="categoryId" value={category.id} />
                   <button
                     type="submit"
                     disabled={!mfaReady}
-                    className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm disabled:cursor-not-allowed disabled:opacity-45"
+                    className="flex h-9 items-center gap-2 border border-[var(--line)] bg-white px-3 text-sm disabled:cursor-not-allowed disabled:opacity-45"
                   >
                     <Save className="size-4" aria-hidden="true" />
                     <span>Speichern</span>
                   </button>
-                </div>
-              </form>
-            ))
+                  </form>
+                  </td>
+                </tr>
+              );
+            })
           ) : (
-            <EmptyPanel label="Noch keine Kategorien angelegt." />
+            <TableEmpty colSpan={5} label="Noch keine Kategorien angelegt." />
           )}
+            </tbody>
+          </table>
         </div>
       </section>
     </div>
@@ -2659,46 +2754,87 @@ function RolesSection({
 }
 
 function ActivitySection({ members }: { members: WorkspaceMember[] }) {
+  const activityMembers = members.filter(
+    (member) =>
+      !member.discordAnalyticsEnabled ||
+      member.messagesMonth > 0 ||
+      member.voiceHoursMonth > 0 ||
+      member.lastActivity !== "-",
+  );
+  const totalMessages = members.reduce(
+    (sum, member) => sum + member.messagesMonth,
+    0,
+  );
+  const totalVoiceHours = members.reduce(
+    (sum, member) => sum + member.voiceHoursMonth,
+    0,
+  );
+  const privacyCount = members.filter(
+    (member) => !member.discordAnalyticsEnabled,
+  ).length;
+
   return (
-    <div className="grid gap-5 xl:grid-cols-3">
-      {members.length > 0 ? (
-        members.map((member) => (
-          <article
-            key={member.id}
-            className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-4"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-semibold">{member.name}</p>
-                <p className="font-mono text-xs text-neutral-500">{member.id}</p>
-              </div>
-              <Activity className="size-5 text-[var(--accent)]" aria-hidden="true" />
-            </div>
-            <div className="mt-5 grid grid-cols-2 gap-3">
-              {member.discordAnalyticsEnabled ? (
-                <>
-                  <MetricTile label="Nachrichten Monat" value={member.messagesMonth} />
-                  <MetricTile
-                    label="Voice-Stunden Monat"
-                    value={member.voiceHoursMonth}
-                  />
-                </>
+    <div className="grid gap-4">
+      <div className="grid gap-3 md:grid-cols-4">
+        <DetailBox label="Aktive Member" value={formatNumber(activityMembers.length)} />
+        <DetailBox label="Nachrichten Monat" value={formatNumber(totalMessages)} />
+        <DetailBox label="Voice-Stunden" value={formatNumber(totalVoiceHours)} />
+        <DetailBox label="Datenschutz aus" value={formatNumber(privacyCount)} />
+      </div>
+
+      <section className="border border-[var(--line-strong)] bg-[var(--surface)]">
+        <SectionHeader icon={Activity} title="Discord-Aktivitaet" />
+        <div className="overflow-x-auto border-t border-[var(--line)]">
+          <table className="w-full min-w-[920px] text-sm">
+            <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">Mitglied</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Nachrichten</th>
+                <th className="px-4 py-3 font-medium">Voice</th>
+                <th className="px-4 py-3 font-medium">Letzte Aktivitaet</th>
+              </tr>
+            </thead>
+            <tbody>
+              {activityMembers.length > 0 ? (
+                activityMembers.map((member) => (
+                  <tr key={member.id} className="border-t border-[var(--line)]">
+                    <td className="px-4 py-3">
+                      <div className="font-medium">{member.name}</div>
+                      <div className="font-mono text-xs text-neutral-500">
+                        {member.discordName} {"-"} {member.discordId}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {member.discordAnalyticsEnabled ? (
+                        <span className="bg-[var(--accent-soft)] px-2 py-1 text-xs font-medium text-[var(--accent-strong)]">
+                          Sync aktiv
+                        </span>
+                      ) : (
+                        <span className="bg-[#fff4d6] px-2 py-1 text-xs font-medium text-[var(--warning)]">
+                          Datenschutz
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 font-mono">
+                      {formatNumber(member.messagesMonth)}
+                    </td>
+                    <td className="px-4 py-3 font-mono">
+                      {formatNumber(member.voiceHoursMonth)} Std.
+                    </td>
+                    <td className="px-4 py-3">{member.lastActivity}</td>
+                  </tr>
+                ))
               ) : (
-                <MetricTile
-                  label="Discord-Auswertung"
-                  value="Datenschutz aktiv"
-                  wide
+                <TableEmpty
+                  colSpan={5}
+                  label="Noch keine Discord-Aktivitaet vom Bot empfangen."
                 />
               )}
-              <MetricTile label="Letzte Aktivitaet" value={member.lastActivity} wide />
-            </div>
-          </article>
-        ))
-      ) : (
-        <div className="xl:col-span-3">
-          <EmptyPanel label="Noch keine Aktivitaetsdaten vorhanden." />
+            </tbody>
+          </table>
         </div>
-      )}
+      </section>
     </div>
   );
 }
@@ -2753,10 +2889,10 @@ function ModerationSection({
         <SectionHeader icon={Shield} title="Moderation ausfuehren" />
         <form
           action={runModerationAction}
-          className="grid gap-3 border-t border-[var(--line-strong)] p-3 lg:grid-cols-[1.2fr_160px_170px_130px_1.4fr_auto]"
+          className="grid gap-3 border-t border-[var(--line-strong)] p-4 lg:grid-cols-6"
         >
           <fieldset disabled={!mfaReady} className="contents disabled:opacity-60">
-            <label className="grid gap-2">
+            <label className="grid gap-2 lg:col-span-2">
               <span className="text-xs font-medium uppercase text-neutral-500">
                 Mitglied
               </span>
@@ -2775,7 +2911,7 @@ function ModerationSection({
                 ))}
               </select>
             </label>
-            <label className="grid gap-2">
+            <label className="grid gap-2 lg:col-span-1">
               <span className="text-xs font-medium uppercase text-neutral-500">
                 Aktion
               </span>
@@ -2792,7 +2928,7 @@ function ModerationSection({
                 <option value="ban">Ban</option>
               </select>
             </label>
-            <label className="grid gap-2">
+            <label className="grid gap-2 lg:col-span-1">
               <span className="text-xs font-medium uppercase text-neutral-500">
                 Dauerart
               </span>
@@ -2805,7 +2941,7 @@ function ModerationSection({
                 <option value="timed">Minuten</option>
               </select>
             </label>
-            <label className="grid gap-2">
+            <label className="grid gap-2 lg:col-span-1">
               <span className="text-xs font-medium uppercase text-neutral-500">
                 Minuten
               </span>
@@ -2817,7 +2953,7 @@ function ModerationSection({
                 className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
               />
             </label>
-            <label className="grid gap-2">
+            <label className="grid gap-2 lg:col-span-4">
               <span className="text-xs font-medium uppercase text-neutral-500">
                 Grund
               </span>
@@ -2828,7 +2964,7 @@ function ModerationSection({
                 className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
               />
             </label>
-            <div className="flex items-end">
+            <div className="flex items-end lg:col-span-2">
               <button
                 type="submit"
                 title="Moderation ausfuehren"
@@ -2978,9 +3114,9 @@ function SyncSection({
   sync: WorkspaceSyncStatus;
 }) {
   return (
-    <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
-      <div className="grid gap-5">
-        <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+    <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
+      <div className="grid gap-4">
+        <section className="border border-[var(--line-strong)] bg-[var(--surface)]">
           <SectionHeader
             icon={Bot}
             title="Discord-Synchronisation"
@@ -2988,21 +3124,33 @@ function SyncSection({
               <form action={runDiscordManualSyncAction}>
                 <button
                   type="submit"
-                  title="Discord-Sync jetzt ausfuehren"
-                  disabled={!mfaReady}
-                  className="flex h-8 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-xs font-medium text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-45"
+                  title="Discord-Live-Sync jetzt starten"
+                  className="flex h-8 items-center gap-2 border border-[var(--line)] bg-white px-3 text-xs font-bold text-[var(--foreground)]"
                 >
                   <RefreshCw className="size-3.5" aria-hidden="true" />
-                  <span>Jetzt</span>
+                  <span>Live-Sync</span>
                 </button>
               </form>
             }
           />
-          <div className="grid gap-4 border-t border-[var(--line)] p-4">
+          <div className="grid gap-3 border-t border-[var(--line-strong)] p-3 md:grid-cols-4">
+            <DetailBox label="Letzter Lauf" value={sync.lastFullSync} />
+            <DetailBox
+              label="Discord Server"
+              value={
+                sync.memberServerEstimate !== null
+                  ? formatNumber(sync.memberServerEstimate)
+                  : "-"
+              }
+            />
+            <DetailBox label="Erfasst" value={formatNumber(sync.memberScanned)} />
+            <DetailBox label="Fehler" value={formatNumber(sync.errorCount)} />
+          </div>
+          <div className="grid gap-2 border-t border-[var(--line)] p-3">
             {sync.rows.map(({ active, label, status }) => (
               <div
                 key={label}
-                className="flex items-center justify-between gap-4 border-b border-[var(--line)] py-3 last:border-b-0"
+                className="flex items-center justify-between gap-4 border-b border-[var(--line)] py-2 last:border-b-0"
               >
                 <div>
                   <p className="font-medium">{label}</p>
@@ -3021,7 +3169,7 @@ function SyncSection({
           </div>
         </section>
 
-        <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+        <section className="border border-[var(--line-strong)] bg-[var(--surface)]">
           <SectionHeader
             icon={Plus}
             title="Discord-Einladungen"
@@ -3092,7 +3240,7 @@ function SyncSection({
             </div>
           ) : null}
           <div className="overflow-x-auto border-t border-[var(--line)]">
-            <table className="w-full min-w-[1080px] text-sm">
+            <table className="w-full min-w-[1180px] text-sm">
               <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
                 <tr>
                   <th className="px-4 py-3 font-medium">Einladung</th>
@@ -3101,6 +3249,7 @@ function SyncSection({
                   <th className="px-4 py-3 font-medium">Discord-Link</th>
                   <th className="px-4 py-3 font-medium">Gueltigkeit</th>
                   <th className="px-4 py-3 font-medium">Grund</th>
+                  <th className="px-4 py-3 font-medium">Aktion</th>
                 </tr>
               </thead>
               <tbody>
@@ -3175,10 +3324,24 @@ function SyncSection({
                           {invite.requestedBy} {"-"} {invite.createdAt}
                         </div>
                       </td>
+                      <td className="px-4 py-3">
+                        <form action={deleteDiscordInviteRequestAction}>
+                          <input type="hidden" name="inviteId" value={invite.id} />
+                          <button
+                            type="submit"
+                            title="Einladung loeschen und Link widerrufen"
+                            disabled={!mfaReady}
+                            className="flex h-9 items-center gap-2 border border-red-200 bg-white px-3 text-sm text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-45"
+                          >
+                            <Trash2 className="size-4" aria-hidden="true" />
+                            <span>Loeschen</span>
+                          </button>
+                        </form>
+                      </td>
                     </tr>
                   ))
                 ) : (
-                  <TableEmpty colSpan={6} label="Noch keine Discord-Einladungen angelegt." />
+                  <TableEmpty colSpan={7} label="Noch keine Discord-Einladungen angelegt." />
                 )}
               </tbody>
             </table>
@@ -3186,7 +3349,7 @@ function SyncSection({
         </section>
       </div>
 
-      <aside className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-4">
+      <aside className="border border-[var(--line-strong)] bg-[var(--surface)] p-4">
         <div className="flex items-center gap-3">
           <Server className="size-5 text-[var(--accent)]" aria-hidden="true" />
           <h2 className="font-semibold">Sync-Status</h2>
@@ -3471,25 +3634,36 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function MetricTile({
-  label,
-  value,
-  wide,
-}: {
-  label: string;
-  value: number | string;
-  wide?: boolean;
-}) {
+function DetailBox({ label, value }: { label: string; value: string }) {
   return (
-    <div className={wide ? "col-span-2" : undefined}>
-      <p className="text-xs text-neutral-500">{label}</p>
-      <p className="mt-1 text-lg font-semibold">{value}</p>
+    <div className="border border-[var(--line)] bg-[var(--surface-muted)] p-3">
+      <p className="text-xs uppercase text-neutral-500">{label}</p>
+      <p className="mt-1 font-mono text-xl font-bold">{value}</p>
     </div>
   );
 }
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("de-DE").format(value);
+}
+
+function formatFileSize(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0 B";
+  }
+
+  const units = ["B", "KB", "MB", "GB"];
+  let size = value;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${new Intl.NumberFormat("de-DE", {
+    maximumFractionDigits: unitIndex === 0 ? 0 : 1,
+  }).format(size)} ${units[unitIndex]}`;
 }
 
 function formatNullable(value: number | null) {
