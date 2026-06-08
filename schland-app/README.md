@@ -11,7 +11,7 @@ Interne Webanwendung fuer Mitgliederakten, Datei-Datenbank, Rollen, Rechte und A
 - Login mit Registrierung, einmaligem Admin-Erststart und 2FA-Verwaltung
 - Live-Datenanbindung an Supabase mit sauberen Leerzustaenden
 - Mitgliederakten koennen mit Pflichtgrund angelegt und im Aktenlog protokolliert werden
-- Discord-Bot-Implementierung bewusst geparkt und als letzter Schritt vorgesehen
+- Discord-Sync fuer Einladungen und Moderationsregister als Vercel-Cron vorbereitet
 
 ## Lokal starten
 
@@ -52,21 +52,30 @@ NEXT_PUBLIC_SUPABASE_URL=https://ovfhieumrllwtghpvwem.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_fCEJWNSfV7SEt46MYRS0xg_BNvfLTyg
 SUPABASE_SERVICE_ROLE_KEY=
 DISCORD_BOT_SYNC_TOKEN=
+CRON_SECRET=
+DISCORD_BOT_TOKEN=
+DISCORD_GUILD_ID=
+DISCORD_INVITE_CHANNEL_ID=
 ```
 
 `SUPABASE_SERVICE_ROLE_KEY` ist nur fuer serverseitige Admin-Aufgaben noetig und darf niemals im Browser genutzt werden.
 `DISCORD_BOT_SYNC_TOKEN` schuetzt die internen Bot-Endpunkte und muss spaeter identisch im Bot hinterlegt werden.
+`CRON_SECRET` schuetzt den geplanten Vercel-Aufruf. Die Discord-Werte braucht der Sync, um Einladungen zu erstellen und Auditlogs zu lesen.
 
 ## Interne Discord-Bot-Schnittstelle
 
-Die eigentliche Bot-Implementierung bleibt der letzte Schritt. Vorbereitet sind aber bereits geschuetzte Endpunkte unter `/api/discord-bot/*`:
+Vorbereitet sind geschuetzte Endpunkte unter `/api/discord-bot/*`:
 
 - `GET /api/discord-bot/privacy` liefert Mitglieder mit Discord-ID und ob deren Auswertung erlaubt ist.
 - `GET /api/discord-bot/invites` liefert offene Datenbank-Einladungen fuer den Bot.
 - `PATCH /api/discord-bot/invites` meldet erstellte, genutzte, abgelaufene oder fehlgeschlagene Einladungen zurueck.
 - `POST /api/discord-bot/moderation-events` schreibt Timeouts, Bans, Kicks und Voice-Disconnects in das Moderationsregister.
+- `GET /api/discord-bot/sync` laeuft per Vercel-Cron, erstellt offene Discord-Einladungen und synchronisiert Discord-Auditlogs.
 
 Alle Endpunkte erwarten `Authorization: Bearer <DISCORD_BOT_SYNC_TOKEN>` oder den Header `x-schland-bot-token`.
+Der Cron-Endpunkt erwartet `Authorization: Bearer <CRON_SECRET>`.
+
+Der Vercel-Cron ist bewusst taeglich konfiguriert, damit er auch auf Hobby-Projekten deploybar bleibt. Auf Pro kann der Zeitplan spaeter auf z. B. alle 5 Minuten erhoeht werden.
 
 Der aktuelle Production-Deploy liegt auf `https://schland.vercel.app`. Wenn Deployment Protection aktiv ist, verlangt Vercel vor dem Aufruf eine Vercel-Anmeldung oder einen Bypass.
 
@@ -76,4 +85,5 @@ Der aktuelle Production-Deploy liegt auf `https://schland.vercel.app`. Wenn Depl
 2. Rollen- und Rechteverwaltung bearbeitbar machen.
 3. Mitgliederakten bearbeiten und Feld-Aenderungen protokollieren.
 4. Datei-Uploads ueber Supabase Storage einbauen.
-5. Discord-Bot erst danach verbinden.
+5. Discord-Guild-ID, Bot-Token und Invite-Channel in Vercel hinterlegen.
+6. Optional spaeter einen dauerhaften Discord-Gateway-Bot fuer Live-Events ergaenzen.

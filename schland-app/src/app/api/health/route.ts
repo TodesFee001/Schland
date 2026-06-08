@@ -8,6 +8,6 @@ export function GET() {
     status: "ok",
     environment: getEnvironmentStatus(),
     supabaseProjectRef: "ovfhieumrllwtghpvwem",
-    discordBotImplementation: "api-prepared",
+    discordBotImplementation: "vercel-cron-rest-sync",
   });
 }

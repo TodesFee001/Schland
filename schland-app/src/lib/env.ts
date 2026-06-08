@@ -1,5 +1,9 @@
 export type EnvironmentStatus = {
+  cronSecret: boolean;
+  discordBotToken: boolean;
   discordBotSyncToken: boolean;
+  discordGuildId: boolean;
+  discordInviteChannelId: boolean;
   supabaseUrl: boolean;
   supabasePublishableKey: boolean;
   supabaseServiceRole: boolean;
@@ -8,7 +12,11 @@ export type EnvironmentStatus = {
 
 export function getEnvironmentStatus(): EnvironmentStatus {
   return {
+    cronSecret: Boolean(process.env.CRON_SECRET),
+    discordBotToken: Boolean(process.env.DISCORD_BOT_TOKEN),
     discordBotSyncToken: Boolean(process.env.DISCORD_BOT_SYNC_TOKEN),
+    discordGuildId: Boolean(process.env.DISCORD_GUILD_ID),
+    discordInviteChannelId: Boolean(process.env.DISCORD_INVITE_CHANNEL_ID),
     supabaseUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
     supabasePublishableKey: Boolean(getSupabasePublishableKey()),
     supabaseServiceRole: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),

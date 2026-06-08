@@ -641,7 +641,7 @@ export const demoWorkspaceData: WorkspaceData = {
       ["Datenschutz Opt-out", "Datenbankregel vorbereitet", true],
       ["DB-Einladungen", "Warteschlange vorbereitet", true],
       ["Moderationsregister", "Datenbankregister vorbereitet", true],
-      ["Bot-Implementierung", "Zum Schluss", false],
+      ["Bot-Implementierung", "Cron-Sync vorbereitet", true],
     ].map(([label, status, active]) => ({
       label: String(label),
       status: String(status),
@@ -1203,8 +1203,8 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
       },
       {
         label: "Bot-Implementierung",
-        status: "Zum Schluss",
-        active: false,
+        status: latest ? "Cron angebunden" : "Cron-Sync vorbereitet",
+        active: true,
       },
     ],
   };

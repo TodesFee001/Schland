@@ -35,6 +35,29 @@ export function getDiscordBotAuthError(request: Request) {
   return null;
 }
 
+export function getCronAuthError(request: Request) {
+  const expectedToken = process.env.CRON_SECRET?.trim();
+
+  if (!expectedToken) {
+    return NextResponse.json({ error: "cron_disabled" }, { status: 503 });
+  }
+
+  const providedToken = getBearerToken(request.headers.get("authorization")) ?? "";
+
+  if (!providedToken || !tokensMatch(providedToken, expectedToken)) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  if (!hasSupabaseServerEnv()) {
+    return NextResponse.json(
+      { error: "supabase_admin_not_configured" },
+      { status: 503 },
+    );
+  }
+
+  return null;
+}
+
 export async function readJsonObject(request: Request) {
   try {
     const value = await request.json();
