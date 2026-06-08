@@ -195,6 +195,10 @@ export type WorkspaceSyncStatus = {
   errorCount: number;
   lastFullSync: string;
   manualSync: string;
+  memberPageLimitHit: boolean;
+  memberScanned: number;
+  memberSkippedBots: number;
+  memberUpserted: number;
   rows: {
     active: boolean;
     label: string;
@@ -714,6 +718,10 @@ export const demoWorkspaceData: WorkspaceData = {
     errorCount: 0,
     manualSync: "Adminrecht",
     botState: "nicht gestartet",
+    memberPageLimitHit: false,
+    memberScanned: 0,
+    memberSkippedBots: 0,
+    memberUpserted: 0,
     rows: [
       ["Rollen-Sync", "Schema vorbereitet", true],
       ["Neue Mitglieder", "Auto-Aktenabgleich aktiv", true],
@@ -1299,12 +1307,22 @@ function mapLogs(rows: Record<string, unknown>[]): WorkspaceLogRow[] {
 function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
   const latest = rows[0];
   const errors = rows.filter((row) => Boolean(row.error_message)).length;
+  const latestMetadata = asObject(latest?.metadata);
+  const memberMetadata = asObject(latestMetadata.members);
+  const memberScanned = Number(memberMetadata.scanned ?? 0);
+  const memberPageLimitHit = Boolean(memberMetadata.pageLimitHit);
+  const memberSkippedBots = Number(memberMetadata.skippedBots ?? 0);
+  const memberUpserted = Number(memberMetadata.upserted ?? 0);
 
   return {
     lastFullSync: latest ? formatDate(String(latest.started_at ?? "")) : "Noch offen",
     errorCount: errors,
     manualSync: "Adminrecht",
     botState: latest ? String(latest.status ?? "unbekannt") : "nicht gestartet",
+    memberPageLimitHit,
+    memberScanned,
+    memberSkippedBots,
+    memberUpserted,
     rows: [
       {
         label: "Rollen-Sync",
@@ -1313,7 +1331,11 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
       },
       {
         label: "Neue Mitglieder",
-        status: latest ? "Auto-Aktenabgleich aktiv" : "Schema vorbereitet",
+        status: memberPageLimitHit
+          ? "Discord-Limit erreicht"
+          : latest
+          ? `${memberUpserted} Akten, ${memberSkippedBots} Bots uebersprungen`
+          : "Schema vorbereitet",
         active: true,
       },
       {

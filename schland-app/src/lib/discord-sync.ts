@@ -7,7 +7,7 @@ const INVITE_MAX_AGE_SECONDS = 24 * 60 * 60;
 const INVITE_BATCH_LIMIT = 10;
 const AUDIT_LOG_BATCH_LIMIT = 100;
 const MEMBER_PAGE_LIMIT = 1000;
-const MEMBER_MAX_PAGES = 10;
+const MEMBER_MAX_PAGES = 100;
 const DISCORD_EPOCH = BigInt("1420070400000");
 
 const AUDIT_LOG_ACTIONS = {
@@ -105,6 +105,7 @@ type ModerationSyncSummary = {
 
 type MemberSyncSummary = {
   failed: number;
+  pageLimitHit: boolean;
   rolesSynced: number;
   scanned: number;
   skippedBots: number;
@@ -153,6 +154,7 @@ export async function runDiscordSync(trigger = "cron"): Promise<DiscordSyncSumma
     },
     members: {
       failed: 0,
+      pageLimitHit: false,
       rolesSynced: 0,
       scanned: 0,
       skippedBots: 0,
@@ -489,6 +491,7 @@ async function syncDiscordMembers(
 ): Promise<MemberSyncSummary> {
   const summary: MemberSyncSummary = {
     failed: 0,
+    pageLimitHit: false,
     rolesSynced: 0,
     scanned: 0,
     skippedBots: 0,
@@ -529,6 +532,11 @@ async function syncDiscordMembers(
     const lastUserId = asText(lastMember?.user?.id);
 
     if (!lastUserId || members.length < MEMBER_PAGE_LIMIT) {
+      break;
+    }
+
+    if (page === MEMBER_MAX_PAGES - 1) {
+      summary.pageLimitHit = true;
       break;
     }
 

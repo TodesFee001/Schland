@@ -341,6 +341,48 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "member-deleted") {
+    return {
+      tone: "success" as const,
+      text: "Mitgliederakte wurde geloescht und der Vorgang wurde protokolliert.",
+    };
+  }
+
+  if (setup === "member-delete-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum Loeschen einer Mitgliederakte muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "member-delete-reason") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte gib fuer das Loeschen einen Grund mit mindestens 8 Zeichen an.",
+    };
+  }
+
+  if (setup === "member-delete-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Diese Mitgliederakte wurde nicht gefunden.",
+    };
+  }
+
+  if (setup === "member-delete-permission") {
+    return {
+      tone: "error" as const,
+      text: "Mitgliederakte konnte nicht geloescht werden. Dem Account fehlt die passende Berechtigung.",
+    };
+  }
+
+  if (setup === "member-delete-error") {
+    return {
+      tone: "error" as const,
+      text: "Mitgliederakte konnte nicht geloescht werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
   if (setup === "discord-invite-created") {
     return {
       tone: "success" as const,

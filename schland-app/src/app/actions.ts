@@ -394,6 +394,52 @@ export async function updateMemberCaseAction(formData: FormData) {
   );
 }
 
+export async function deleteMemberCaseAction(formData: FormData) {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=members&setup=missing-supabase");
+  }
+
+  const memberId = getFormText(formData, "memberId");
+  const reason = getFormText(formData, "reason");
+
+  if (!memberId) {
+    redirect("/?section=members&setup=member-delete-missing");
+  }
+
+  if (reason.length < 8) {
+    redirect(
+      `/?section=members&member=${encodeURIComponent(memberId)}&setup=member-delete-reason`,
+    );
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect(
+      `/?section=members&member=${encodeURIComponent(memberId)}&setup=member-delete-aal2`,
+    );
+  }
+
+  const { error } = await supabase.rpc("delete_member_case", {
+    p_member_id: memberId,
+    p_reason: reason,
+  });
+
+  if (error) {
+    console.error("delete_member_case failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect(
+      `/?section=members&member=${encodeURIComponent(memberId)}&setup=${getMemberDeleteErrorSetup(error)}`,
+    );
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/?section=members&setup=member-deleted");
+}
+
 export async function createDiscordInviteRequestAction(formData: FormData) {
   if (!hasSupabasePublicEnv()) {
     redirect("/?section=sync&setup=missing-supabase");
@@ -1174,6 +1220,24 @@ function getMemberUpdateErrorSetup(error: { code?: string; message?: string }) {
   }
 
   return "member-update-error";
+}
+
+function getMemberDeleteErrorSetup(error: { message?: string }) {
+  const message = error.message?.toLowerCase() ?? "";
+
+  if (message.includes("reason")) {
+    return "member-delete-reason";
+  }
+
+  if (message.includes("not found")) {
+    return "member-delete-missing";
+  }
+
+  if (message.includes("denied") || message.includes("permission")) {
+    return "member-delete-permission";
+  }
+
+  return "member-delete-error";
 }
 
 function getDiscordInviteErrorSetup(error: { message?: string }) {

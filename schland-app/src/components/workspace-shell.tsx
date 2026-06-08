@@ -38,6 +38,7 @@ import {
   createFolderAction,
   createMemberAction,
   deleteFolderAction,
+  deleteMemberCaseAction,
   downloadFileAction,
   linkMemberFileAction,
   openMemberCaseAction,
@@ -144,9 +145,12 @@ export function WorkspaceShell({
     : "";
   const [memberSearch, setMemberSearch] = useState("");
   const [accessReason, setAccessReason] = useState("");
-  const [selectedMemberId] = useState(
-    openedMemberId || members[0]?.id || "",
-  );
+  const [selectedMemberOverride, setSelectedMemberId] = useState("");
+  const selectedMemberId = members.some(
+    (member) => member.id === selectedMemberOverride,
+  )
+    ? selectedMemberOverride
+    : openedMemberId || members[0]?.id || "";
 
   const filteredMembers = useMemo(() => {
     const query = memberSearch.trim().toLowerCase();
@@ -355,6 +359,8 @@ export function WorkspaceShell({
             selectedMemberId={selectedMemberId}
             setAccessReason={setAccessReason}
             setMemberSearch={setMemberSearch}
+            setSelectedMemberId={setSelectedMemberId}
+            sync={workspaceData.sync}
           />
         );
       case "files":
@@ -589,6 +595,8 @@ function MembersSection({
   selectedMemberId,
   setAccessReason,
   setMemberSearch,
+  setSelectedMemberId,
+  sync,
 }: {
   accessReason: string;
   canOpenMember: boolean;
@@ -601,6 +609,8 @@ function MembersSection({
   selectedMemberId: string;
   setAccessReason: (value: string) => void;
   setMemberSearch: (value: string) => void;
+  setSelectedMemberId: (value: string) => void;
+  sync: WorkspaceSyncStatus;
 }) {
   return (
     <div className="grid gap-5 xl:grid-cols-[1fr_420px]">
@@ -616,6 +626,26 @@ function MembersSection({
         />
 
         <div className="grid gap-4 border-t border-[var(--line)] p-4">
+          <dl className="grid gap-3 rounded-lg border border-[var(--line)] bg-[var(--surface-muted)] p-3 text-sm sm:grid-cols-5">
+            <DetailRow
+              label="Discord gesehen"
+              value={formatNumber(sync.memberScanned)}
+            />
+            <DetailRow
+              label="Akten synchronisiert"
+              value={formatNumber(sync.memberUpserted)}
+            />
+            <DetailRow
+              label="Bots uebersprungen"
+              value={formatNumber(sync.memberSkippedBots)}
+            />
+            <DetailRow
+              label="Sync-Limit"
+              value={sync.memberPageLimitHit ? "Erreicht" : "OK"}
+            />
+            <DetailRow label="Letzter Lauf" value={sync.lastFullSync} />
+          </dl>
+
           <form action={createMemberAction} className="grid gap-3 border-b border-[var(--line)] pb-4">
             {!mfaReady ? (
               <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-[#fff4d6] p-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
@@ -851,9 +881,11 @@ function MembersSection({
                   filteredMembers.map((member) => (
                   <tr
                     key={member.id}
+                    onClick={() => setSelectedMemberId(member.id)}
+                    aria-selected={selectedMemberId === member.id}
                     className={[
-                      "border-t border-[var(--line)]",
-                      canViewSelectedMember && selectedMemberId === member.id
+                      "cursor-pointer border-t border-[var(--line)] transition hover:bg-[var(--surface-muted)]",
+                      selectedMemberId === member.id
                         ? "bg-[var(--accent-soft)]"
                         : "",
                     ].join(" ")}
@@ -900,23 +932,41 @@ function MembersSection({
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <form action={openMemberCaseAction}>
-                        <input type="hidden" name="memberId" value={member.id} />
-                        <input type="hidden" name="reason" value={accessReason} />
+                      <div className="flex flex-wrap gap-2">
                         <button
-                          type="submit"
-                          title={
-                            canOpenMember
-                              ? "Akte oeffnen"
-                              : "Zugriffsgrund eintragen"
-                          }
-                          disabled={!canOpenMember}
-                          className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm disabled:cursor-not-allowed disabled:opacity-45"
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSelectedMemberId(member.id);
+                          }}
+                          title="Akte auswaehlen"
+                          className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm"
                         >
-                          <Eye className="size-4" aria-hidden="true" />
-                          <span>Oeffnen</span>
+                          <Pencil className="size-4" aria-hidden="true" />
+                          <span>Auswaehlen</span>
                         </button>
-                      </form>
+                        <form
+                          action={openMemberCaseAction}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <input type="hidden" name="memberId" value={member.id} />
+                          <input type="hidden" name="reason" value={accessReason} />
+                          <button
+                            type="submit"
+                            onClick={() => setSelectedMemberId(member.id)}
+                            title={
+                              canOpenMember
+                                ? "Akte oeffnen"
+                                : "Zugriffsgrund eintragen"
+                            }
+                            disabled={!canOpenMember}
+                            className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm disabled:cursor-not-allowed disabled:opacity-45"
+                          >
+                            <Eye className="size-4" aria-hidden="true" />
+                            <span>Oeffnen</span>
+                          </button>
+                        </form>
+                      </div>
                     </td>
                   </tr>
                   ))
@@ -937,10 +987,60 @@ function MembersSection({
               Waehle eine Mitgliederakte aus, sobald Daten vorhanden sind.
             </div>
           ) : !canViewSelectedMember ? (
-            <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-muted)] p-4 text-sm text-neutral-600">
-              {mfaReady
-                ? "Oeffne eine Akte mit Zugriffsgrund, damit die Detailansicht protokolliert freigeschaltet wird."
-                : "2FA muss aktiv sein, bevor die Detailansicht freigeschaltet wird."}
+            <div className="grid gap-4">
+              <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-muted)] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-lg font-semibold">{selectedMember.name}</p>
+                    <p className="font-mono text-xs text-neutral-500">
+                      {selectedMember.id}
+                    </p>
+                  </div>
+                  <StatusBadge status={selectedMember.status} />
+                </div>
+                <dl className="mt-4 grid gap-3 text-sm">
+                  <DetailRow label="Discord" value={selectedMember.discordName} />
+                  <DetailRow
+                    label="Server"
+                    value={selectedMember.discordOnServer ? "Auf Server" : "Nicht gesehen"}
+                  />
+                  <DetailRow label="Letzter Sync" value={selectedMember.discordLastSeenAt} />
+                </dl>
+              </div>
+
+              <form
+                action={openMemberCaseAction}
+                className="grid gap-3 rounded-lg border border-[var(--line)] p-4"
+              >
+                <input type="hidden" name="memberId" value={selectedMember.id} />
+                <label className="grid gap-2">
+                  <span className="text-xs font-medium uppercase text-neutral-500">
+                    Zugriffsgrund
+                  </span>
+                  <input
+                    name="reason"
+                    value={accessReason}
+                    onChange={(event) => setAccessReason(event.target.value)}
+                    minLength={8}
+                    required
+                    placeholder="z.B. Moderationsfall pruefen"
+                    className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+                  />
+                </label>
+                {!mfaReady ? (
+                  <div className="rounded-lg border border-amber-200 bg-[#fff4d6] p-3 text-sm text-amber-900">
+                    2FA muss aktiv sein, bevor die Detailansicht freigeschaltet wird.
+                  </div>
+                ) : null}
+                <button
+                  type="submit"
+                  disabled={!canOpenMember}
+                  className="flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <Eye className="size-4" aria-hidden="true" />
+                  <span>Akte oeffnen</span>
+                </button>
+              </form>
             </div>
           ) : (
             <>
@@ -1170,6 +1270,39 @@ function MembersSection({
                       </button>
                     </div>
                   </div>
+                </form>
+              </details>
+
+              <details className="rounded-lg border border-red-200 bg-[#fff4d6] p-3">
+                <summary className="cursor-pointer text-sm font-semibold text-[var(--danger)]">
+                  Akte loeschen
+                </summary>
+                <form action={deleteMemberCaseAction} className="mt-3 grid gap-3">
+                  <input type="hidden" name="memberId" value={selectedMember.id} />
+                  <p className="text-xs text-neutral-700">
+                    Loeschen entfernt die Mitgliederakte und ihre direkten Verknuepfungen.
+                    Der Vorgang wird im Aktenprotokoll festgehalten.
+                  </p>
+                  <label className="grid gap-1">
+                    <span className="text-xs font-medium uppercase text-neutral-600">
+                      Grund
+                    </span>
+                    <input
+                      name="reason"
+                      required
+                      minLength={8}
+                      placeholder="z.B. doppelte Akte"
+                      className="h-9 rounded-md border border-red-200 bg-white px-2 text-sm outline-none focus:border-[var(--danger)]"
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={!mfaReady}
+                    className="flex h-9 items-center justify-center gap-2 rounded-md bg-[var(--danger)] px-3 text-sm text-white disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <Trash2 className="size-4" aria-hidden="true" />
+                    <span>Akte loeschen</span>
+                  </button>
                 </form>
               </details>
 
