@@ -639,7 +639,7 @@ export const demoWorkspaceData: WorkspaceData = {
       ["Nachrichtenzaehler", "Monatsmodell vorbereitet", true],
       ["Voice-Sessions", "Tabellen vorbereitet", true],
       ["Datenschutz Opt-out", "Datenbankregel vorbereitet", true],
-      ["DB-Einladungen", "Warteschlange vorbereitet", true],
+      ["DB-Einladungen", "Live-Erstellung vorbereitet", true],
       ["Moderationsregister", "Datenbankregister vorbereitet", true],
       ["Bot-Implementierung", "Cron-Sync vorbereitet", true],
     ].map(([label, status, active]) => ({
@@ -1193,7 +1193,7 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
       },
       {
         label: "DB-Einladungen",
-        status: "Warteschlange vorbereitet",
+        status: "Live-Erstellung aktiv",
         active: true,
       },
       {
@@ -1203,7 +1203,7 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
       },
       {
         label: "Bot-Implementierung",
-        status: latest ? "Cron angebunden" : "Cron-Sync vorbereitet",
+        status: latest ? "Live + Cron angebunden" : "Live-Sync vorbereitet",
         active: true,
       },
     ],

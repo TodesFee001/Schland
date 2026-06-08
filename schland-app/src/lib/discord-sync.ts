@@ -67,6 +67,12 @@ type InviteSyncSummary = {
   scanned: number;
 };
 
+type InviteSyncOptions = {
+  expireOld?: boolean;
+  ids?: string[];
+  limit?: number;
+};
+
 type ModerationSyncSummary = {
   failed: number;
   lastAuditLogId: string | null;
@@ -145,6 +151,21 @@ export async function runDiscordSync(trigger = "cron"): Promise<DiscordSyncSumma
   }
 }
 
+export async function createPendingDiscordInvites(
+  options: InviteSyncOptions = {},
+) {
+  const supabase = getSupabaseAdminClient();
+  const config = getDiscordSyncConfig();
+
+  if (config.missing.length > 0) {
+    throw new Error(
+      `Discord invite sync missing config: ${config.missing.join(", ")}`,
+    );
+  }
+
+  return syncInviteRequests(supabase, config, options);
+}
+
 function getDiscordSyncConfig(): DiscordSyncConfig {
   const botToken = process.env.DISCORD_BOT_TOKEN?.trim() ?? "";
   const guildId = process.env.DISCORD_GUILD_ID?.trim() ?? "";
@@ -216,6 +237,7 @@ async function finishSyncRun(
 async function syncInviteRequests(
   supabase: SupabaseAdminClient,
   config: DiscordSyncConfig,
+  options: InviteSyncOptions = {},
 ): Promise<InviteSyncSummary> {
   const now = new Date().toISOString();
   const summary: InviteSyncSummary = {
@@ -225,26 +247,33 @@ async function syncInviteRequests(
     scanned: 0,
   };
 
-  const { data: expiredRows, error: expireError } = await supabase
-    .from("discord_invite_requests")
-    .update({ status: "expired" })
-    .eq("status", "pending")
-    .lte("expires_at", now)
-    .select("id");
+  if (options.expireOld !== false) {
+    const { data: expiredRows, error: expireError } = await supabase
+      .from("discord_invite_requests")
+      .update({ status: "expired" })
+      .eq("status", "pending")
+      .lte("expires_at", now)
+      .select("id");
 
-  if (expireError) {
-    throw new Error(`Expired invite cleanup failed: ${expireError.message}`);
+    if (expireError) {
+      throw new Error(`Expired invite cleanup failed: ${expireError.message}`);
+    }
+
+    summary.expired = Array.isArray(expiredRows) ? expiredRows.length : 0;
   }
 
-  summary.expired = Array.isArray(expiredRows) ? expiredRows.length : 0;
-
-  const { data, error } = await supabase
+  let query = supabase
     .from("discord_invite_requests")
     .select("id,invitee_name,reason,requested_by_name,expires_at,created_at")
     .eq("status", "pending")
     .gt("expires_at", now)
-    .order("created_at", { ascending: true })
-    .limit(INVITE_BATCH_LIMIT);
+    .order("created_at", { ascending: true });
+
+  if (options.ids?.length) {
+    query = query.in("id", options.ids);
+  }
+
+  const { data, error } = await query.limit(options.limit ?? INVITE_BATCH_LIMIT);
 
   if (error) {
     throw new Error(`Invite lookup failed: ${error.message}`);

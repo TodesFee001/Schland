@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { hasSupabasePublicEnv } from "@/lib/env";
+import { createPendingDiscordInvites } from "@/lib/discord-sync";
+import { hasSupabasePublicEnv, hasSupabaseServerEnv } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const FILE_BUCKET = "schland-files";
@@ -337,12 +338,15 @@ export async function createDiscordInviteRequestAction(formData: FormData) {
     redirect("/?section=sync&setup=discord-invite-aal2");
   }
 
-  const { error } = await supabase.rpc("create_discord_invite_request", {
-    p_invitee_name: inviteeName,
-    p_permission_id: permissionId,
-    p_reason: reason,
-    p_target_member_id: targetMemberId,
-  });
+  const { data: inviteId, error } = await supabase.rpc(
+    "create_discord_invite_request",
+    {
+      p_invitee_name: inviteeName,
+      p_permission_id: permissionId,
+      p_reason: reason,
+      p_target_member_id: targetMemberId,
+    },
+  );
 
   if (error) {
     console.error("create_discord_invite_request failed", {
@@ -353,8 +357,34 @@ export async function createDiscordInviteRequestAction(formData: FormData) {
     redirect(`/?section=sync&setup=${getDiscordInviteErrorSetup(error)}`);
   }
 
+  let setup = "discord-invite-created";
+
+  if (typeof inviteId === "string" && hasSupabaseServerEnv()) {
+    try {
+      const liveSync = await createPendingDiscordInvites({
+        expireOld: false,
+        ids: [inviteId],
+        limit: 1,
+      });
+
+      if (liveSync.failed > 0 || liveSync.created === 0) {
+        setup = "discord-invite-live-failed";
+      }
+    } catch (liveSyncError) {
+      console.error("live discord invite sync failed", {
+        message:
+          liveSyncError instanceof Error
+            ? liveSyncError.message
+            : String(liveSyncError),
+      });
+      setup = "discord-invite-live-failed";
+    }
+  } else {
+    setup = "discord-invite-pending";
+  }
+
   revalidatePath("/", "layout");
-  redirect("/?section=sync&setup=discord-invite-created");
+  redirect(`/?section=sync&setup=${setup}`);
 }
 
 export async function setUserRoleAction(formData: FormData) {

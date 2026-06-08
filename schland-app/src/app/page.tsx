@@ -281,7 +281,21 @@ function getSetupNotice(setup?: string) {
   if (setup === "discord-invite-created") {
     return {
       tone: "success" as const,
-      text: "Discord-Einladung wurde als Datenbankauftrag angelegt. Der Bot erstellt spaeter daraus eine 1x nutzbare Einladung mit 1 Tag Gueltigkeit.",
+      text: "Discord-Einladung wurde angelegt und sofort als 1x nutzbarer Link mit 1 Tag Gueltigkeit erstellt.",
+    };
+  }
+
+  if (setup === "discord-invite-pending") {
+    return {
+      tone: "warning" as const,
+      text: "Discord-Einladung wurde als Datenbankauftrag angelegt. Der Live-Sync ist gerade nicht voll konfiguriert und der Cron holt sie nach.",
+    };
+  }
+
+  if (setup === "discord-invite-live-failed") {
+    return {
+      tone: "error" as const,
+      text: "Discord-Einladung wurde gespeichert, aber der Live-Sync konnte den Link nicht erstellen. Der genaue Fehler wurde protokolliert.",
     };
   }
 

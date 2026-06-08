@@ -11,7 +11,7 @@ Interne Webanwendung fuer Mitgliederakten, Datei-Datenbank, Rollen, Rechte und A
 - Login mit Registrierung, einmaligem Admin-Erststart und 2FA-Verwaltung
 - Live-Datenanbindung an Supabase mit sauberen Leerzustaenden
 - Mitgliederakten koennen mit Pflichtgrund angelegt und im Aktenlog protokolliert werden
-- Discord-Sync fuer Einladungen und Moderationsregister als Vercel-Cron vorbereitet
+- Discord-Sync fuer Einladungen live beim Speichern und Moderationsregister per Vercel-Cron vorbereitet
 
 ## Lokal starten
 
@@ -74,12 +74,12 @@ Vorbereitet sind geschuetzte Endpunkte unter `/api/discord-bot/*`:
 - `GET /api/discord-bot/invites` liefert offene Datenbank-Einladungen fuer den Bot.
 - `PATCH /api/discord-bot/invites` meldet erstellte, genutzte, abgelaufene oder fehlgeschlagene Einladungen zurueck.
 - `POST /api/discord-bot/moderation-events` schreibt Timeouts, Bans, Kicks und Voice-Disconnects in das Moderationsregister.
-- `GET /api/discord-bot/sync` laeuft per Vercel-Cron, erstellt offene Discord-Einladungen und synchronisiert Discord-Auditlogs.
+- `GET /api/discord-bot/sync` laeuft per Vercel-Cron als Fallback, erstellt offene Discord-Einladungen und synchronisiert Discord-Auditlogs.
 
 Alle Endpunkte erwarten `Authorization: Bearer <DISCORD_BOT_SYNC_TOKEN>` oder den Header `x-schland-bot-token`.
 Der Cron-Endpunkt erwartet `Authorization: Bearer <CRON_SECRET>`.
 
-Der Vercel-Cron ist bewusst taeglich konfiguriert, damit er auch auf Hobby-Projekten deploybar bleibt. Auf Pro kann der Zeitplan spaeter auf z. B. alle 5 Minuten erhoeht werden.
+DB-Einladungen werden beim Speichern sofort live an Discord gesendet. Der Vercel-Cron laeuft zusaetzlich minuetlich als Fallback und fuer Auditlog-Syncs. Fuer echte Gateway-Live-Events ohne Polling braucht Discord einen dauerhaft laufenden Bot-Prozess ausserhalb normaler Vercel-Functions.
 
 Der aktuelle Production-Deploy liegt auf `https://schland.vercel.app`. Wenn Deployment Protection aktiv ist, verlangt Vercel vor dem Aufruf eine Vercel-Anmeldung oder einen Bypass.
 
