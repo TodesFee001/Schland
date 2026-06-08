@@ -194,6 +194,9 @@ async function fullSyncGuild(trigger) {
       body: {
         action: "reconcile",
         currentDiscordUserIds: humans.map((member) => member.id),
+        guildMemberEstimate: members.size,
+        guildName: guild.name,
+        skippedBots: members.size - humans.length,
       },
       method: "PATCH",
     });

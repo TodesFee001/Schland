@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import {
+  asInteger,
   asIsoDate,
   asRecord,
   asText,
@@ -160,6 +161,16 @@ export async function PATCH(request: Request) {
     }
   }
 
+  await recordLiveMemberSync(supabase, {
+    guildMemberEstimate:
+      asInteger(body?.guildMemberEstimate ?? body?.guild_member_estimate) ??
+      ids.length,
+    guildName: asText(body?.guildName ?? body?.guild_name),
+    scanned: ids.length,
+    skippedBots:
+      asInteger(body?.skippedBots ?? body?.skipped_bots) ?? 0,
+  });
+
   return NextResponse.json({
     current: ids.length,
     markedOffServer: staleMemberIds.length,
@@ -253,6 +264,48 @@ async function writeDiscordMember(
     },
     rolesSynced: roles?.length ?? null,
   };
+}
+
+async function recordLiveMemberSync(
+  supabase: SupabaseAdminClient,
+  input: {
+    guildMemberEstimate: number;
+    guildName: string | null;
+    scanned: number;
+    skippedBots: number;
+  },
+) {
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("sync_runs").insert({
+    finished_at: now,
+    metadata: {
+      heartbeat: {
+        lastSeenAt: now,
+      },
+      implementation: "railway-discord-gateway",
+      members: {
+        coverageComplete: true,
+        guildMemberEstimate: input.guildMemberEstimate,
+        guildName: input.guildName,
+        missingEstimate: 0,
+        pageLimitHit: false,
+        scanned: input.scanned + input.skippedBots,
+        skippedBots: input.skippedBots,
+        upserted: input.scanned,
+      },
+    },
+    source: "discord-live",
+    started_at: now,
+    status: "success",
+  });
+
+  if (error) {
+    console.error("discord live sync run write failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+  }
 }
 
 async function markDiscordMemberOffServer(

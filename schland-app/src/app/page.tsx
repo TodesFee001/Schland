@@ -386,14 +386,14 @@ function getSetupNotice(setup?: string) {
   if (setup === "discord-invite-created") {
     return {
       tone: "success" as const,
-      text: "Discord-Einladung wurde angelegt, als 1x-Link erstellt und per Discord-DM versendet.",
+      text: "Discord-Einladung wurde als Datenbankauftrag angelegt. Railway erstellt Link und DM automatisch.",
     };
   }
 
   if (setup === "discord-invite-pending") {
     return {
       tone: "warning" as const,
-      text: "Discord-Einladung wurde als Datenbankauftrag angelegt. Der Live-Sync ist gerade nicht voll konfiguriert und der Cron holt sie nach.",
+      text: "Discord-Einladung wurde als Datenbankauftrag angelegt. Railway verarbeitet sie automatisch.",
     };
   }
 
@@ -443,6 +443,13 @@ function getSetupNotice(setup?: string) {
     return {
       tone: "success" as const,
       text: "Discord-Sync wurde ausgefuehrt. Einladungen und Moderationsregister sind aktualisiert.",
+    };
+  }
+
+  if (setup === "discord-live-refresh") {
+    return {
+      tone: "success" as const,
+      text: "Ansicht aktualisiert. Der Railway-Bot synchronisiert automatisch im Hintergrund.",
     };
   }
 

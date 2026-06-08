@@ -966,9 +966,9 @@ export async function getWorkspaceData(
         .limit(8),
       supabase
         .from("sync_runs")
-        .select("id, status, started_at, finished_at, error_message, metadata")
+        .select("id, source, status, started_at, finished_at, error_message, metadata")
         .order("started_at", { ascending: false })
-        .limit(5),
+        .limit(12),
     ]);
 
     collectWarning(warnings, membersResult.error?.message);
@@ -1357,8 +1357,16 @@ function mapLogs(rows: Record<string, unknown>[]): WorkspaceLogRow[] {
 }
 
 function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
-  const latest = rows[0];
-  const errors = rows.filter((row) => Boolean(row.error_message)).length;
+  const liveRows = rows.filter((row) => String(row.source ?? "") === "discord-live");
+  const latestLive = liveRows[0];
+  const latest = latestLive ?? rows[0];
+  const latestSource = String(latest?.source ?? "");
+  const latestStatus = String(latest?.status ?? "nicht gestartet");
+  const isRailwayLive =
+    latestSource === "discord-live" ||
+    String(asObject(latest?.metadata).implementation ?? "") ===
+      "railway-discord-gateway";
+  const errors = latestStatus === "failed" ? 1 : 0;
   const latestMetadata = asObject(latest?.metadata);
   const memberMetadata = asObject(latestMetadata.members);
   const memberScanned = Number(memberMetadata.scanned ?? 0);
@@ -1386,10 +1394,16 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
           : "Schema vorbereitet";
 
   return {
-    lastFullSync: latest ? formatDate(String(latest.started_at ?? "")) : "Noch offen",
+    lastFullSync: latest
+      ? formatDate(String(latest.finished_at ?? latest.started_at ?? ""))
+      : "Noch offen",
     errorCount: errors,
-    manualSync: "Adminrecht",
-    botState: latest ? String(latest.status ?? "unbekannt") : "nicht gestartet",
+    manualSync: isRailwayLive ? "Railway Live" : "Adminrecht",
+    botState: latest
+      ? isRailwayLive && latestStatus === "success"
+        ? "Online"
+        : mapSyncStatusLabel(latestStatus)
+      : "nicht gestartet",
     memberCoverageComplete,
     memberGuildName,
     memberMissingEstimate,
@@ -1401,7 +1415,11 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
     rows: [
       {
         label: "Rollen-Sync",
-        status: latest ? "Letzter Lauf vorhanden" : "Schema vorbereitet",
+        status: isRailwayLive
+          ? "Railway Live-Dienst aktiv"
+          : latest
+            ? "Letzter Lauf vorhanden"
+            : "Schema vorbereitet",
         active: true,
       },
       {
@@ -1411,12 +1429,16 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
       },
       {
         label: "Nachrichtenzaehler",
-        status: "Monatsmodell vorbereitet",
+        status: isRailwayLive
+          ? "Gateway zaehlt neue Nachrichten live"
+          : "Monatsmodell vorbereitet",
         active: true,
       },
       {
         label: "Voice-Sessions",
-        status: "Tabellen vorbereitet",
+        status: isRailwayLive
+          ? "Gateway erfasst Voice-Sessions live"
+          : "Tabellen vorbereitet",
         active: true,
       },
       {
@@ -1436,11 +1458,25 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
       },
       {
         label: "Bot-Implementierung",
-        status: latest ? "Live + Cron angebunden" : "Live-Sync vorbereitet",
-        active: true,
+        status: isRailwayLive
+          ? "Railway Gateway verbunden"
+          : latest
+            ? "Alter REST-Sync erkannt"
+            : "Live-Sync vorbereitet",
+        active: isRailwayLive,
       },
     ],
   };
+}
+
+function mapSyncStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    failed: "Fehler",
+    partial: "Teilweise",
+    success: "Online",
+  };
+
+  return labels[status] ?? status;
 }
 
 function mapMemberStatus(status: string): MemberStatusLabel {

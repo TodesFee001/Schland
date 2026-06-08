@@ -4,10 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import {
-  createPendingDiscordInvites,
   deleteDiscordInviteRequest,
   executeDiscordModerationAction,
-  runDiscordSync,
 } from "@/lib/discord-sync";
 import { hasSupabasePublicEnv, hasSupabaseServerEnv } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -464,14 +462,11 @@ export async function createDiscordInviteRequestAction(formData: FormData) {
     redirect("/?section=sync&setup=discord-invite-aal2");
   }
 
-  const { data: inviteId, error } = await supabase.rpc(
-    "create_discord_invite_request",
-    {
-      p_invitee_discord_id: inviteeDiscordId,
-      p_invitee_name: inviteeName,
-      p_reason: reason,
-    },
-  );
+  const { error } = await supabase.rpc("create_discord_invite_request", {
+    p_invitee_discord_id: inviteeDiscordId,
+    p_invitee_name: inviteeName,
+    p_reason: reason,
+  });
 
   if (error) {
     console.error("create_discord_invite_request failed", {
@@ -482,42 +477,12 @@ export async function createDiscordInviteRequestAction(formData: FormData) {
     redirect(`/?section=sync&setup=${getDiscordInviteErrorSetup(error)}`);
   }
 
-  let setup = "discord-invite-created";
-
-  if (typeof inviteId === "string" && hasSupabaseServerEnv()) {
-    try {
-      const liveSync = await createPendingDiscordInvites({
-        expireOld: false,
-        ids: [inviteId],
-        limit: 1,
-      });
-
-      if (
-        liveSync.failed > 0 ||
-        liveSync.dmFailed > 0 ||
-        liveSync.created === 0
-      ) {
-        setup = "discord-invite-live-failed";
-      }
-    } catch (liveSyncError) {
-      console.error("live discord invite sync failed", {
-        message:
-          liveSyncError instanceof Error
-            ? liveSyncError.message
-            : String(liveSyncError),
-      });
-      setup = "discord-invite-live-failed";
-    }
-  } else {
-    setup = "discord-invite-pending";
-  }
-
   revalidatePath("/", "layout");
-  redirect(`/?section=sync&setup=${setup}`);
+  redirect("/?section=sync&setup=discord-invite-created");
 }
 
 export async function runDiscordManualSyncAction() {
-  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
+  if (!hasSupabasePublicEnv()) {
     redirect("/?section=sync&setup=discord-sync-failed");
   }
 
@@ -533,17 +498,8 @@ export async function runDiscordManualSyncAction() {
     redirect("/?section=sync&setup=discord-sync-denied");
   }
 
-  try {
-    await runDiscordSync("manual");
-  } catch (error) {
-    console.error("manual discord sync failed", {
-      message: error instanceof Error ? error.message : String(error),
-    });
-    redirect("/?section=sync&setup=discord-sync-failed");
-  }
-
   revalidatePath("/", "layout");
-  redirect("/?section=sync&setup=discord-sync-ran");
+  redirect("/?section=sync&setup=discord-live-refresh");
 }
 
 export async function deleteDiscordInviteRequestAction(formData: FormData) {

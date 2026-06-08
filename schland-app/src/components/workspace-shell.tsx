@@ -31,7 +31,8 @@ import {
   XCircle,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import {
   createDiscordInviteRequestAction,
@@ -137,6 +138,7 @@ export function WorkspaceShell({
   setupNotice,
   workspaceData,
 }: WorkspaceShellProps) {
+  const router = useRouter();
   const members = workspaceData.members;
   const [activeSection, setActiveSection] = useState<SectionId>(
     isSectionId(initialSection) ? initialSection : "dashboard",
@@ -176,6 +178,17 @@ export function WorkspaceShell({
 
   const selectedMember =
     members.find((member) => member.id === selectedMemberId) ?? members[0] ?? null;
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        router.refresh();
+      }
+    }, 15000);
+
+    return () => window.clearInterval(interval);
+  }, [router]);
+
   const mfaReady = authStatus.mfaLevel === "aal2";
   const canOpenMember = mfaReady && accessReason.trim().length >= 8;
   const canViewSelectedMember =
@@ -3124,11 +3137,11 @@ function SyncSection({
               <form action={runDiscordManualSyncAction}>
                 <button
                   type="submit"
-                  title="Discord-Live-Sync jetzt starten"
+                  title="Ansicht mit Railway-Live-Sync aktualisieren"
                   className="flex h-8 items-center gap-2 border border-[var(--line)] bg-white px-3 text-xs font-bold text-[var(--foreground)]"
                 >
                   <RefreshCw className="size-3.5" aria-hidden="true" />
-                  <span>Live-Sync</span>
+                  <span>Aktualisieren</span>
                 </button>
               </form>
             }
