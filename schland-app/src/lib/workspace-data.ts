@@ -134,10 +134,12 @@ export type WorkspaceModerationEvent = {
   channel: string;
   discordId: string;
   discordName: string;
+  durationMode: string;
   endedAt: string;
   eventType: string;
   eventTypeLabel: string;
   id: string;
+  lifetime: boolean;
   memberName: string;
   moderator: string;
   reason: string;
@@ -195,7 +197,11 @@ export type WorkspaceSyncStatus = {
   errorCount: number;
   lastFullSync: string;
   manualSync: string;
+  memberCoverageComplete: boolean;
+  memberGuildName: string;
+  memberMissingEstimate: number | null;
   memberPageLimitHit: boolean;
+  memberServerEstimate: number | null;
   memberScanned: number;
   memberSkippedBots: number;
   memberUpserted: number;
@@ -564,8 +570,10 @@ export const demoWorkspaceData: WorkspaceData = {
   moderationEvents: [
     {
       id: "mod-demo-1",
+      durationMode: "timed",
       eventType: "timeout",
       eventTypeLabel: "Timeout",
+      lifetime: false,
       status: "active",
       statusLabel: "Aktiv",
       memberName: "Elias Kramer",
@@ -581,8 +589,10 @@ export const demoWorkspaceData: WorkspaceData = {
     },
     {
       id: "mod-demo-2",
+      durationMode: "lifetime",
       eventType: "ban",
       eventTypeLabel: "Ban",
+      lifetime: true,
       status: "active",
       statusLabel: "Aktiv",
       memberName: "Noah Becker",
@@ -593,13 +603,15 @@ export const demoWorkspaceData: WorkspaceData = {
       reason: "Pruefung laeuft",
       startedAt: "Gestern, 21:10",
       endedAt: "-",
-      totalDuration: "Unbegrenzt",
-      remainingDuration: "Unbegrenzt",
+      totalDuration: "Lifetime",
+      remainingDuration: "Dauerhaft",
     },
     {
       id: "mod-demo-3",
+      durationMode: "lifetime",
       eventType: "voice_disconnect",
       eventTypeLabel: "Verbindung getrennt",
+      lifetime: true,
       status: "recorded",
       statusLabel: "Erfasst",
       memberName: "Mara Seidel",
@@ -718,7 +730,11 @@ export const demoWorkspaceData: WorkspaceData = {
     errorCount: 0,
     manualSync: "Adminrecht",
     botState: "nicht gestartet",
+    memberCoverageComplete: true,
+    memberGuildName: "-",
+    memberMissingEstimate: null,
     memberPageLimitHit: false,
+    memberServerEstimate: null,
     memberScanned: 0,
     memberSkippedBots: 0,
     memberUpserted: 0,
@@ -913,6 +929,7 @@ export async function getWorkspaceData(
             started_at,
             ended_at,
             duration_seconds,
+            metadata,
             last_synced_at,
             members(name, discord_id)
           `,
@@ -1221,6 +1238,7 @@ function mapDiscordInvites(rows: Record<string, unknown>[]): WorkspaceDiscordInv
 function mapModerationEvents(rows: Record<string, unknown>[]): WorkspaceModerationEvent[] {
   return rows.map((row) => {
     const member = asObject(row.members);
+    const metadata = asObject(row.metadata);
     const eventType = String(row.event_type ?? "kick");
     const status = String(row.status ?? "recorded");
     const durationSeconds =
@@ -1228,11 +1246,19 @@ function mapModerationEvents(rows: Record<string, unknown>[]): WorkspaceModerati
         ? null
         : Number(row.duration_seconds);
     const endedAt = String(row.ended_at ?? "");
+    const durationMode = String(metadata.durationMode ?? "");
+    const metadataLifetime =
+      metadata.lifetime === true || metadata.lifetime === "true";
+    const lifetime =
+      metadataLifetime ||
+      (eventType === "ban" && durationSeconds === null && !endedAt);
 
     return {
       id: String(row.id ?? ""),
+      durationMode,
       eventType,
       eventTypeLabel: mapModerationEventType(eventType),
+      lifetime,
       status,
       statusLabel: mapModerationStatus(status),
       memberName: String(member.name ?? row.discord_username ?? "Unbekannt"),
@@ -1243,8 +1269,13 @@ function mapModerationEvents(rows: Record<string, unknown>[]): WorkspaceModerati
       reason: String(row.reason ?? "-"),
       startedAt: formatDate(String(row.started_at ?? "")),
       endedAt: formatDate(endedAt),
-      totalDuration: formatDurationSeconds(durationSeconds, eventType),
-      remainingDuration: formatRemainingDuration(endedAt, status, eventType),
+      totalDuration: lifetime
+        ? "Lifetime"
+        : formatDurationSeconds(durationSeconds, eventType),
+      remainingDuration:
+        lifetime && status === "active"
+          ? "Dauerhaft"
+          : formatRemainingDuration(endedAt, status, eventType),
     };
   });
 }
@@ -1313,13 +1344,36 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
   const memberPageLimitHit = Boolean(memberMetadata.pageLimitHit);
   const memberSkippedBots = Number(memberMetadata.skippedBots ?? 0);
   const memberUpserted = Number(memberMetadata.upserted ?? 0);
+  const memberServerEstimate = readOptionalNumber(
+    memberMetadata.guildMemberEstimate,
+  );
+  const memberMissingEstimate = readOptionalNumber(memberMetadata.missingEstimate);
+  const memberCoverageComplete =
+    memberMetadata.coverageComplete === undefined
+      ? !memberPageLimitHit
+      : Boolean(memberMetadata.coverageComplete);
+  const memberGuildName = String(memberMetadata.guildName ?? "-");
+  const memberCoverageStatus =
+    memberServerEstimate !== null
+      ? memberCoverageComplete
+        ? `${memberScanned}/${memberServerEstimate} Discord-Mitglieder erfasst`
+        : `${memberScanned}/${memberServerEstimate} erfasst, ca. ${memberMissingEstimate ?? 0} offen`
+      : memberPageLimitHit
+        ? "Discord-Limit erreicht"
+        : latest
+          ? `${memberUpserted} Akten, ${memberSkippedBots} Bots uebersprungen`
+          : "Schema vorbereitet";
 
   return {
     lastFullSync: latest ? formatDate(String(latest.started_at ?? "")) : "Noch offen",
     errorCount: errors,
     manualSync: "Adminrecht",
     botState: latest ? String(latest.status ?? "unbekannt") : "nicht gestartet",
+    memberCoverageComplete,
+    memberGuildName,
+    memberMissingEstimate,
     memberPageLimitHit,
+    memberServerEstimate,
     memberScanned,
     memberSkippedBots,
     memberUpserted,
@@ -1331,12 +1385,8 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
       },
       {
         label: "Neue Mitglieder",
-        status: memberPageLimitHit
-          ? "Discord-Limit erreicht"
-          : latest
-          ? `${memberUpserted} Akten, ${memberSkippedBots} Bots uebersprungen`
-          : "Schema vorbereitet",
-        active: true,
+        status: memberCoverageStatus,
+        active: memberCoverageComplete,
       },
       {
         label: "Nachrichtenzaehler",
@@ -1544,6 +1594,16 @@ function formatFileSize(value: number) {
   return `${new Intl.NumberFormat("de-DE", {
     maximumFractionDigits: unitIndex === 0 ? 0 : 1,
   }).format(size)} ${units[unitIndex]}`;
+}
+
+function readOptionalNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const numberValue = Number(value);
+
+  return Number.isFinite(numberValue) ? numberValue : null;
 }
 
 function asArray(value: unknown): Record<string, unknown>[] {

@@ -453,6 +453,13 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "moderation-action-timeout-lifetime") {
+    return {
+      tone: "warning" as const,
+      text: "Discord erlaubt native Timeouts nicht als Lifetime. Bitte fuer Mute/Timeout Minuten eintragen; Bans werden dauerhaft gesetzt.",
+    };
+  }
+
   if (setup === "moderation-action-aal2") {
     return {
       tone: "warning" as const,

@@ -215,16 +215,16 @@ export function WorkspaceShell({
 
   return (
     <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
-      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[260px_1fr]">
-        <aside className="border-b border-[var(--line)] bg-[var(--surface)] lg:border-b-0 lg:border-r">
-          <div className="flex h-full flex-col gap-6 p-4">
+      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[230px_1fr]">
+        <aside className="border-b border-[var(--line-strong)] bg-[var(--surface-muted)] lg:border-b-0 lg:border-r">
+          <div className="flex h-full flex-col gap-4 p-3">
             <div className="flex items-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-lg bg-[var(--accent)] text-white">
+              <div className="flex size-9 items-center justify-center border border-[var(--line-strong)] bg-[var(--accent)] text-white">
                 <Database className="size-5" aria-hidden="true" />
               </div>
               <div>
-                <p className="text-sm font-semibold">Schland Intern</p>
-                <p className="text-xs text-neutral-500">Vercel + Supabase</p>
+                <p className="text-sm font-bold uppercase">Schland DB</p>
+                <p className="text-xs text-neutral-600">Verwaltung</p>
               </div>
             </div>
 
@@ -240,10 +240,10 @@ export function WorkspaceShell({
                     title={section.label}
                     onClick={() => setActiveSection(section.id)}
                     className={[
-                      "flex h-10 items-center gap-3 rounded-md px-3 text-left text-sm transition",
+                      "flex h-9 items-center gap-2 border px-2 text-left text-sm transition",
                       isActive
-                        ? "bg-[var(--accent)] text-white"
-                        : "text-neutral-700 hover:bg-[var(--surface-muted)]",
+                        ? "border-[var(--line-strong)] bg-[var(--accent)] text-white"
+                        : "border-transparent text-neutral-800 hover:border-[var(--line)] hover:bg-[var(--surface)]",
                     ].join(" ")}
                   >
                     <Icon className="size-4 shrink-0" aria-hidden="true" />
@@ -253,7 +253,7 @@ export function WorkspaceShell({
               })}
             </nav>
 
-            <div className="mt-auto rounded-lg border border-[var(--line)] bg-[var(--surface-muted)] p-3">
+            <div className="mt-auto border border-[var(--line-strong)] bg-[var(--surface)] p-3">
               <div className="mb-3 flex items-center gap-2">
                 <Lock className="size-4 text-[var(--accent)]" aria-hidden="true" />
                 <span className="text-sm font-medium">Akten-Schutz</span>
@@ -269,7 +269,7 @@ export function WorkspaceShell({
         </aside>
 
         <section className="min-w-0">
-          <header className="sticky top-0 z-10 border-b border-[var(--line)] bg-[var(--background)]/95 px-4 py-3 backdrop-blur md:px-6">
+          <header className="sticky top-0 z-10 border-b border-[var(--line-strong)] bg-[var(--surface)] px-4 py-3 md:px-5">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-xs font-medium uppercase text-neutral-500">
@@ -326,7 +326,7 @@ export function WorkspaceShell({
             </div>
           </header>
 
-          <div className="grid gap-5 px-4 py-5 md:px-6">
+          <div className="grid gap-4 px-4 py-4 md:px-5">
             {setupNotice ? <Notice notice={setupNotice} /> : null}
             {workspaceData.warning ? (
               <Notice
@@ -613,48 +613,81 @@ function MembersSection({
   sync: WorkspaceSyncStatus;
 }) {
   return (
-    <div className="grid gap-5 xl:grid-cols-[1fr_420px]">
-      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+    <div className="grid gap-4 xl:grid-cols-[minmax(700px,1fr)_430px]">
+      <section className="border border-[var(--line-strong)] bg-[var(--surface)]">
         <SectionHeader
           icon={Shield}
-          title="Geschuetzte Akten"
+          title="Mitgliederkartei"
           action={
-            <span className="rounded-md bg-[var(--accent-soft)] px-2 py-1 text-xs font-medium text-[var(--accent-strong)]">
+            <span className="border border-[var(--line)] bg-[var(--accent-soft)] px-2 py-1 text-xs font-bold text-[var(--accent-strong)]">
               {mfaReady ? "2FA aktiv" : "2FA offen"}
             </span>
           }
         />
 
-        <div className="grid gap-4 border-t border-[var(--line)] p-4">
-          <dl className="grid gap-3 rounded-lg border border-[var(--line)] bg-[var(--surface-muted)] p-3 text-sm sm:grid-cols-5">
+        <div className="grid gap-3 border-t border-[var(--line-strong)] p-3">
+          <dl className="grid gap-2 border border-[var(--line)] bg-[var(--surface-muted)] p-3 text-sm sm:grid-cols-3 xl:grid-cols-6">
             <DetailRow
-              label="Discord gesehen"
+              label="Discord Server"
+              value={
+                sync.memberServerEstimate !== null
+                  ? `ca. ${formatNumber(sync.memberServerEstimate)}`
+                  : "-"
+              }
+            />
+            <DetailRow
+              label="Erfasst"
               value={formatNumber(sync.memberScanned)}
             />
             <DetailRow
-              label="Akten synchronisiert"
+              label="Offen"
+              value={
+                sync.memberMissingEstimate !== null
+                  ? formatNumber(sync.memberMissingEstimate)
+                  : "-"
+              }
+            />
+            <DetailRow
+              label="Akten"
               value={formatNumber(sync.memberUpserted)}
             />
             <DetailRow
-              label="Bots uebersprungen"
+              label="Bots"
               value={formatNumber(sync.memberSkippedBots)}
             />
             <DetailRow
-              label="Sync-Limit"
-              value={sync.memberPageLimitHit ? "Erreicht" : "OK"}
+              label="Status"
+              value={
+                sync.memberCoverageComplete
+                  ? "Vollstaendig"
+                  : sync.memberPageLimitHit
+                    ? "Limit"
+                    : "Pruefen"
+              }
             />
-            <DetailRow label="Letzter Lauf" value={sync.lastFullSync} />
           </dl>
 
-          <form action={createMemberAction} className="grid gap-3 border-b border-[var(--line)] pb-4">
+          {!sync.memberCoverageComplete ? (
+            <div className="border border-[var(--warning)] bg-[#fff4d6] p-3 text-sm text-amber-950">
+              Discord meldet mehr Mitglieder als der Sync erfasst hat. Pruefe den
+              Server-Members-Intent beim Bot oder starte den Bot-Gateway-Sync.
+            </div>
+          ) : null}
+
+          <details className="border border-[var(--line)] bg-[var(--surface-muted)]">
+            <summary className="flex cursor-pointer items-center justify-between gap-3 border-b border-[var(--line)] px-3 py-2 text-sm font-bold uppercase">
+              <span>Manuelle Akte anlegen</span>
+              <Plus className="size-4" aria-hidden="true" />
+            </summary>
+          <form action={createMemberAction} className="grid gap-3 p-3">
             {!mfaReady ? (
-              <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-[#fff4d6] p-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 border border-amber-300 bg-[#fff4d6] p-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
                 <span>
                   Mitgliederakten koennen erst mit aktiver 2FA-Sitzung angelegt werden.
                 </span>
                 <a
                   href="/security?setup=member-create-aal2"
-                  className="flex h-9 w-fit items-center gap-2 rounded-md bg-[var(--foreground)] px-3 text-sm text-white"
+                  className="flex h-9 w-fit items-center gap-2 border border-[var(--line-strong)] bg-[var(--foreground)] px-3 text-sm text-white"
                 >
                   <KeyRound className="size-4" aria-hidden="true" />
                   <span>2FA freischalten</span>
@@ -836,6 +869,7 @@ function MembersSection({
               </div>
             </fieldset>
           </form>
+          </details>
 
           <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
             <label className="grid gap-2">
@@ -860,7 +894,7 @@ function MembersSection({
                 value={accessReason}
                 onChange={(event) => setAccessReason(event.target.value)}
                 placeholder="z.B. Moderationsfall pruefen"
-                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+                className="h-9 border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
               />
             </label>
           </div>
@@ -979,9 +1013,9 @@ function MembersSection({
         </div>
       </section>
 
-      <aside className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+      <aside className="border border-[var(--line-strong)] bg-[var(--surface)]">
         <SectionHeader icon={Lock} title="Aktendetail" />
-        <div className="grid gap-5 border-t border-[var(--line)] p-4">
+        <div className="grid gap-4 border-t border-[var(--line-strong)] p-3">
           {!selectedMember ? (
             <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-muted)] p-4 text-sm text-neutral-600">
               Waehle eine Mitgliederakte aus, sobald Daten vorhanden sind.
@@ -1024,7 +1058,7 @@ function MembersSection({
                     minLength={8}
                     required
                     placeholder="z.B. Moderationsfall pruefen"
-                    className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+                  className="h-9 border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
                   />
                 </label>
                 {!mfaReady ? (
@@ -2068,7 +2102,7 @@ function CategoriesSection({
                 name="name"
                 required
                 minLength={2}
-                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+                  className="h-9 border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
               />
             </label>
             <label className="grid gap-2">
@@ -2077,7 +2111,7 @@ function CategoriesSection({
               </span>
               <input
                 name="description"
-                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+                  className="h-9 border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
               />
             </label>
             <label className="grid gap-2">
@@ -2715,11 +2749,11 @@ function ModerationSection({
 
   return (
     <div className="grid gap-5">
-      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+      <section className="border border-[var(--line-strong)] bg-[var(--surface)]">
         <SectionHeader icon={Shield} title="Moderation ausfuehren" />
         <form
           action={runModerationAction}
-          className="grid gap-3 border-t border-[var(--line)] p-4 lg:grid-cols-[1.3fr_180px_140px_1.5fr_auto]"
+          className="grid gap-3 border-t border-[var(--line-strong)] p-3 lg:grid-cols-[1.2fr_160px_170px_130px_1.4fr_auto]"
         >
           <fieldset disabled={!mfaReady} className="contents disabled:opacity-60">
             <label className="grid gap-2">
@@ -2760,6 +2794,19 @@ function ModerationSection({
             </label>
             <label className="grid gap-2">
               <span className="text-xs font-medium uppercase text-neutral-500">
+                Dauerart
+              </span>
+              <select
+                name="durationMode"
+                defaultValue="lifetime"
+                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <option value="lifetime">Lifetime</option>
+                <option value="timed">Minuten</option>
+              </select>
+            </label>
+            <label className="grid gap-2">
+              <span className="text-xs font-medium uppercase text-neutral-500">
                 Minuten
               </span>
               <input
@@ -2794,9 +2841,13 @@ function ModerationSection({
             </div>
           </fieldset>
         </form>
+        <div className="border-t border-[var(--line)] bg-[var(--surface-muted)] px-3 py-2 text-xs text-neutral-700">
+          Bans werden als Lifetime gesetzt. Discord-Timeouts brauchen eine
+          Minutendauer.
+        </div>
       </section>
 
-      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+      <section className="border border-[var(--line-strong)] bg-[var(--surface)]">
         <SectionHeader
           icon={Shield}
           title="Moderationsregister"
@@ -2815,10 +2866,10 @@ function ModerationSection({
           ].map(([label, value]) => (
             <article
               key={label}
-              className="rounded-lg border border-[var(--line)] bg-white p-4"
+              className="border border-[var(--line)] bg-[var(--surface-muted)] p-3"
             >
               <p className="text-sm text-neutral-500">{label}</p>
-              <p className="mt-2 text-3xl font-semibold">
+              <p className="mt-1 font-mono text-2xl font-bold">
                 {formatNumber(Number(value))}
               </p>
             </article>

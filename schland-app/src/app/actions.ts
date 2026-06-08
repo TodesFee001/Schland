@@ -717,6 +717,8 @@ export async function runModerationAction(formData: FormData) {
   const memberId = getFormText(formData, "memberId");
   const actionType = getFormText(formData, "actionType");
   const reason = getFormText(formData, "reason");
+  const durationMode =
+    getFormText(formData, "durationMode") === "timed" ? "timed" : "lifetime";
   const durationMinutes = getOptionalFormNumber(formData, "durationMinutes");
 
   if (!memberId || !isModerationAction(actionType)) {
@@ -725,6 +727,10 @@ export async function runModerationAction(formData: FormData) {
 
   if (reason.length < 8) {
     redirect("/?section=moderation&setup=moderation-action-reason");
+  }
+
+  if (actionType === "timeout" && durationMode !== "timed") {
+    redirect("/?section=moderation&setup=moderation-action-timeout-lifetime");
   }
 
   if (actionType === "timeout" && (!durationMinutes || durationMinutes < 1)) {
@@ -764,6 +770,7 @@ export async function runModerationAction(formData: FormData) {
   try {
     await executeDiscordModerationAction({
       actionType,
+      durationMode,
       durationSeconds:
         actionType === "timeout" ? Number(durationMinutes) * 60 : null,
       memberId,

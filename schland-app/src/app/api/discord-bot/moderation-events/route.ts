@@ -65,6 +65,14 @@ export async function POST(request: Request) {
   const startedAt = asIsoDate(body?.startedAt ?? body?.started_at);
   const endedAt = asIsoDate(body?.endedAt ?? body?.ended_at);
   const metadata = asRecord(body?.metadata);
+  const durationMode = asText(
+    body?.durationMode ?? body?.duration_mode ?? metadata.durationMode,
+  );
+  const requestedLifetime = body?.lifetime ?? metadata.lifetime;
+  const lifetime =
+    requestedLifetime === true ||
+    requestedLifetime === "true" ||
+    (eventType === "ban" && durationSeconds === null && !endedAt);
 
   const supabase = getSupabaseAdminClient();
   const { data: member, error: memberError } = await supabase
@@ -98,7 +106,11 @@ export async function POST(request: Request) {
     external_event_id: externalEventId,
     last_synced_at: new Date().toISOString(),
     member_id: member?.id ?? null,
-    metadata,
+    metadata: {
+      ...metadata,
+      ...(durationMode ? { durationMode } : {}),
+      lifetime,
+    },
     moderator_discord_id: asText(
       body?.moderatorDiscordId ?? body?.moderator_discord_id,
     ),

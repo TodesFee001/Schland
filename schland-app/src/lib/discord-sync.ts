@@ -54,6 +54,12 @@ type DiscordGuildRole = {
   name?: string | null;
 };
 
+type DiscordGuildSummary = {
+  approximate_member_count?: number | null;
+  approximate_presence_count?: number | null;
+  name?: string | null;
+};
+
 type DiscordDmChannel = {
   id?: string | null;
 };
@@ -104,7 +110,12 @@ type ModerationSyncSummary = {
 };
 
 type MemberSyncSummary = {
+  coverageComplete: boolean;
   failed: number;
+  guildMemberEstimate: number | null;
+  guildName: string | null;
+  guildPresenceEstimate: number | null;
+  missingEstimate: number | null;
   pageLimitHit: boolean;
   rolesSynced: number;
   scanned: number;
@@ -153,7 +164,12 @@ export async function runDiscordSync(trigger = "cron"): Promise<DiscordSyncSumma
       scanned: 0,
     },
     members: {
+      coverageComplete: false,
       failed: 0,
+      guildMemberEstimate: null,
+      guildName: null,
+      guildPresenceEstimate: null,
+      missingEstimate: null,
       pageLimitHit: false,
       rolesSynced: 0,
       scanned: 0,
@@ -490,7 +506,12 @@ async function syncDiscordMembers(
   config: DiscordSyncConfig,
 ): Promise<MemberSyncSummary> {
   const summary: MemberSyncSummary = {
+    coverageComplete: false,
     failed: 0,
+    guildMemberEstimate: null,
+    guildName: null,
+    guildPresenceEstimate: null,
+    missingEstimate: null,
     pageLimitHit: false,
     rolesSynced: 0,
     scanned: 0,
@@ -498,6 +519,24 @@ async function syncDiscordMembers(
     upserted: 0,
   };
   const roleMap = await syncGuildRoles(supabase, config);
+  const guildSummary = await fetchGuildSummary(config).catch((error) => {
+    console.error("discord guild summary failed", {
+      error: getErrorMessage(error),
+    });
+
+    return null;
+  });
+
+  if (guildSummary) {
+    summary.guildName = asText(guildSummary.name);
+    summary.guildMemberEstimate = asOptionalNumber(
+      guildSummary.approximate_member_count,
+    );
+    summary.guildPresenceEstimate = asOptionalNumber(
+      guildSummary.approximate_presence_count,
+    );
+  }
+
   let after = "0";
 
   for (let page = 0; page < MEMBER_MAX_PAGES; page += 1) {
@@ -542,6 +581,17 @@ async function syncDiscordMembers(
 
     after = lastUserId;
   }
+
+  if (summary.guildMemberEstimate !== null) {
+    summary.missingEstimate = Math.max(
+      0,
+      summary.guildMemberEstimate - summary.scanned,
+    );
+  }
+
+  summary.coverageComplete =
+    !summary.pageLimitHit &&
+    (summary.missingEstimate === null || summary.missingEstimate === 0);
 
   return summary;
 }
@@ -602,6 +652,14 @@ async function fetchGuildMembers(
   return discordRequest<DiscordGuildMember[]>(
     config,
     `/guilds/${config.guildId}/members?${searchParams.toString()}`,
+    { method: "GET" },
+  );
+}
+
+async function fetchGuildSummary(config: DiscordSyncConfig) {
+  return discordRequest<DiscordGuildSummary>(
+    config,
+    `/guilds/${config.guildId}?with_counts=true`,
     { method: "GET" },
   );
 }
@@ -732,6 +790,7 @@ async function sendDiscordInviteDm(
 
 export async function executeDiscordModerationAction(input: {
   actionType: "ban" | "kick" | "timeout" | "voice_disconnect" | "warn";
+  durationMode?: "lifetime" | "timed";
   durationSeconds: number | null;
   memberId: string;
   moderatorName?: string | null;
@@ -767,6 +826,11 @@ export async function executeDiscordModerationAction(input: {
     input.actionType === "timeout" && input.durationSeconds
       ? new Date(startedAt.getTime() + input.durationSeconds * 1000)
       : null;
+  const durationMode =
+    input.actionType === "timeout" ? "timed" : input.durationMode ?? "lifetime";
+  const lifetime =
+    input.actionType === "ban" ||
+    (input.actionType !== "timeout" && durationMode === "lifetime");
 
   if (input.actionType === "timeout") {
     await discordRequest(config, `/guilds/${config.guildId}/members/${discordUserId}`, {
@@ -809,6 +873,8 @@ export async function executeDiscordModerationAction(input: {
     member_id: input.memberId,
     metadata: {
       actionSource: "web",
+      durationMode,
+      lifetime,
     },
     moderator_name: input.moderatorName ?? "Website",
     reason,
@@ -985,6 +1051,11 @@ function mapAuditLogEntry(
       durationSeconds: null,
       endedAt: null,
       eventType: "ban",
+      metadata: {
+        ...base.metadata,
+        durationMode: "lifetime",
+        lifetime: true,
+      },
       status: "active",
     };
   }
@@ -1205,4 +1276,10 @@ function getErrorMessage(error: unknown) {
 
 function truncateMessage(message: string) {
   return message.slice(0, 500);
+}
+
+function asOptionalNumber(value: unknown) {
+  const numberValue = Number(value);
+
+  return Number.isFinite(numberValue) ? numberValue : null;
 }
