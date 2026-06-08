@@ -159,6 +159,76 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "member-file-linked") {
+    return {
+      tone: "success" as const,
+      text: "Datei wurde mit der Mitgliederakte verknuepft und protokolliert.",
+    };
+  }
+
+  if (setup === "member-file-unlinked") {
+    return {
+      tone: "success" as const,
+      text: "Dateiverknuepfung wurde geloest und protokolliert.",
+    };
+  }
+
+  if (setup === "member-file-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum Verwalten von Dateiverknuepfungen muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "member-file-reason") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte gib fuer die Dateiverknuepfung einen Grund mit mindestens 8 Zeichen an.",
+    };
+  }
+
+  if (setup === "member-file-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Mitgliederakte oder Datei wurde nicht gefunden.",
+    };
+  }
+
+  if (setup === "member-file-file-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Diese Datei wurde nicht gefunden.",
+    };
+  }
+
+  if (setup === "member-file-link-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Diese Dateiverknuepfung ist nicht mehr vorhanden.",
+    };
+  }
+
+  if (setup === "member-file-permission") {
+    return {
+      tone: "error" as const,
+      text: "Dateiverknuepfung konnte nicht geaendert werden. Der Account hat keine passende Akten- oder Datei-Berechtigung.",
+    };
+  }
+
+  if (setup === "member-file-duplicate") {
+    return {
+      tone: "warning" as const,
+      text: "Diese Datei ist bereits mit der Mitgliederakte verknuepft.",
+    };
+  }
+
+  if (setup === "member-file-error") {
+    return {
+      tone: "error" as const,
+      text: "Dateiverknuepfung konnte nicht geaendert werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
   if (setup === "role-assigned") {
     return {
       tone: "success" as const,

@@ -37,9 +37,11 @@ import {
   createMemberAction,
   deleteFolderAction,
   downloadFileAction,
+  linkMemberFileAction,
   openMemberCaseAction,
   setFolderPermissionAction,
   setUserRoleAction,
+  unlinkMemberFileAction,
   uploadFileAction,
 } from "@/app/actions";
 import type { AuthStatus } from "@/lib/auth";
@@ -331,6 +333,7 @@ export function WorkspaceShell({
             accessReason={accessReason}
             canOpenMember={canOpenMember}
             canViewSelectedMember={canViewSelectedMember}
+            files={workspaceData.files}
             filteredMembers={filteredMembers}
             memberSearch={memberSearch}
             mfaReady={mfaReady}
@@ -539,6 +542,7 @@ function MembersSection({
   accessReason,
   canOpenMember,
   canViewSelectedMember,
+  files,
   filteredMembers,
   memberSearch,
   mfaReady,
@@ -550,6 +554,7 @@ function MembersSection({
   accessReason: string;
   canOpenMember: boolean;
   canViewSelectedMember: boolean;
+  files: WorkspaceFile[];
   filteredMembers: WorkspaceMember[];
   memberSearch: string;
   mfaReady: boolean;
@@ -937,17 +942,49 @@ function MembersSection({
                   {selectedMember.linkedFiles.length > 0 ? (
                     selectedMember.linkedFiles.map((file) => (
                       <div
-                        key={file}
-                        className="flex items-center justify-between gap-3 border-b border-[var(--line)] py-2 text-sm last:border-b-0"
+                        key={file.fileId}
+                        className="grid gap-2 border-b border-[var(--line)] py-2 text-sm last:border-b-0"
                       >
-                        <span className="truncate">{file}</span>
-                        <button
-                          type="button"
-                          title="Datei oeffnen"
-                          className="flex size-8 shrink-0 items-center justify-center rounded-md border border-[var(--line)]"
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate font-medium">{file.name}</p>
+                            <p className="truncate text-xs text-neutral-500">
+                              {file.sizeLabel} {"-"} {file.relationType}
+                            </p>
+                          </div>
+                          <form action={downloadFileAction} className="shrink-0">
+                            <input type="hidden" name="fileId" value={file.fileId} />
+                            <button
+                              type="submit"
+                              title="Datei herunterladen"
+                              className="flex size-8 items-center justify-center rounded-md border border-[var(--line)] bg-white"
+                            >
+                              <Download className="size-4" aria-hidden="true" />
+                            </button>
+                          </form>
+                        </div>
+                        <form
+                          action={unlinkMemberFileAction}
+                          className="grid gap-2 sm:grid-cols-[1fr_auto]"
                         >
-                          <Eye className="size-4" aria-hidden="true" />
-                        </button>
+                          <input type="hidden" name="memberId" value={selectedMember.id} />
+                          <input type="hidden" name="fileId" value={file.fileId} />
+                          <input
+                            name="reason"
+                            required
+                            minLength={8}
+                            placeholder="Grund fuer Entfernen"
+                            className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                          />
+                          <button
+                            type="submit"
+                            title="Verknuepfung entfernen"
+                            className="flex h-9 items-center justify-center gap-2 rounded-md border border-red-200 bg-white px-3 text-sm text-[var(--danger)]"
+                          >
+                            <Trash2 className="size-4" aria-hidden="true" />
+                            <span>Loesen</span>
+                          </button>
+                        </form>
                       </div>
                     ))
                   ) : (
@@ -956,6 +993,75 @@ function MembersSection({
                     </div>
                   )}
                 </div>
+                <form
+                  action={linkMemberFileAction}
+                  className="mt-4 grid gap-2 rounded-lg border border-[var(--line)] bg-[var(--surface-muted)] p-3"
+                >
+                  <input type="hidden" name="memberId" value={selectedMember.id} />
+                  <label className="grid gap-2">
+                    <span className="text-xs font-medium uppercase text-neutral-500">
+                      Datei verknuepfen
+                    </span>
+                    <select
+                      name="fileId"
+                      required
+                      defaultValue=""
+                      disabled={files.length === 0}
+                      className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      <option value="">Datei waehlen</option>
+                      {files.map((file) => (
+                        <option
+                          key={file.id}
+                          value={file.id}
+                          disabled={selectedMember.linkedFiles.some(
+                            (linkedFile) => linkedFile.fileId === file.id,
+                          )}
+                        >
+                          {file.originalName} ({file.category})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="grid gap-2 sm:grid-cols-[1fr_1fr]">
+                    <label className="grid gap-2">
+                      <span className="text-xs font-medium uppercase text-neutral-500">
+                        Art
+                      </span>
+                      <select
+                        name="relationType"
+                        defaultValue="linked"
+                        className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                      >
+                        <option value="linked">Verknuepfung</option>
+                        <option value="evidence">Nachweis</option>
+                        <option value="note">Notiz</option>
+                        <option value="avatar">Profilbild</option>
+                      </select>
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-xs font-medium uppercase text-neutral-500">
+                        Grund
+                      </span>
+                      <input
+                        name="reason"
+                        required
+                        minLength={8}
+                        placeholder="z.B. Nachweis hinterlegen"
+                        className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                      />
+                    </label>
+                  </div>
+                  <button
+                    type="submit"
+                    title="Datei verknuepfen"
+                    disabled={files.length === 0}
+                    className="flex h-9 items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-3 text-sm text-white disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <Plus className="size-4" aria-hidden="true" />
+                    <span>Verknuepfen</span>
+                  </button>
+                </form>
               </div>
             </>
           )}

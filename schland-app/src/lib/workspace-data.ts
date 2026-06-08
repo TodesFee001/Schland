@@ -12,7 +12,7 @@ export type WorkspaceMember = {
   displayName: string;
   invitedBy: string;
   lastActivity: string;
-  linkedFiles: string[];
+  linkedFiles: WorkspaceMemberFile[];
   messagesMonth: number;
   name: string;
   profession: string;
@@ -20,6 +20,15 @@ export type WorkspaceMember = {
   roles: string[];
   status: MemberStatusLabel;
   voiceHoursMonth: number;
+};
+
+export type WorkspaceMemberFile = {
+  createdAt: string;
+  fileId: string;
+  name: string;
+  relationType: string;
+  sizeLabel: string;
+  type: string;
 };
 
 export type WorkspaceFolder = {
@@ -161,7 +170,24 @@ export const demoWorkspaceData: WorkspaceData = {
       roles: ["Mitglied", "Voice Aktiv", "Dateienzugriff"],
       messagesMonth: 418,
       voiceHoursMonth: 38,
-      linkedFiles: ["Aufnahmebogen.pdf", "Rollenfreigabe.png"],
+      linkedFiles: [
+        {
+          createdAt: "Heute, 00:41",
+          fileId: "file-demo-1",
+          name: "Aufnahmebogen.pdf",
+          relationType: "linked",
+          sizeLabel: "180 KB",
+          type: "application/pdf",
+        },
+        {
+          createdAt: "Gestern, 21:10",
+          fileId: "file-demo-2",
+          name: "Rollenfreigabe.png",
+          relationType: "linked",
+          sizeLabel: "94 KB",
+          type: "image/png",
+        },
+      ],
     },
     {
       id: "MEM-1042",
@@ -178,7 +204,16 @@ export const demoWorkspaceData: WorkspaceData = {
       roles: ["Moderator", "Ermittlungszugriff", "Mitgliederakten-Leser"],
       messagesMonth: 912,
       voiceHoursMonth: 64,
-      linkedFiles: ["Moderationsnotiz.docx"],
+      linkedFiles: [
+        {
+          createdAt: "Gestern, 18:20",
+          fileId: "file-demo-3",
+          name: "Moderationsnotiz.docx",
+          relationType: "note",
+          sizeLabel: "42 KB",
+          type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        },
+      ],
     },
     {
       id: "MEM-1099",
@@ -195,7 +230,16 @@ export const demoWorkspaceData: WorkspaceData = {
       roles: ["Mitglied", "Bilderzugriff"],
       messagesMonth: 73,
       voiceHoursMonth: 9,
-      linkedFiles: ["Hinweis-2026-06.pdf"],
+      linkedFiles: [
+        {
+          createdAt: "02.06.2026, 19:04",
+          fileId: "file-demo-4",
+          name: "Hinweis-2026-06.pdf",
+          relationType: "evidence",
+          sizeLabel: "320 KB",
+          type: "application/pdf",
+        },
+      ],
     },
   ],
   files: [
@@ -503,7 +547,11 @@ export async function getWorkspaceData(
             message_activity_monthly(year, month, message_count, last_message_at),
             voice_activity_monthly(year, month, voice_minutes, last_voice_at),
             member_discord_roles(discord_roles(role_name)),
-            member_files(files(filename, original_filename))
+            member_files(
+              relation_type,
+              created_at,
+              files(id, filename, original_filename, file_type, file_size)
+            )
           `,
         )
         .order("updated_at", { ascending: false })
@@ -667,9 +715,19 @@ function mapMembers(rows: Record<string, unknown>[]): WorkspaceMember[] {
       linkedFiles: asArray(row.member_files)
         .map((entry) => {
           const file = asObject(entry.files);
-          return String(file.original_filename ?? file.filename ?? "");
+          const fileId = String(file.id ?? "");
+          const name = String(file.original_filename ?? file.filename ?? "");
+
+          return {
+            createdAt: formatDate(String(entry.created_at ?? "")),
+            fileId,
+            name,
+            relationType: String(entry.relation_type ?? "linked"),
+            sizeLabel: formatFileSize(Number(file.file_size ?? 0)),
+            type: String(file.file_type ?? "application/octet-stream"),
+          };
         })
-        .filter(Boolean),
+        .filter((file) => file.fileId && file.name),
     };
   });
 }

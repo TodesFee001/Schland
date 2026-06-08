@@ -129,6 +129,126 @@ export async function openMemberCaseAction(formData: FormData) {
   redirect(`/?section=members&member=${encodeURIComponent(memberId)}&setup=member-opened`);
 }
 
+export async function linkMemberFileAction(formData: FormData) {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=members&setup=missing-supabase");
+  }
+
+  const memberId = getFormText(formData, "memberId");
+  const fileId = getFormText(formData, "fileId");
+  const reason = getFormText(formData, "reason");
+
+  if (!memberId || !fileId) {
+    redirect("/?section=members&setup=member-file-missing");
+  }
+
+  if (reason.length < 8) {
+    redirect(
+      `/?section=members&member=${encodeURIComponent(
+        memberId,
+      )}&setup=member-file-reason`,
+    );
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect(
+      `/?section=members&member=${encodeURIComponent(
+        memberId,
+      )}&setup=member-file-aal2`,
+    );
+  }
+
+  const { error } = await supabase.rpc("set_member_file_link", {
+    p_file_id: fileId,
+    p_link: true,
+    p_member_id: memberId,
+    p_reason: reason,
+    p_relation_type: getFormText(formData, "relationType") || "linked",
+  });
+
+  if (error) {
+    console.error("set_member_file_link link failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect(
+      `/?section=members&member=${encodeURIComponent(
+        memberId,
+      )}&setup=${getMemberFileLinkErrorSetup(error)}`,
+    );
+  }
+
+  revalidatePath("/", "layout");
+  redirect(
+    `/?section=members&member=${encodeURIComponent(
+      memberId,
+    )}&setup=member-file-linked`,
+  );
+}
+
+export async function unlinkMemberFileAction(formData: FormData) {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=members&setup=missing-supabase");
+  }
+
+  const memberId = getFormText(formData, "memberId");
+  const fileId = getFormText(formData, "fileId");
+  const reason = getFormText(formData, "reason");
+
+  if (!memberId || !fileId) {
+    redirect("/?section=members&setup=member-file-missing");
+  }
+
+  if (reason.length < 8) {
+    redirect(
+      `/?section=members&member=${encodeURIComponent(
+        memberId,
+      )}&setup=member-file-reason`,
+    );
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect(
+      `/?section=members&member=${encodeURIComponent(
+        memberId,
+      )}&setup=member-file-aal2`,
+    );
+  }
+
+  const { error } = await supabase.rpc("set_member_file_link", {
+    p_file_id: fileId,
+    p_link: false,
+    p_member_id: memberId,
+    p_reason: reason,
+    p_relation_type: "linked",
+  });
+
+  if (error) {
+    console.error("set_member_file_link unlink failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect(
+      `/?section=members&member=${encodeURIComponent(
+        memberId,
+      )}&setup=${getMemberFileLinkErrorSetup(error)}`,
+    );
+  }
+
+  revalidatePath("/", "layout");
+  redirect(
+    `/?section=members&member=${encodeURIComponent(
+      memberId,
+    )}&setup=member-file-unlinked`,
+  );
+}
+
 export async function setUserRoleAction(formData: FormData) {
   if (!hasSupabasePublicEnv()) {
     redirect("/?section=users&setup=missing-supabase");
@@ -508,6 +628,40 @@ function getMemberOpenErrorSetup(error: { message?: string }) {
   }
 
   return "member-open-error";
+}
+
+function getMemberFileLinkErrorSetup(error: { code?: string; message?: string }) {
+  const message = error.message?.toLowerCase() ?? "";
+
+  if (message.includes("reason")) {
+    return "member-file-reason";
+  }
+
+  if (message.includes("member") && message.includes("not found")) {
+    return "member-file-missing";
+  }
+
+  if (message.includes("file") && message.includes("not found")) {
+    return "member-file-file-missing";
+  }
+
+  if (message.includes("link not found")) {
+    return "member-file-link-missing";
+  }
+
+  if (
+    message.includes("access denied") ||
+    message.includes("denied") ||
+    message.includes("permission")
+  ) {
+    return "member-file-permission";
+  }
+
+  if (error.code === "23505" || message.includes("duplicate")) {
+    return "member-file-duplicate";
+  }
+
+  return "member-file-error";
 }
 
 function getUserRoleErrorSetup(error: { message?: string }) {
