@@ -21,15 +21,35 @@ export function isSessionTimeboxExpired(
   startedAtValue: string | undefined,
   now = new Date(),
 ) {
+  return getSessionRemainingSeconds(startedAtValue, now) <= 0;
+}
+
+export function getSessionRemainingSeconds(
+  startedAtValue: string | undefined,
+  now = new Date(),
+) {
   const startedAtSeconds = Number(startedAtValue);
 
   if (!Number.isFinite(startedAtSeconds) || startedAtSeconds <= 0) {
-    return true;
+    return 0;
   }
 
   const ageSeconds = Math.floor(now.getTime() / 1000) - startedAtSeconds;
 
-  return ageSeconds >= SESSION_TIMEBOX_SECONDS;
+  return Math.max(SESSION_TIMEBOX_SECONDS - ageSeconds, 0);
+}
+
+export function getSessionExpiresAt(
+  startedAtValue: string | undefined,
+) {
+  const startedAtSeconds = Number(startedAtValue);
+
+  if (!Number.isFinite(startedAtSeconds) || startedAtSeconds <= 0) {
+    return null;
+  }
+
+  return new Date((startedAtSeconds + SESSION_TIMEBOX_SECONDS) * 1000)
+    .toISOString();
 }
 
 export function clearSessionCookies(

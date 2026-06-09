@@ -166,6 +166,9 @@ export function WorkspaceShell({
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [patchNotesOpen, setPatchNotesOpen] = useState(false);
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState<string[]>([]);
+  const [sessionRemainingSeconds, setSessionRemainingSeconds] = useState<
+    number | null
+  >(authStatus.sessionRemainingSeconds ?? null);
   const selectedMemberId = members.some(
     (member) => member.id === selectedMemberOverride,
   )
@@ -205,6 +208,31 @@ export function WorkspaceShell({
 
     return () => window.clearInterval(interval);
   }, [router]);
+
+  useEffect(() => {
+    if (!authStatus.signedIn || !authStatus.sessionExpiresAt) {
+      return;
+    }
+
+    function updateRemainingTime() {
+      const expiresAt = new Date(String(authStatus.sessionExpiresAt)).getTime();
+      const remaining = Math.max(
+        Math.ceil((expiresAt - Date.now()) / 1000),
+        0,
+      );
+
+      setSessionRemainingSeconds(remaining);
+
+      if (remaining === 0) {
+        router.refresh();
+      }
+    }
+
+    updateRemainingTime();
+    const interval = window.setInterval(updateRemainingTime, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [authStatus.sessionExpiresAt, authStatus.signedIn, router]);
 
   const mfaReady = authStatus.mfaLevel === "aal2";
   const canViewSelectedMember =
@@ -349,6 +377,9 @@ export function WorkspaceShell({
                     active={authStatus.mfaLevel === "aal2"}
                     label={authStatus.mfaLevel === "aal2" ? "2FA aktiv" : "2FA offen"}
                   />
+                ) : null}
+                {authStatus.signedIn && sessionRemainingSeconds !== null ? (
+                  <SessionTimerPill remainingSeconds={sessionRemainingSeconds} />
                 ) : null}
                 <button
                   type="button"
@@ -4239,6 +4270,32 @@ function EnvironmentPill({ active, label }: { active: boolean; label: string }) 
   );
 }
 
+function SessionTimerPill({
+  remainingSeconds,
+}: {
+  remainingSeconds: number;
+}) {
+  const isCritical = remainingSeconds <= 60;
+  const isWarning = remainingSeconds <= 5 * 60;
+
+  return (
+    <span
+      className={[
+        "flex h-9 items-center gap-2 rounded-md border px-3 text-sm",
+        isCritical
+          ? "border-red-200 bg-red-50 text-[var(--danger)]"
+          : isWarning
+            ? "border-amber-300 bg-[#fff4d6] text-[var(--warning)]"
+            : "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-strong)]",
+      ].join(" ")}
+      title="Restzeit der Anmeldung"
+    >
+      <Clock className="size-4" aria-hidden="true" />
+      <span>{formatSessionRemaining(remainingSeconds)}</span>
+    </span>
+  );
+}
+
 function Notice({ notice }: { notice: SetupNotice }) {
   const styles = {
     error: "border-red-200 bg-red-50 text-red-900",
@@ -4579,6 +4636,14 @@ function DetailBox({ label, value }: { label: string; value: string }) {
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("de-DE").format(value);
+}
+
+function formatSessionRemaining(seconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const restSeconds = safeSeconds % 60;
+
+  return `${String(minutes).padStart(2, "0")}:${String(restSeconds).padStart(2, "0")}`;
 }
 
 function formatFileSize(value: number) {

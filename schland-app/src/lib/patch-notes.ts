@@ -10,6 +10,18 @@ export type PatchNote = {
 // Jede produktive Aenderung bekommt hier ab jetzt einen Eintrag.
 export const patchNotes: PatchNote[] = [
   {
+    date: "10.06.2026",
+    id: "session-countdown-timer",
+    items: [
+      "Oben rechts zeigt jetzt ein Timer die verbleibende Login-Sitzung.",
+      "Die Anzeige wechselt vor Ablauf auf Warnfarbe.",
+      "Bei Ablauf wird die Seite aktualisiert, damit der erneute Login sofort greift.",
+    ],
+    title: "Session-Timer sichtbar",
+    type: "feature",
+    version: "0.9.4",
+  },
+  {
     date: "09.06.2026",
     id: "auth-session-timebox",
     items: [
