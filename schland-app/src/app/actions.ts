@@ -1260,6 +1260,180 @@ export async function downloadFileAction(formData: FormData) {
   redirect(data.signedUrl);
 }
 
+export async function moveFileAction(formData: FormData) {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
+    redirect("/?section=files&setup=missing-supabase");
+  }
+
+  const fileId = getFormText(formData, "fileId");
+  const categoryId = getFormText(formData, "categoryId");
+  const folderId = getFormText(formData, "folderId") || null;
+  const reason = getFormText(formData, "reason");
+
+  if (!isUuidText(fileId) || !isUuidText(categoryId)) {
+    redirect("/?section=files&setup=file-move-missing");
+  }
+
+  if (folderId && !isUuidText(folderId)) {
+    redirect("/?section=files&setup=file-move-folder");
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect("/?section=files&setup=file-move-aal2");
+  }
+
+  const { data: canViewFiles } = await supabase.rpc("has_permission", {
+    required_key: "files.view",
+  });
+  const { data: canEditFiles } = await supabase.rpc("has_permission", {
+    required_key: "files.edit",
+  });
+
+  if (canViewFiles !== true || canEditFiles !== true) {
+    redirect("/?section=files&setup=file-move-permission");
+  }
+
+  const admin = getSupabaseAdminClient();
+  const file = await getFileActionRow(admin, fileId);
+
+  if (!file) {
+    redirect("/?section=files&setup=file-move-missing");
+  }
+
+  if (!(await hasFolderActionPermission(supabase, file.folder_id, "edit"))) {
+    redirect("/?section=files&setup=file-move-permission");
+  }
+
+  const target = await resolveFileMoveTarget(admin, folderId, categoryId);
+
+  if (!target) {
+    redirect("/?section=files&setup=file-move-category");
+  }
+
+  if (!(await hasFolderActionPermission(supabase, target.folderId, "edit"))) {
+    redirect("/?section=files&setup=file-move-permission");
+  }
+
+  const { error } = await admin
+    .from("files")
+    .update({
+      category_id: target.categoryId,
+      folder_id: target.folderId,
+    })
+    .eq("id", fileId);
+
+  if (error) {
+    console.error("move file failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect("/?section=files&setup=file-move-error");
+  }
+
+  try {
+    const actor = await getActionActor(supabase);
+    await writeSystemLog(admin, actor.id, "file_moved", [
+      `file=${fileId}`,
+      `from=${file.category_id ?? "-"}:${file.folder_id ?? "-"}`,
+      `to=${target.categoryId}:${target.folderId ?? "-"}`,
+      reason ? `reason=${reason}` : null,
+    ]);
+  } catch (error) {
+    console.error("file move system log failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/?section=files&setup=file-moved");
+}
+
+export async function deleteFileAction(formData: FormData) {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
+    redirect("/?section=files&setup=missing-supabase");
+  }
+
+  const fileId = getFormText(formData, "fileId");
+  const reason = getFormText(formData, "reason");
+
+  if (!isUuidText(fileId)) {
+    redirect("/?section=files&setup=file-delete-missing");
+  }
+
+  if (reason.length < 8) {
+    redirect("/?section=files&setup=file-delete-reason");
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect("/?section=files&setup=file-delete-aal2");
+  }
+
+  const { data: canViewFiles } = await supabase.rpc("has_permission", {
+    required_key: "files.view",
+  });
+  const { data: canDeleteFiles } = await supabase.rpc("has_permission", {
+    required_key: "files.delete",
+  });
+
+  if (canViewFiles !== true || canDeleteFiles !== true) {
+    redirect("/?section=files&setup=file-delete-permission");
+  }
+
+  const admin = getSupabaseAdminClient();
+  const file = await getFileActionRow(admin, fileId);
+
+  if (!file?.storage_path) {
+    redirect("/?section=files&setup=file-delete-missing");
+  }
+
+  if (!(await hasFolderActionPermission(supabase, file.folder_id, "delete"))) {
+    redirect("/?section=files&setup=file-delete-permission");
+  }
+
+  const { error: removeError } = await admin.storage
+    .from(FILE_BUCKET)
+    .remove([file.storage_path]);
+
+  if (removeError) {
+    console.error("storage delete failed", {
+      message: removeError.message,
+    });
+    redirect("/?section=files&setup=file-delete-storage");
+  }
+
+  const { error } = await admin.from("files").delete().eq("id", fileId);
+
+  if (error) {
+    console.error("delete file metadata failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect("/?section=files&setup=file-delete-error");
+  }
+
+  try {
+    const actor = await getActionActor(supabase);
+    await writeSystemLog(admin, actor.id, "file_deleted", [
+      `file=${fileId}`,
+      `name=${file.original_filename ?? "-"}`,
+      `reason=${reason}`,
+    ]);
+  } catch (error) {
+    console.error("file delete system log failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/?section=files&setup=file-deleted");
+}
+
 function getFormText(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
@@ -1311,6 +1485,123 @@ async function getActionActor(supabase: SupabaseServerClient) {
       profile?.display_name ?? profile?.username ?? profile?.email ?? user.email ?? user.id,
     ),
   };
+}
+
+type FileActionRow = {
+  category_id: string | null;
+  folder_id: string | null;
+  id: string;
+  original_filename: string | null;
+  storage_path: string | null;
+};
+
+async function getFileActionRow(admin: SupabaseAdminClient, fileId: string) {
+  const { data, error } = await admin
+    .from("files")
+    .select("id,category_id,folder_id,original_filename,storage_path")
+    .eq("id", fileId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("file action lookup failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    return null;
+  }
+
+  return data as FileActionRow | null;
+}
+
+async function hasFolderActionPermission(
+  supabase: SupabaseServerClient,
+  folderId: string | null,
+  permission: "delete" | "edit" | "open",
+) {
+  if (!folderId) {
+    return true;
+  }
+
+  const { data } = await supabase.rpc("has_folder_permission", {
+    p_folder_id: folderId,
+    p_permission: permission,
+  });
+
+  return data === true;
+}
+
+async function resolveFileMoveTarget(
+  admin: SupabaseAdminClient,
+  folderId: string | null,
+  categoryId: string,
+) {
+  if (folderId) {
+    const { data, error } = await admin
+      .from("folders")
+      .select("id,category_id")
+      .eq("id", folderId)
+      .maybeSingle();
+
+    if (error || !data?.id || !data.category_id) {
+      if (error) {
+        console.error("file move folder lookup failed", {
+          code: error.code,
+          details: error.details,
+          message: error.message,
+        });
+      }
+
+      return null;
+    }
+
+    return {
+      categoryId: String(data.category_id),
+      folderId: String(data.id),
+    };
+  }
+
+  const { data, error } = await admin
+    .from("file_categories")
+    .select("id")
+    .eq("id", categoryId)
+    .eq("active", true)
+    .maybeSingle();
+
+  if (error || !data?.id) {
+    if (error) {
+      console.error("file move category lookup failed", {
+        code: error.code,
+        details: error.details,
+        message: error.message,
+      });
+    }
+
+    return null;
+  }
+
+  return {
+    categoryId: String(data.id),
+    folderId: null,
+  };
+}
+
+async function writeSystemLog(
+  admin: SupabaseAdminClient,
+  actorId: string,
+  action: string,
+  details: Array<string | null>,
+) {
+  const { error } = await admin.from("systemprotokoll").insert({
+    aktion: action,
+    bereich: "files",
+    benutzer_id: actorId,
+    details: details.filter(Boolean).join("; "),
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
 }
 
 async function getModerationEventForMember(

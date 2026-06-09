@@ -39,11 +39,13 @@ import {
   createFolderAction,
   deleteDiscordInviteRequestAction,
   createMemberAction,
+  deleteFileAction,
   deleteFolderAction,
   deleteMemberCaseAction,
   deleteModerationEventAction,
   downloadFileAction,
   linkMemberFileAction,
+  moveFileAction,
   openMemberCaseAction,
   runModerationAction,
   runDiscordManualSyncAction,
@@ -1850,16 +1852,33 @@ function MembersSection({
                               {file.sizeLabel} {"-"} {file.relationType}
                             </p>
                           </div>
-                          <form action={downloadFileAction} className="shrink-0">
-                            <input type="hidden" name="fileId" value={file.fileId} />
-                            <button
-                              type="submit"
-                              title="Datei herunterladen"
+                          <div className="flex shrink-0 items-center gap-2">
+                            <a
+                              href={`/files/open?fileId=${encodeURIComponent(
+                                file.fileId,
+                              )}&memberId=${encodeURIComponent(selectedMember.id)}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Datei direkt oeffnen"
                               className="flex size-8 items-center justify-center rounded-md border border-[var(--line)] bg-white"
                             >
-                              <Download className="size-4" aria-hidden="true" />
-                            </button>
-                          </form>
+                              <ExternalLink className="size-4" aria-hidden="true" />
+                            </a>
+                            <form action={downloadFileAction}>
+                              <input
+                                type="hidden"
+                                name="fileId"
+                                value={file.fileId}
+                              />
+                              <button
+                                type="submit"
+                                title="Datei herunterladen"
+                                className="flex size-8 items-center justify-center rounded-md border border-[var(--line)] bg-white"
+                              >
+                                <Download className="size-4" aria-hidden="true" />
+                              </button>
+                            </form>
+                          </div>
                         </div>
                         <form
                           action={unlinkMemberFileAction}
@@ -2197,7 +2216,7 @@ function FilesSection({
           </label>
         </div>
         <div className="overflow-x-auto border-t border-[var(--line)]">
-          <table className="w-full min-w-[980px] text-sm">
+          <table className="w-full min-w-[1320px] text-sm">
             <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
               <tr>
                 <th className="px-4 py-3 font-medium">Datei</th>
@@ -2241,22 +2260,142 @@ function FilesSection({
                     </td>
                     <td className="px-4 py-3">{file.createdAt}</td>
                     <td className="px-4 py-3">
-                      <form action={downloadFileAction}>
-                        <input type="hidden" name="fileId" value={file.id} />
-                        <button
-                          type="submit"
-                          title={
-                            mfaReady
-                              ? "Datei herunterladen"
-                              : "2FA-Sitzung freischalten"
-                          }
-                          disabled={!mfaReady}
-                          className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm disabled:cursor-not-allowed disabled:opacity-45"
-                        >
-                          <Download className="size-4" aria-hidden="true" />
-                          <span>Download</span>
-                        </button>
-                      </form>
+                      <div className="grid gap-2">
+                        <div className="flex flex-wrap gap-2">
+                          {mfaReady ? (
+                            <a
+                              href={`/files/open?fileId=${encodeURIComponent(file.id)}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Datei direkt oeffnen"
+                              className="flex h-9 items-center gap-2 rounded-md border border-[var(--line-strong)] bg-white px-3 text-sm"
+                            >
+                              <ExternalLink className="size-4" aria-hidden="true" />
+                              <span>Oeffnen</span>
+                            </a>
+                          ) : (
+                            <button
+                              type="button"
+                              title="2FA-Sitzung freischalten"
+                              disabled
+                              className="flex h-9 items-center gap-2 rounded-md border border-[var(--line-strong)] bg-white px-3 text-sm disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                              <ExternalLink className="size-4" aria-hidden="true" />
+                              <span>Oeffnen</span>
+                            </button>
+                          )}
+                          <form action={downloadFileAction}>
+                            <input type="hidden" name="fileId" value={file.id} />
+                            <button
+                              type="submit"
+                              title={
+                                mfaReady
+                                  ? "Datei herunterladen"
+                                  : "2FA-Sitzung freischalten"
+                              }
+                              disabled={!mfaReady}
+                              className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                              <Download className="size-4" aria-hidden="true" />
+                              <span>Download</span>
+                            </button>
+                          </form>
+                        </div>
+
+                        <details className="border border-[var(--line)] bg-[var(--surface-muted)]">
+                          <summary className="flex cursor-pointer items-center gap-2 px-2 py-1.5 text-xs font-bold uppercase">
+                            <Folder className="size-3.5" aria-hidden="true" />
+                            <span>Verschieben</span>
+                          </summary>
+                          <form
+                            action={moveFileAction}
+                            className="grid gap-2 border-t border-[var(--line)] p-2"
+                          >
+                            <input type="hidden" name="fileId" value={file.id} />
+                            <div className="grid gap-2 md:grid-cols-2">
+                              <label className="grid gap-1">
+                                <span className="text-xs font-medium uppercase text-neutral-500">
+                                  Kategorie
+                                </span>
+                                <select
+                                  name="categoryId"
+                                  required
+                                  defaultValue={file.categoryId}
+                                  disabled={!mfaReady || categories.length === 0}
+                                  className="h-9 border border-[var(--line)] bg-white px-2 text-xs outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                                >
+                                  {categories.map((category) => (
+                                    <option key={category.id} value={category.id}>
+                                      {category.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="grid gap-1">
+                                <span className="text-xs font-medium uppercase text-neutral-500">
+                                  Ordner
+                                </span>
+                                <select
+                                  name="folderId"
+                                  defaultValue={file.folderId}
+                                  disabled={!mfaReady}
+                                  className="h-9 border border-[var(--line)] bg-white px-2 text-xs outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                                >
+                                  <option value="">Ohne Ordner</option>
+                                  {folders.map((folder) => (
+                                    <option key={folder.id} value={folder.id}>
+                                      {folder.category} / {folder.folder}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            </div>
+                            <input
+                              name="reason"
+                              disabled={!mfaReady}
+                              placeholder="Grund optional"
+                              className="h-9 border border-[var(--line)] bg-white px-2 text-xs outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                            />
+                            <button
+                              type="submit"
+                              disabled={!mfaReady || categories.length === 0}
+                              className="flex h-9 items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-3 text-sm text-white disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                              <Save className="size-4" aria-hidden="true" />
+                              <span>Verschieben</span>
+                            </button>
+                          </form>
+                        </details>
+
+                        <details className="border border-red-200 bg-white">
+                          <summary className="flex cursor-pointer items-center gap-2 px-2 py-1.5 text-xs font-bold uppercase text-[var(--danger)]">
+                            <Trash2 className="size-3.5" aria-hidden="true" />
+                            <span>Loeschen</span>
+                          </summary>
+                          <form
+                            action={deleteFileAction}
+                            className="grid gap-2 border-t border-red-200 p-2"
+                          >
+                            <input type="hidden" name="fileId" value={file.id} />
+                            <input
+                              name="reason"
+                              required
+                              minLength={8}
+                              disabled={!mfaReady}
+                              placeholder="Grund fuer Loeschung"
+                              className="h-9 border border-red-200 bg-white px-2 text-xs outline-none focus:border-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-45"
+                            />
+                            <button
+                              type="submit"
+                              disabled={!mfaReady}
+                              className="flex h-9 items-center justify-center gap-2 rounded-md border border-red-200 bg-white px-3 text-sm text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                              <Trash2 className="size-4" aria-hidden="true" />
+                              <span>Endgueltig loeschen</span>
+                            </button>
+                          </form>
+                        </details>
+                      </div>
                     </td>
                   </tr>
                 ))

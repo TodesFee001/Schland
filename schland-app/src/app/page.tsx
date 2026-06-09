@@ -988,5 +988,131 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "file-open-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum direkten Oeffnen von Dateien muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "file-open-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Diese Datei wurde nicht gefunden.",
+    };
+  }
+
+  if (setup === "file-open-permission") {
+    return {
+      tone: "error" as const,
+      text: "Datei konnte nicht geoeffnet werden. Dem Account fehlt die passende Datei- oder Ordner-Berechtigung.",
+    };
+  }
+
+  if (setup === "file-open-error") {
+    return {
+      tone: "error" as const,
+      text: "Datei konnte nicht direkt geoeffnet werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
+  if (setup === "file-moved") {
+    return {
+      tone: "success" as const,
+      text: "Datei wurde verschoben.",
+    };
+  }
+
+  if (setup === "file-move-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum Verschieben von Dateien muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "file-move-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Datei oder Zielkategorie wurde nicht gefunden.",
+    };
+  }
+
+  if (setup === "file-move-folder") {
+    return {
+      tone: "warning" as const,
+      text: "Der Zielordner wurde nicht gefunden.",
+    };
+  }
+
+  if (setup === "file-move-category") {
+    return {
+      tone: "warning" as const,
+      text: "Die Zielkategorie wurde nicht gefunden oder ist deaktiviert.",
+    };
+  }
+
+  if (setup === "file-move-permission") {
+    return {
+      tone: "error" as const,
+      text: "Datei konnte nicht verschoben werden. Dem Account fehlt die passende Datei- oder Ordner-Berechtigung.",
+    };
+  }
+
+  if (setup === "file-move-error") {
+    return {
+      tone: "error" as const,
+      text: "Datei konnte nicht verschoben werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
+  if (setup === "file-deleted") {
+    return {
+      tone: "success" as const,
+      text: "Datei wurde aus Datenbank und Storage geloescht.",
+    };
+  }
+
+  if (setup === "file-delete-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum Loeschen von Dateien muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "file-delete-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Diese Datei wurde nicht gefunden.",
+    };
+  }
+
+  if (setup === "file-delete-reason") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte gib fuer das Loeschen einen Grund mit mindestens 8 Zeichen an.",
+    };
+  }
+
+  if (setup === "file-delete-permission") {
+    return {
+      tone: "error" as const,
+      text: "Datei konnte nicht geloescht werden. Dem Account fehlt die passende Datei- oder Ordner-Berechtigung.",
+    };
+  }
+
+  if (setup === "file-delete-storage") {
+    return {
+      tone: "error" as const,
+      text: "Datei konnte nicht aus Supabase Storage geloescht werden.",
+    };
+  }
+
+  if (setup === "file-delete-error") {
+    return {
+      tone: "error" as const,
+      text: "Datei konnte nicht geloescht werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
   return undefined;
 }
