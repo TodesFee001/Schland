@@ -2,6 +2,7 @@
 
 import { CheckCircle2, KeyRound, QrCode, Shield, XCircle } from "lucide-react";
 import Image from "next/image";
+import * as QRCode from "qrcode";
 import { useEffect, useMemo, useState } from "react";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -94,7 +95,7 @@ export function MfaManager({ email }: { email?: string }) {
     }
 
     setFactorId(data.id);
-    setQrCode(data.totp.qr_code);
+    setQrCode(await createSchlandTotpQrCode(data.totp.uri, email, data.totp.qr_code));
 
     const { data: challenge, error: challengeError } =
       await supabase.auth.mfa.challenge({
@@ -297,6 +298,38 @@ export function MfaManager({ email }: { email?: string }) {
       </div>
     </section>
   );
+}
+
+async function createSchlandTotpQrCode(
+  uri: string,
+  email?: string,
+  fallbackQrCode?: string,
+) {
+  try {
+    const customUri = buildSchlandTotpUri(uri, email);
+
+    return await QRCode.toDataURL(customUri, {
+      color: {
+        dark: "#111111",
+        light: "#ffffff",
+      },
+      margin: 1,
+      width: 192,
+    });
+  } catch {
+    return fallbackQrCode ?? "";
+  }
+}
+
+function buildSchlandTotpUri(uri: string, email?: string) {
+  const url = new URL(uri);
+  const account = email?.trim() || "Schland Benutzer";
+  const label = `Schland DB:${account}`;
+
+  url.pathname = `/${encodeURIComponent(label)}`;
+  url.searchParams.set("issuer", "Schland DB");
+
+  return url.toString();
 }
 
 function StatusBadge({ active, label }: { active: boolean; label: string }) {

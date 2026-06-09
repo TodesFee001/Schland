@@ -226,10 +226,16 @@ function getSignUpErrorMessage(message: string) {
 }
 
 async function getRequestOrigin() {
+  const configuredOrigin = getConfiguredPublicOrigin();
+
+  if (configuredOrigin) {
+    return configuredOrigin;
+  }
+
   const headerList = await headers();
   const origin = headerList.get("origin");
 
-  if (origin) {
+  if (origin && !isLocalOrigin(origin)) {
     return origin;
   }
 
@@ -238,4 +244,37 @@ async function getRequestOrigin() {
   }
 
   return "https://schland.vercel.app";
+}
+
+function getConfiguredPublicOrigin() {
+  const configured =
+    process.env.SITE_URL ??
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ??
+    process.env.VERCEL_URL;
+
+  if (!configured) {
+    return null;
+  }
+
+  const normalized = configured.startsWith("http")
+    ? configured
+    : `https://${configured}`;
+
+  return isLocalOrigin(normalized) ? null : normalized.replace(/\/+$/, "");
+}
+
+function isLocalOrigin(value: string) {
+  try {
+    const url = new URL(value);
+
+    return (
+      url.hostname === "localhost" ||
+      url.hostname === "127.0.0.1" ||
+      url.hostname === "::1" ||
+      url.hostname.endsWith(".local")
+    );
+  } catch {
+    return true;
+  }
 }

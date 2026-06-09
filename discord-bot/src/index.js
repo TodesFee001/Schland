@@ -1115,7 +1115,7 @@ function formatUser(user) {
     return `${user.username}#${user.discriminator}`;
   }
 
-  return user.globalName ?? user.username ?? user.id ?? "Unbekannt";
+  return user.username ?? user.globalName ?? user.id ?? "Unbekannt";
 }
 
 function formatAuditTarget(target) {

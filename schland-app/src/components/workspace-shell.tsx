@@ -159,6 +159,7 @@ export function WorkspaceShell({
   const [memberSearch, setMemberSearch] = useState("");
   const [accessReason, setAccessReason] = useState("");
   const [selectedMemberOverride, setSelectedMemberId] = useState("");
+  const [caseDetailsSuppressed, setCaseDetailsSuppressed] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState<string[]>([]);
   const selectedMemberId = members.some(
@@ -204,7 +205,10 @@ export function WorkspaceShell({
   const mfaReady = authStatus.mfaLevel === "aal2";
   const canOpenMember = mfaReady && accessReason.trim().length >= 8;
   const canViewSelectedMember =
-    mfaReady && Boolean(openedMemberId) && selectedMember?.id === openedMemberId;
+    mfaReady &&
+    Boolean(openedMemberId) &&
+    !caseDetailsSuppressed &&
+    selectedMember?.id === openedMemberId;
   const activeLabel =
     sections.find((section) => section.id === activeSection)?.label ??
     "Dashboard";
@@ -505,6 +509,15 @@ export function WorkspaceShell({
             memberSearch={memberSearch}
             mfaReady={mfaReady}
             moderationEvents={workspaceData.moderationEvents}
+            onCloseMemberCase={() => {
+              setCaseDetailsSuppressed(true);
+              setSelectedMemberId("");
+              router.replace("/?section=members");
+            }}
+            onOpenMemberCase={(memberId) => {
+              setCaseDetailsSuppressed(false);
+              setSelectedMemberId(memberId);
+            }}
             selectedMember={selectedMember}
             selectedMemberId={selectedMemberId}
             setAccessReason={setAccessReason}
@@ -742,6 +755,8 @@ function MembersSection({
   memberSearch,
   mfaReady,
   moderationEvents,
+  onCloseMemberCase,
+  onOpenMemberCase,
   selectedMember,
   selectedMemberId,
   setAccessReason,
@@ -757,6 +772,8 @@ function MembersSection({
   memberSearch: string;
   mfaReady: boolean;
   moderationEvents: WorkspaceModerationEvent[];
+  onCloseMemberCase: () => void;
+  onOpenMemberCase: (memberId: string) => void;
   selectedMember: WorkspaceMember | null;
   selectedMemberId: string;
   setAccessReason: (value: string) => void;
@@ -779,7 +796,8 @@ function MembersSection({
   }, [moderationEvents, selectedMember]);
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(700px,1fr)_430px]">
+    <div className="grid gap-4">
+      {!canViewSelectedMember ? (
       <section className="border border-[var(--line-strong)] bg-[var(--surface)]">
         <SectionHeader
           icon={Shield}
@@ -950,7 +968,7 @@ function MembersSection({
                 </label>
                 <label className="grid gap-2">
                   <span className="text-xs font-medium uppercase text-neutral-500">
-                    Discord-Name
+                    Discord-Benutzername
                   </span>
                   <input
                     name="discordUsername"
@@ -1153,7 +1171,7 @@ function MembersSection({
                           <input type="hidden" name="reason" value={accessReason} />
                           <button
                             type="submit"
-                            onClick={() => setSelectedMemberId(member.id)}
+                            onClick={() => onOpenMemberCase(member.id)}
                             title={
                               canOpenMember
                                 ? "Akte oeffnen"
@@ -1178,9 +1196,24 @@ function MembersSection({
           </div>
         </div>
       </section>
+      ) : null}
 
+      {canViewSelectedMember ? (
       <aside className="border border-[var(--line-strong)] bg-[var(--surface)]">
-        <SectionHeader icon={Lock} title="Aktendetail" />
+        <SectionHeader
+          icon={Lock}
+          title="Aktendetail"
+          action={
+            <button
+              type="button"
+              onClick={onCloseMemberCase}
+              className="flex h-9 items-center gap-2 border border-[var(--line)] bg-white px-3 text-sm"
+            >
+              <Users className="size-4" aria-hidden="true" />
+              <span>Zur Kartei</span>
+            </button>
+          }
+        />
         <div className="grid gap-4 border-t border-[var(--line-strong)] p-3">
           {!selectedMember ? (
             <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-muted)] p-4 text-sm text-neutral-600">
@@ -1199,7 +1232,14 @@ function MembersSection({
                   <StatusBadge status={selectedMember.status} />
                 </div>
                 <dl className="mt-4 grid gap-3 text-sm">
-                  <DetailRow label="Discord" value={selectedMember.discordName} />
+                  <DetailRow
+                    label="Discord-Benutzername"
+                    value={selectedMember.discordName}
+                  />
+                  <DetailRow
+                    label="Discord-Anzeigename"
+                    value={selectedMember.displayName}
+                  />
                   <DetailRow
                     label="Server"
                     value={selectedMember.discordOnServer ? "Auf Server" : "Nicht gesehen"}
@@ -1234,6 +1274,7 @@ function MembersSection({
                 ) : null}
                 <button
                   type="submit"
+                  onClick={() => onOpenMemberCase(selectedMember.id)}
                   disabled={!canOpenMember}
                   className="flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
                 >
@@ -1258,7 +1299,14 @@ function MembersSection({
                   <DetailRow label="Alter" value={formatNullable(selectedMember.age)} />
                   <DetailRow label="Wohnort" value={selectedMember.residence} />
                   <DetailRow label="Berufsfeld" value={selectedMember.profession} />
-                  <DetailRow label="Discord" value={selectedMember.discordName} />
+                  <DetailRow
+                    label="Discord-Benutzername"
+                    value={selectedMember.discordName}
+                  />
+                  <DetailRow
+                    label="Discord-Anzeigename"
+                    value={selectedMember.displayName}
+                  />
                   <DetailRow
                     label="Server"
                     value={selectedMember.discordOnServer ? "Auf Server" : "Nicht gesehen"}
@@ -1357,7 +1405,7 @@ function MembersSection({
                     </label>
                     <label className="grid gap-1">
                       <span className="text-xs font-medium uppercase text-neutral-500">
-                        Discord-Name
+                        Discord-Benutzername
                       </span>
                       <input
                         name="discordUsername"
@@ -1917,6 +1965,7 @@ function MembersSection({
           )}
         </div>
       </aside>
+      ) : null}
     </div>
   );
 }
