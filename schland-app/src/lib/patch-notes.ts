@@ -16,6 +16,7 @@ export const patchNotes: PatchNote[] = [
       "Neue Zielstruktur fuer Rollen und Berechtigungen als additive Migration vorbereitet.",
       "Root Owner und Platform Admin werden getrennt und in der Benutzerverwaltung geschuetzt.",
       "Legacy-Administrator wird in der Migration auf Root Owner und Platform Admin migriert.",
+      "Legacy-Administrator wird vor Anlage des neuen Platform Admin umbenannt, damit der eindeutige Rollenname nicht kollidiert.",
       "Neue Permission-Gruppen fuer Akten, Ermittlungen, Kommunikation, Audit und Ordnerrechte ergaenzt.",
       "Erststart- und Rollenmeldungen wurden auf Root Owner / Administrator angepasst.",
     ],

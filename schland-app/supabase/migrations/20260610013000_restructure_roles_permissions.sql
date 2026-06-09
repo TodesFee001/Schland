@@ -53,6 +53,14 @@ values
 on conflict (permission_key) do update
 set description = excluded.description;
 
+update public.roles
+set
+  name = 'Administrator (Legacy)',
+  description = 'Legacy-Rolle. Durch root_owner/platform_admin ersetzt.',
+  active = false,
+  updated_at = now()
+where role_key = 'administrator';
+
 insert into public.roles (role_key, name, description, active)
 values
   ('root_owner', 'Root Owner', 'Geschuetzter Notfallzugang mit Vollzugriff.', true),
@@ -235,14 +243,6 @@ select lau.user_id, tr.id
 from legacy_admin_users lau
 cross join target_roles tr
 on conflict do nothing;
-
-update public.roles
-set
-  name = 'Administrator (Legacy)',
-  description = 'Legacy-Rolle. Durch root_owner/platform_admin ersetzt.',
-  active = false,
-  updated_at = now()
-where role_key = 'administrator';
 
 create or replace function public.has_role(required_key text)
 returns boolean
