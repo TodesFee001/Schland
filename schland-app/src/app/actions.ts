@@ -2059,8 +2059,16 @@ function getDiscordInviteErrorSetup(error: { message?: string }) {
 function getUserRoleErrorSetup(error: { message?: string }) {
   const message = error.message?.toLowerCase() ?? "";
 
-  if (message.includes("last administrator")) {
+  if (
+    message.includes("last administrator") ||
+    message.includes("last root") ||
+    message.includes("last root/admin")
+  ) {
     return "role-assignment-last-admin";
+  }
+
+  if (message.includes("root owner")) {
+    return "role-assignment-permission";
   }
 
   if (message.includes("not found")) {
@@ -2099,7 +2107,11 @@ function getRoleErrorSetup(error: { code?: string; message?: string }) {
     return "role-name";
   }
 
-  if (message.includes("administrator")) {
+  if (
+    message.includes("administrator") ||
+    message.includes("platform admin") ||
+    message.includes("root owner")
+  ) {
     return "role-admin-core";
   }
 
@@ -2117,7 +2129,11 @@ function getRoleErrorSetup(error: { code?: string; message?: string }) {
 function getRolePermissionErrorSetup(error: { message?: string }) {
   const message = error.message?.toLowerCase() ?? "";
 
-  if (message.includes("administrator")) {
+  if (
+    message.includes("administrator") ||
+    message.includes("platform admin") ||
+    message.includes("root owner")
+  ) {
     return "role-admin-core";
   }
 

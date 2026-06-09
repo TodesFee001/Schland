@@ -21,6 +21,7 @@ schland-app/.vercel
 # local agent tooling
 .agents
 skills-lock.json
+.local-backups
 
 # misc
 *.tsbuildinfo

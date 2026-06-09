@@ -35,7 +35,7 @@ export default async function SecurityPage({ searchParams }: SecurityPageProps) 
         </Link>
         {params.setup === "admin-claimed" ? (
           <div className="rounded-lg border border-[var(--accent)] bg-[var(--accent-soft)] p-3 text-sm text-[var(--accent-strong)]">
-            Administratorrolle aktiviert. Richte jetzt 2FA ein, damit
+            Root Owner und Administrator aktiviert. Richte jetzt 2FA ein, damit
             Mitgliederakten freigeschaltet werden koennen.
           </div>
         ) : null}

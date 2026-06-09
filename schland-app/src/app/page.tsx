@@ -46,14 +46,14 @@ function getSetupNotice(setup?: string) {
   if (setup === "admin-exists") {
     return {
       tone: "warning" as const,
-      text: "Es gibt bereits einen Administrator. Der Erststart ist damit geschlossen.",
+      text: "Es gibt bereits einen Root Owner. Der Erststart ist damit geschlossen.",
     };
   }
 
   if (setup === "admin-claim-error") {
     return {
       tone: "error" as const,
-      text: "Administratorrolle konnte nicht aktiviert werden. Bitte Supabase-Benutzer und Migrationen pruefen.",
+      text: "Root Owner und Administrator konnten nicht aktiviert werden. Bitte Supabase-Benutzer und Migrationen pruefen.",
     };
   }
 
@@ -669,7 +669,7 @@ function getSetupNotice(setup?: string) {
   if (setup === "role-assignment-last-admin") {
     return {
       tone: "warning" as const,
-      text: "Der letzte Administrator kann nicht entfernt werden.",
+      text: "Der letzte Root Owner oder Administrator kann nicht entfernt werden.",
     };
   }
 
@@ -788,7 +788,7 @@ function getSetupNotice(setup?: string) {
   if (setup === "role-admin-core") {
     return {
       tone: "warning" as const,
-      text: "Kernrechte der Administratorrolle bleiben aktiv.",
+      text: "Kernrechte von Root Owner oder Administrator bleiben aktiv.",
     };
   }
 

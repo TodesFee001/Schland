@@ -11,6 +11,20 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "10.06.2026",
+    id: "roles-permissions-restructure",
+    items: [
+      "Neue Zielstruktur fuer Rollen und Berechtigungen als additive Migration vorbereitet.",
+      "Root Owner und Platform Admin werden getrennt und in der Benutzerverwaltung geschuetzt.",
+      "Legacy-Administrator wird in der Migration auf Root Owner und Platform Admin migriert.",
+      "Neue Permission-Gruppen fuer Akten, Ermittlungen, Kommunikation, Audit und Ordnerrechte ergaenzt.",
+      "Erststart- und Rollenmeldungen wurden auf Root Owner / Administrator angepasst.",
+    ],
+    title: "Rollenstruktur vorbereitet",
+    type: "system",
+    version: "0.9.6",
+  },
+  {
+    date: "10.06.2026",
     id: "hardware-key-mfa",
     items: [
       "Hardware-Key/WebAuthn als zweite 2FA-Methode ergaenzt.",

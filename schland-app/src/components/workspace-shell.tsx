@@ -142,6 +142,22 @@ const sections: Section[] = [
   { id: "settings", label: "Einstellungen", icon: Settings },
 ];
 
+const rootRoleKey = "root_owner";
+const platformAdminRoleKey = "platform_admin";
+const protectedActiveRoleKeys = new Set([rootRoleKey, platformAdminRoleKey]);
+const readonlyRoleKeys = new Set([rootRoleKey, platformAdminRoleKey]);
+const platformAdminCorePermissionKeys = new Set([
+  "app.enter",
+  "users.view",
+  "users.create",
+  "users.update",
+  "users.deactivate",
+  "users.assign_roles",
+  "roles.view",
+  "roles.manage",
+  "permissions.view",
+]);
+
 export function WorkspaceShell({
   authStatus,
   dashboardSnapshot,
@@ -2805,6 +2821,33 @@ function getFolderPermissionLabel(permission: WorkspaceFolderPermission) {
   return labels.join(", ") || "Keine";
 }
 
+function getProtectedAssignmentReason(
+  roleKey: string,
+  rootAssignments: number,
+  platformAdminAssignments: number,
+) {
+  if (roleKey === rootRoleKey && rootAssignments <= 1) {
+    return "Letzter Root Owner bleibt aktiv";
+  }
+
+  if (roleKey === platformAdminRoleKey && platformAdminAssignments <= 1) {
+    return "Letzter Administrator bleibt aktiv";
+  }
+
+  return "";
+}
+
+function isProtectedPermissionRemoval(roleKey: string, permissionKey: string) {
+  if (roleKey === rootRoleKey) {
+    return true;
+  }
+
+  return (
+    roleKey === platformAdminRoleKey &&
+    platformAdminCorePermissionKeys.has(permissionKey)
+  );
+}
+
 function CategoriesSection({
   categories,
   mfaReady,
@@ -2987,9 +3030,14 @@ function UsersSection({
   roles: WorkspaceRoleRow[];
   users: WorkspaceUserSummary;
 }) {
-  const roleOptions = roles.filter((role) => role.id && role.role);
-  const adminAssignments = users.rows.filter((user) =>
-    user.roles.some((role) => role.roleKey === "administrator"),
+  const roleOptions = roles.filter((role) => role.id && role.role && role.active);
+  const rootAssignments = users.rows.filter((user) =>
+    user.status !== "disabled" &&
+    user.roles.some((role) => role.roleKey === rootRoleKey),
+  ).length;
+  const platformAdminAssignments = users.rows.filter((user) =>
+    user.status !== "disabled" &&
+    user.roles.some((role) => role.roleKey === platformAdminRoleKey),
   ).length;
 
   return (
@@ -3080,8 +3128,12 @@ function UsersSection({
                     <div className="flex flex-wrap gap-1">
                       {user.roles.length > 0 ? (
                         user.roles.map((role) => {
-                          const blocksLastAdmin =
-                            role.roleKey === "administrator" && adminAssignments <= 1;
+                          const protectedAssignmentReason =
+                            getProtectedAssignmentReason(
+                              role.roleKey,
+                              rootAssignments,
+                              platformAdminAssignments,
+                            );
 
                           return (
                             <form
@@ -3095,11 +3147,11 @@ function UsersSection({
                               <button
                                 type="submit"
                                 title={
-                                  blocksLastAdmin
-                                    ? "Letzter Administrator bleibt aktiv"
+                                  protectedAssignmentReason
+                                    ? protectedAssignmentReason
                                     : `${role.role} entziehen`
                                 }
-                                disabled={!mfaReady || blocksLastAdmin}
+                                disabled={!mfaReady || Boolean(protectedAssignmentReason)}
                                 className="flex h-8 items-center gap-1 rounded-md bg-[var(--surface-muted)] px-2 text-xs disabled:cursor-not-allowed disabled:opacity-45"
                               >
                                 <span>{role.role}</span>
@@ -3175,7 +3227,7 @@ function RolesSection({
   roles: WorkspaceRoleRow[];
 }) {
   const permissionOptions = permissions.filter(
-    (permission) => permission.id && permission.key,
+    (permission) => permission.id && permission.key && permission.key !== "*",
   );
 
   return (
@@ -3255,12 +3307,17 @@ function RolesSection({
             </thead>
             <tbody>
               {roles.length > 0 ? (
-                roles.map((row) => (
+                roles.map((row) => {
+                  const rootRole = row.roleKey === rootRoleKey;
+                  const alwaysActiveRole = protectedActiveRoleKeys.has(row.roleKey);
+                  const readonlyRole = readonlyRoleKeys.has(row.roleKey);
+
+                  return (
                   <tr key={row.id} className="border-t border-[var(--line)] align-top">
                     <td className="px-4 py-3">
                       <form action={saveRoleAction} className="grid min-w-[320px] gap-2">
                         <input type="hidden" name="roleId" value={row.id} />
-                        {row.roleKey === "administrator" ? (
+                        {alwaysActiveRole ? (
                           <input type="hidden" name="active" value="on" />
                         ) : null}
                         <label className="grid gap-1">
@@ -3270,8 +3327,8 @@ function RolesSection({
                           <input
                             name="roleKey"
                             defaultValue={row.roleKey}
-                            readOnly={row.roleKey === "administrator"}
-                            disabled={!mfaReady}
+                            readOnly={readonlyRole}
+                            disabled={!mfaReady || rootRole}
                             className="h-9 rounded-md border border-[var(--line)] bg-white px-2 font-mono text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
                           />
                         </label>
@@ -3283,7 +3340,7 @@ function RolesSection({
                             name="name"
                             defaultValue={row.role}
                             required
-                            disabled={!mfaReady}
+                            disabled={!mfaReady || rootRole}
                             className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
                           />
                         </label>
@@ -3294,7 +3351,7 @@ function RolesSection({
                           <input
                             name="description"
                             defaultValue={row.description}
-                            disabled={!mfaReady}
+                            disabled={!mfaReady || rootRole}
                             className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
                           />
                         </label>
@@ -3304,14 +3361,14 @@ function RolesSection({
                               name="active"
                               type="checkbox"
                               defaultChecked={row.active}
-                              disabled={!mfaReady || row.roleKey === "administrator"}
+                              disabled={!mfaReady || alwaysActiveRole}
                               className="size-4 accent-[var(--accent)] disabled:cursor-not-allowed"
                             />
                             <span>Aktiv</span>
                           </label>
                           <button
                             type="submit"
-                            disabled={!mfaReady}
+                            disabled={!mfaReady || rootRole}
                             className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm disabled:cursor-not-allowed disabled:opacity-45"
                           >
                             <Pencil className="size-4" aria-hidden="true" />
@@ -3323,7 +3380,11 @@ function RolesSection({
                     <td className="px-4 py-3">
                       <div className="flex max-w-[520px] flex-wrap gap-1">
                         {row.permissionsDetailed.length > 0 ? (
-                          row.permissionsDetailed.map((permission) => (
+                          row.permissionsDetailed.map((permission) => {
+                            const protectedPermission =
+                              isProtectedPermissionRemoval(row.roleKey, permission.key);
+
+                            return (
                             <form
                               key={permission.id}
                               action={setRolePermissionAction}
@@ -3338,15 +3399,20 @@ function RolesSection({
                               <input type="hidden" name="intent" value="remove" />
                               <button
                                 type="submit"
-                                title={`${permission.description} entfernen`}
-                                disabled={!mfaReady}
+                                title={
+                                  protectedPermission
+                                    ? "Geschuetztes Kernrecht bleibt aktiv"
+                                    : `${permission.description} entfernen`
+                                }
+                                disabled={!mfaReady || protectedPermission}
                                 className="flex h-8 items-center gap-1 rounded-md bg-[var(--surface-muted)] px-2 text-xs disabled:cursor-not-allowed disabled:opacity-45"
                               >
                                 <span>{permission.description}</span>
                                 <XCircle className="size-3.5" aria-hidden="true" />
                               </button>
                             </form>
-                          ))
+                            );
+                          })
                         ) : (
                           <span className="text-xs text-neutral-500">
                             Keine Rechte sichtbar
@@ -3366,7 +3432,9 @@ function RolesSection({
                           name="permissionId"
                           required
                           defaultValue=""
-                          disabled={!mfaReady || permissionOptions.length === 0}
+                          disabled={
+                            !mfaReady || rootRole || permissionOptions.length === 0
+                          }
                           className="h-9 min-w-0 flex-1 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
                         >
                           <option value="">Recht waehlen</option>
@@ -3386,7 +3454,9 @@ function RolesSection({
                         <button
                           type="submit"
                           title="Recht hinzufuegen"
-                          disabled={!mfaReady || permissionOptions.length === 0}
+                          disabled={
+                            !mfaReady || rootRole || permissionOptions.length === 0
+                          }
                           className="flex h-9 items-center gap-2 rounded-md bg-[var(--foreground)] px-3 text-sm text-white disabled:cursor-not-allowed disabled:opacity-45"
                         >
                           <Plus className="size-4" aria-hidden="true" />
@@ -3395,7 +3465,8 @@ function RolesSection({
                       </form>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               ) : (
                 <TableEmpty colSpan={4} label="Noch keine Rollen sichtbar." />
               )}
