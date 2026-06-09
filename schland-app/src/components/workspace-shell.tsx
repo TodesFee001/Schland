@@ -1127,6 +1127,16 @@ function MembersSection({
                       <div className="font-mono text-xs text-neutral-500">
                         {member.discordId}
                       </div>
+                      <span
+                        className={[
+                          "mt-1 inline-flex rounded-md px-2 py-1 text-xs font-medium",
+                          member.discordOnServer
+                            ? "bg-[var(--accent-soft)] text-[var(--accent-strong)]"
+                            : "bg-red-50 text-[var(--danger)]",
+                        ].join(" ")}
+                      >
+                        {member.discordOnServer ? "Auf Server" : "Nicht auf Server"}
+                      </span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
@@ -1322,7 +1332,7 @@ function MembersSection({
                   />
                   <DetailRow
                     label="Server"
-                    value={selectedMember.discordOnServer ? "Auf Server" : "Nicht gesehen"}
+                    value={selectedMember.discordOnServer ? "Auf Server" : "Nicht auf Server"}
                   />
                   <DetailRow label="Letzter Sync" value={selectedMember.discordLastSeenAt} />
                 </dl>
@@ -1389,7 +1399,7 @@ function MembersSection({
                   />
                   <DetailRow
                     label="Server"
-                    value={selectedMember.discordOnServer ? "Auf Server" : "Nicht gesehen"}
+                    value={selectedMember.discordOnServer ? "Auf Server" : "Nicht auf Server"}
                   />
                   <DetailRow
                     label="Beigetreten"

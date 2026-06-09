@@ -121,6 +121,7 @@ type MemberSyncSummary = {
   guildMemberEstimate: number | null;
   guildName: string | null;
   guildPresenceEstimate: number | null;
+  markedOffServer: number;
   missingEstimate: number | null;
   pageLimitHit: boolean;
   rolesSynced: number;
@@ -176,6 +177,7 @@ export async function runDiscordSync(trigger = "cron"): Promise<DiscordSyncSumma
       guildMemberEstimate: null,
       guildName: null,
       guildPresenceEstimate: null,
+      markedOffServer: 0,
       missingEstimate: null,
       pageLimitHit: false,
       rolesSynced: 0,
@@ -562,6 +564,7 @@ async function syncDiscordMembers(
     guildMemberEstimate: null,
     guildName: null,
     guildPresenceEstimate: null,
+    markedOffServer: 0,
     missingEstimate: null,
     pageLimitHit: false,
     rolesSynced: 0,
@@ -589,6 +592,7 @@ async function syncDiscordMembers(
   }
 
   let after = "0";
+  const currentHumanDiscordIds = new Set<string>();
 
   for (let page = 0; page < MEMBER_MAX_PAGES; page += 1) {
     const members = await fetchGuildMembers(config, after);
@@ -599,6 +603,11 @@ async function syncDiscordMembers(
 
     for (const member of members) {
       summary.scanned += 1;
+      const memberDiscordId = asText(member.user?.id);
+
+      if (memberDiscordId && member.user?.bot !== true) {
+        currentHumanDiscordIds.add(memberDiscordId);
+      }
 
       try {
         const result = await upsertDiscordMember(supabase, member, roleMap);
@@ -643,6 +652,13 @@ async function syncDiscordMembers(
   summary.coverageComplete =
     !summary.pageLimitHit &&
     (summary.missingEstimate === null || summary.missingEstimate === 0);
+
+  if (summary.coverageComplete) {
+    summary.markedOffServer = await markMissingMembersOffServer(
+      supabase,
+      currentHumanDiscordIds,
+    );
+  }
 
   return summary;
 }
@@ -739,26 +755,49 @@ async function upsertDiscordMember(
     discordId;
   const now = new Date().toISOString();
   const joinedAt = asIsoDate(member.joined_at);
-  const payload = {
+  const discordPayload = {
     discord_display_name: displayName,
     discord_id: discordId,
     discord_is_bot: false,
-    discord_joined_at: joinedAt,
     discord_last_seen_at: now,
     discord_on_server: true,
     discord_username: discordUsername,
-    name: displayName,
-    notes: "Automatisch durch Discord-Sync angelegt.",
-  };
+  } satisfies Record<string, unknown>;
+  const memberPayload =
+    joinedAt === null
+      ? discordPayload
+      : { ...discordPayload, discord_joined_at: joinedAt };
 
-  const { data, error } = await supabase
+  const { data: existing, error: lookupError } = await supabase
     .from("members")
-    .upsert(payload, { onConflict: "discord_id" })
     .select("id")
-    .single();
+    .eq("discord_id", discordId)
+    .maybeSingle();
+
+  if (lookupError) {
+    throw new Error(`Member lookup failed: ${lookupError.message}`);
+  }
+
+  const query = existing?.id
+    ? supabase
+        .from("members")
+        .update(memberPayload)
+        .eq("id", existing.id)
+        .select("id")
+        .single()
+    : supabase
+        .from("members")
+        .insert({
+          ...memberPayload,
+          name: displayName,
+          notes: "Automatisch durch Discord-Sync angelegt.",
+        })
+        .select("id")
+        .single();
+  const { data, error } = await query;
 
   if (error) {
-    throw new Error(`Member upsert failed: ${error.message}`);
+    throw new Error(`Member write failed: ${error.message}`);
   }
 
   const memberId = asText(asRecord(data).id);
@@ -798,6 +837,53 @@ async function upsertDiscordMember(
   }
 
   return { memberId, rolesSynced: mappedRoleIds.length };
+}
+
+async function markMissingMembersOffServer(
+  supabase: SupabaseAdminClient,
+  currentDiscordIds: Set<string>,
+) {
+  if (currentDiscordIds.size === 0) {
+    return 0;
+  }
+
+  const { data, error } = await supabase
+    .from("members")
+    .select("id,discord_id")
+    .not("discord_id", "is", null)
+    .eq("discord_is_bot", false)
+    .eq("discord_on_server", true);
+
+  if (error) {
+    throw new Error(`Member off-server lookup failed: ${error.message}`);
+  }
+
+  const staleMemberIds = (data ?? [])
+    .filter((row) => {
+      const discordId = asText(asRecord(row).discord_id);
+
+      return discordId ? !currentDiscordIds.has(discordId) : false;
+    })
+    .map((row) => asText(asRecord(row).id))
+    .filter((id): id is string => Boolean(id));
+
+  if (staleMemberIds.length === 0) {
+    return 0;
+  }
+
+  const { error: updateError } = await supabase
+    .from("members")
+    .update({
+      discord_last_seen_at: new Date().toISOString(),
+      discord_on_server: false,
+    })
+    .in("id", staleMemberIds);
+
+  if (updateError) {
+    throw new Error(`Member off-server update failed: ${updateError.message}`);
+  }
+
+  return staleMemberIds.length;
 }
 
 async function sendDiscordInviteDm(

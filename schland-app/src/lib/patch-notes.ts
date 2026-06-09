@@ -11,6 +11,19 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "09.06.2026",
+    id: "member-cases-preserve-off-server",
+    items: [
+      "Discord-Leave, Kick und Ban loeschen keine Mitgliederakten mehr.",
+      "Betroffene Akten werden nur als Nicht auf Server markiert.",
+      "Rollen, Dateien, Strafen, Notizen und sonstige Akteninhalte bleiben erhalten.",
+      "Live-Event und Vollabgleich ueberschreiben manuell gepflegte Aktenfelder nicht mehr.",
+    ],
+    title: "Akten bleiben nach Discord-Abgang erhalten",
+    type: "fix",
+    version: "0.9.1",
+  },
+  {
+    date: "09.06.2026",
     id: "patchnotes-layer",
     items: [
       "Eigenes Patchnotes-Layer in der oberen Leiste ergaenzt.",

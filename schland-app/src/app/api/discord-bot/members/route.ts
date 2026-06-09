@@ -84,18 +84,57 @@ export async function PATCH(request: Request) {
   }
 
   const body = await readJsonObject(request);
+  const action = asText(body?.action);
+  const supabase = getSupabaseAdminClient();
+
+  if (
+    action === "left" ||
+    action === "remove" ||
+    body?.discordOnServer === false ||
+    body?.discord_on_server === false
+  ) {
+    const discordUserId = asText(
+      body?.discordUserId ?? body?.discord_user_id ?? body?.userId,
+    );
+
+    if (!discordUserId || !isSnowflake(discordUserId)) {
+      return NextResponse.json(
+        { error: "discord_user_id_required" },
+        { status: 400 },
+      );
+    }
+
+    if (Boolean(body?.isBot ?? body?.bot ?? false)) {
+      return NextResponse.json({
+        member: null,
+        offServer: false,
+        skipped: "bot",
+      });
+    }
+
+    try {
+      const result = await markDiscordMemberOffServer(supabase, discordUserId);
+
+      return NextResponse.json(result);
+    } catch {
+      return NextResponse.json(
+        { error: "member_write_failed" },
+        { status: 500 },
+      );
+    }
+  }
+
   const ids = asTextArray(
     body?.currentDiscordUserIds ?? body?.discordUserIds ?? body?.ids,
   ).filter(isSnowflake);
 
-  if (!Array.isArray(body?.currentDiscordUserIds) && body?.action !== "reconcile") {
+  if (!Array.isArray(body?.currentDiscordUserIds) && action !== "reconcile") {
     return NextResponse.json(
       { error: "current_discord_user_ids_required" },
       { status: 400 },
     );
   }
 
-  const supabase = getSupabaseAdminClient();
   const { data, error } = await supabase
     .from("members")
     .select("id,discord_id")
@@ -147,18 +186,6 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const { error: roleError } = await supabase
-      .from("member_discord_roles")
-      .delete()
-      .in("member_id", staleMemberIds);
-
-    if (roleError) {
-      console.error("discord bot member reconcile role cleanup failed", {
-        code: roleError.code,
-        details: roleError.details,
-        message: roleError.message,
-      });
-    }
   }
 
   const previousSync = await getLatestMemberSyncMetadata(supabase);
@@ -230,21 +257,46 @@ async function writeDiscordMember(
     discord_display_name: displayName,
     discord_id: discordUserId,
     discord_is_bot: false,
-    discord_joined_at: joinedAt,
     discord_last_seen_at: now,
     discord_on_server: true,
     discord_username: username,
-    name,
-  };
+  } satisfies Record<string, unknown>;
 
-  const { data, error } = await supabase
+  const discordPayload =
+    joinedAt === null ? payload : { ...payload, discord_joined_at: joinedAt };
+
+  const { data: existing, error: lookupError } = await supabase
     .from("members")
-    .upsert(payload, { onConflict: "discord_id" })
-    .select("id,name,discord_id,discord_username,discord_display_name")
-    .single();
+    .select("id")
+    .eq("discord_id", discordUserId)
+    .maybeSingle();
+
+  if (lookupError) {
+    console.error("discord bot member upsert failed", {
+      code: lookupError.code,
+      details: lookupError.details,
+      message: lookupError.message,
+    });
+
+    throw new Error("member_write_failed");
+  }
+
+  const query = existing?.id
+    ? supabase
+        .from("members")
+        .update(discordPayload)
+        .eq("id", existing.id)
+        .select("id,name,discord_id,discord_username,discord_display_name")
+        .single()
+    : supabase
+        .from("members")
+        .insert({ ...discordPayload, name })
+        .select("id,name,discord_id,discord_username,discord_display_name")
+        .single();
+  const { data, error } = await query;
 
   if (error) {
-    console.error("discord bot member upsert failed", {
+    console.error("discord bot member write failed", {
       code: error.code,
       details: error.details,
       message: error.message,
@@ -378,21 +430,6 @@ async function markDiscordMemberOffServer(
     });
 
     throw new Error("member_write_failed");
-  }
-
-  if (data?.id) {
-    const { error: roleError } = await supabase
-      .from("member_discord_roles")
-      .delete()
-      .eq("member_id", data.id);
-
-    if (roleError) {
-      console.error("discord bot member off-server role cleanup failed", {
-        code: roleError.code,
-        details: roleError.details,
-        message: roleError.message,
-      });
-    }
   }
 
   return {

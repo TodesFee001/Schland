@@ -150,6 +150,7 @@ client.on(Events.GuildBanAdd, (ban) => {
     return;
   }
 
+  void markDiscordUserOffServer(ban.user, "ban");
   void delayedAuditPoll("ban-add");
 });
 
@@ -245,18 +246,47 @@ async function syncMember(member, trigger) {
 }
 
 async function markMemberLeft(member) {
+  await markDiscordUserOffServer(member.user, "leave");
+}
+
+async function markDiscordUserOffServer(user, trigger) {
   try {
+    messageCounts.delete(user.id);
+    voiceSessions.delete(user.id);
+
     await api("/members", {
       body: {
         action: "left",
-        discordUserId: member.id,
-        discordUsername: formatUser(member.user),
-        isBot: member.user.bot,
+        discordUserId: user.id,
+        discordUsername: formatUser(user),
+        isBot: user.bot,
       },
+      method: "PATCH",
     });
     await sendHeartbeat();
+    console.log(`Member off-server (${trigger}): ${formatUser(user)}`);
   } catch (error) {
-    console.error("Member leave sync failed", errorMessage(error));
+    console.error(`Member off-server sync failed (${trigger})`, errorMessage(error));
+  }
+}
+
+async function markDiscordIdOffServer(discordUserId, discordUsername, trigger) {
+  try {
+    messageCounts.delete(discordUserId);
+    voiceSessions.delete(discordUserId);
+
+    await api("/members", {
+      body: {
+        action: "left",
+        discordUserId,
+        discordUsername,
+      },
+      method: "PATCH",
+    });
+    await sendHeartbeat();
+    console.log(`Member off-server (${trigger}): ${discordUsername ?? discordUserId}`);
+  } catch (error) {
+    console.error(`Member off-server sync failed (${trigger})`, errorMessage(error));
   }
 }
 
@@ -683,6 +713,14 @@ async function executeModerationAction(action, startedAt) {
     await member.voice.disconnect(reason);
   } else if (action.eventType === "warn") {
     // Warns are delivered through the direct message above.
+  }
+
+  if (action.eventType === "ban" || action.eventType === "kick") {
+    await markDiscordIdOffServer(
+      action.discordUserId,
+      action.discordUsername,
+      action.eventType,
+    );
   }
 
   return {
