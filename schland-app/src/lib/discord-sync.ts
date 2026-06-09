@@ -1277,8 +1277,8 @@ function createUserMap(users: DiscordUser[]) {
 
 function formatDiscordUser(user: DiscordUser) {
   return (
-    asText(user.global_name) ??
     asText(user.username) ??
+    asText(user.global_name) ??
     asText(user.id) ??
     "Unbekannt"
   );
