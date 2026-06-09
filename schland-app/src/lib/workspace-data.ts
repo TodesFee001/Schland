@@ -239,6 +239,7 @@ export type WorkspaceData = {
 const now = new Date();
 const currentYear = now.getFullYear();
 const currentMonth = now.getMonth() + 1;
+const displayTimeZone = "Europe/Berlin";
 
 export const demoWorkspaceData: WorkspaceData = {
   source: "demo",
@@ -1431,7 +1432,7 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
 
   return {
     lastFullSync: latest
-      ? formatDate(
+      ? formatLiveDate(
           isRailwayLive && heartbeatAt
             ? heartbeatAt
             : String(latest.finished_at ?? latest.started_at ?? ""),
@@ -1660,7 +1661,26 @@ function formatDate(value: string) {
 
   return new Intl.DateTimeFormat("de-DE", {
     dateStyle: "short",
+    timeZone: displayTimeZone,
     timeStyle: "short",
+  }).format(date);
+}
+
+function formatLiveDate(value: string) {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("de-DE", {
+    dateStyle: "short",
+    timeZone: displayTimeZone,
+    timeStyle: "medium",
   }).format(date);
 }
 

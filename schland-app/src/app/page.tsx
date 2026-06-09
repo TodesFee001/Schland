@@ -13,6 +13,9 @@ type HomeProps = {
   }>;
 };
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function Home({ searchParams }: HomeProps) {
   const params = await searchParams;
   const authStatus = await getAuthStatus();
