@@ -719,13 +719,15 @@ export async function runModerationAction(formData: FormData) {
   }
 
   const memberId = getFormText(formData, "memberId");
+  const discordUserId = getFormText(formData, "discordUserId");
+  const targetName = getFormText(formData, "targetName");
   const actionType = getFormText(formData, "actionType");
   const reason = getFormText(formData, "reason");
   const durationMode =
     getFormText(formData, "durationMode") === "timed" ? "timed" : "lifetime";
   const durationMinutes = getOptionalFormNumber(formData, "durationMinutes");
 
-  if (!memberId || !isModerationAction(actionType)) {
+  if ((!memberId && !isDiscordSnowflake(discordUserId)) || !isModerationAction(actionType)) {
     redirect("/?section=moderation&setup=moderation-action-missing");
   }
 
@@ -774,12 +776,14 @@ export async function runModerationAction(formData: FormData) {
   try {
     await executeDiscordModerationAction({
       actionType,
+      discordUserId: discordUserId || null,
       durationMode,
       durationSeconds:
         actionType === "timeout" ? Number(durationMinutes) * 60 : null,
-      memberId,
+      memberId: memberId || null,
       moderatorName,
       reason,
+      targetName: targetName || null,
     });
   } catch (error) {
     console.error("discord moderation action failed", {
@@ -1087,6 +1091,10 @@ function isModerationAction(
     value === "voice_disconnect" ||
     value === "warn"
   );
+}
+
+function isDiscordSnowflake(value: string) {
+  return /^[0-9]{15,25}$/.test(value);
 }
 
 function buildStoragePath(userId: string, originalName: string) {

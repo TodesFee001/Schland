@@ -251,10 +251,9 @@ export async function createPendingDiscordInvites(
 
 export async function deleteDiscordInviteRequest(inviteId: string) {
   const supabase = getSupabaseAdminClient();
-  const config = getDiscordSyncConfig();
   const { data, error } = await supabase
     .from("discord_invite_requests")
-    .select("id,discord_invite_code")
+    .select("id")
     .eq("id", inviteId)
     .maybeSingle();
 
@@ -266,33 +265,16 @@ export async function deleteDiscordInviteRequest(inviteId: string) {
     throw new Error("Invite not found.");
   }
 
-  const inviteCode = asText(asRecord(data).discord_invite_code);
-  const { error: deleteError } = await supabase
+  const { error: updateError } = await supabase
     .from("discord_invite_requests")
-    .delete()
+    .update({
+      bot_error: null,
+      status: "cancelled",
+    })
     .eq("id", inviteId);
 
-  if (deleteError) {
-    throw new Error(`Invite delete failed: ${deleteError.message}`);
-  }
-
-  if (inviteCode && config.missing.length === 0) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2500);
-
-    try {
-      await discordRequest(config, `/invites/${inviteCode}`, {
-        method: "DELETE",
-        signal: controller.signal,
-      });
-    } catch (error) {
-      console.error("discord invite revoke failed", {
-        inviteId,
-        message: getErrorMessage(error),
-      });
-    } finally {
-      clearTimeout(timeout);
-    }
+  if (updateError) {
+    throw new Error(`Invite cancel failed: ${updateError.message}`);
   }
 }
 
@@ -859,37 +841,51 @@ async function sendDiscordInviteDm(
 
 export async function executeDiscordModerationAction(input: {
   actionType: "ban" | "kick" | "timeout" | "voice_disconnect" | "warn";
+  discordUserId?: string | null;
   durationMode?: "lifetime" | "timed";
   durationSeconds: number | null;
-  memberId: string;
+  memberId?: string | null;
   moderatorName?: string | null;
   reason: string;
+  targetName?: string | null;
 }) {
   const supabase = getSupabaseAdminClient();
-  const config = getDiscordSyncConfig();
 
-  if (config.missing.length > 0) {
-    throw new Error(
-      `Discord moderation missing config: ${config.missing.join(", ")}`,
-    );
+  let memberRow: Record<string, unknown> | null = null;
+
+  if (input.memberId) {
+    const { data, error } = await supabase
+      .from("members")
+      .select("id,name,discord_id,discord_username,discord_display_name")
+      .eq("id", input.memberId)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Discord member lookup failed: ${error.message}`);
+    }
+
+    memberRow = asRecord(data);
+  } else if (input.discordUserId) {
+    const { data, error } = await supabase
+      .from("members")
+      .select("id,name,discord_id,discord_username,discord_display_name")
+      .eq("discord_id", input.discordUserId)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Discord member lookup failed: ${error.message}`);
+    }
+
+    memberRow = data ? asRecord(data) : null;
   }
 
-  const { data: memberRow, error: memberError } = await supabase
-    .from("members")
-    .select("id,name,discord_id,discord_username,discord_display_name")
-    .eq("id", input.memberId)
-    .single();
+  const discordUserId = asText(memberRow?.discord_id) ?? input.discordUserId;
 
-  if (memberError || !memberRow?.discord_id) {
+  if (!discordUserId) {
     throw new Error("Discord member not found.");
   }
 
-  const member = asRecord(memberRow);
-  const discordUserId = String(member.discord_id);
   const reason = input.reason.trim();
-  const auditReason = encodeAuditReason(
-    `Schland moderation | ${input.actionType} | reason: ${reason}`,
-  );
   const startedAt = new Date();
   const endedAt =
     input.actionType === "timeout" && input.durationSeconds
@@ -901,64 +897,39 @@ export async function executeDiscordModerationAction(input: {
     input.actionType === "ban" ||
     (input.actionType !== "timeout" && durationMode === "lifetime");
 
-  if (input.actionType === "timeout") {
-    await discordRequest(config, `/guilds/${config.guildId}/members/${discordUserId}`, {
-      body: JSON.stringify({
-        communication_disabled_until: endedAt?.toISOString() ?? null,
-      }),
-      headers: { "X-Audit-Log-Reason": auditReason },
-      method: "PATCH",
-    });
-  } else if (input.actionType === "kick") {
-    await discordRequest(config, `/guilds/${config.guildId}/members/${discordUserId}`, {
-      headers: { "X-Audit-Log-Reason": auditReason },
-      method: "DELETE",
-    });
-  } else if (input.actionType === "ban") {
-    await discordRequest(config, `/guilds/${config.guildId}/bans/${discordUserId}`, {
-      body: JSON.stringify({ delete_message_seconds: 0 }),
-      headers: { "X-Audit-Log-Reason": auditReason },
-      method: "PUT",
-    });
-  } else if (input.actionType === "voice_disconnect") {
-    await discordRequest(config, `/guilds/${config.guildId}/members/${discordUserId}`, {
-      body: JSON.stringify({ channel_id: null }),
-      headers: { "X-Audit-Log-Reason": auditReason },
-      method: "PATCH",
-    });
-  }
-
   const payload = {
     discord_user_id: discordUserId,
     discord_username: String(
-      member.discord_display_name ?? member.discord_username ?? member.name ?? "",
+      memberRow?.discord_display_name ??
+        memberRow?.discord_username ??
+        memberRow?.name ??
+        input.targetName ??
+        discordUserId,
     ),
     duration_seconds:
       input.actionType === "timeout" ? input.durationSeconds : null,
     ended_at: endedAt?.toISOString() ?? null,
     event_type: input.actionType,
-    external_event_id: `web-${crypto.randomUUID()}`,
+    external_event_id: `web-command-${crypto.randomUUID()}`,
     last_synced_at: new Date().toISOString(),
-    member_id: input.memberId,
+    member_id: asText(memberRow?.id),
     metadata: {
       actionSource: "web",
+      commandStatus: "pending",
       durationMode,
       lifetime,
     },
     moderator_name: input.moderatorName ?? "Website",
     reason,
-    source: "schland-web-action",
+    source: "schland-web-command",
     started_at: startedAt.toISOString(),
-    status:
-      input.actionType === "ban" || input.actionType === "timeout"
-        ? "active"
-        : "recorded",
+    status: "recorded",
   };
 
   const { error } = await supabase.from("discord_moderation_events").insert(payload);
 
   if (error) {
-    throw new Error(`Moderation event write failed: ${error.message}`);
+    throw new Error(`Moderation command write failed: ${error.message}`);
   }
 }
 

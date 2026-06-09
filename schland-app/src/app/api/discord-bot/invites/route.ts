@@ -37,6 +37,13 @@ export async function GET(request: Request) {
     .in("status", ["pending", "created"])
     .lte("expires_at", now);
 
+  const cleanupCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  await supabase
+    .from("discord_invite_requests")
+    .delete()
+    .in("status", ["cancelled", "expired", "failed", "used"])
+    .lte("created_at", cleanupCutoff);
+
   const { data, error } = await supabase
     .from("discord_invite_requests")
     .select(
@@ -53,12 +60,14 @@ export async function GET(request: Request) {
         dm_status,
         dm_error,
         dm_sent_at,
+        status,
+        discord_invite_code,
+        discord_invite_url,
         target_member:members!discord_invite_requests_target_member_id_fkey(id,name,discord_id,discord_username,discord_display_name),
         requested_permission:permissions!discord_invite_requests_requested_permission_id_fkey(id,permission_key,description)
       `,
     )
-    .eq("status", "pending")
-    .gt("expires_at", now)
+    .in("status", ["pending", "cancelled"])
     .order("created_at", { ascending: true })
     .limit(25);
 
@@ -125,6 +134,10 @@ export async function PATCH(request: Request) {
 
   if (status === "failed") {
     update.bot_error = asText(body?.botError) ?? "Discord invite creation failed";
+  }
+
+  if (status === "cancelled") {
+    update.bot_error = asText(body?.botError);
   }
 
   const dmStatus = asText(body?.dmStatus ?? body?.dm_status);

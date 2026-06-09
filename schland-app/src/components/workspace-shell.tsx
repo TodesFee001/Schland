@@ -184,7 +184,7 @@ export function WorkspaceShell({
       if (document.visibilityState === "visible") {
         router.refresh();
       }
-    }, 15000);
+    }, 5000);
 
     return () => window.clearInterval(interval);
   }, [router]);
@@ -2911,18 +2911,38 @@ function ModerationSection({
               </span>
               <select
                 name="memberId"
-                required
                 defaultValue=""
-                disabled={!mfaReady || moderationMembers.length === 0}
+                disabled={!mfaReady}
                 className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
               >
-                <option value="">Mitglied waehlen</option>
+                <option value="">Aus Akte waehlen</option>
                 {moderationMembers.map((member) => (
                   <option key={member.id} value={member.id}>
                     {member.name} ({member.discordId})
                   </option>
                 ))}
               </select>
+            </label>
+            <label className="grid gap-2 lg:col-span-2">
+              <span className="text-xs font-medium uppercase text-neutral-500">
+                Oder Discord-ID
+              </span>
+              <input
+                name="discordUserId"
+                inputMode="numeric"
+                placeholder="Direkt per User-ID"
+                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+              />
+            </label>
+            <label className="grid gap-2 lg:col-span-2">
+              <span className="text-xs font-medium uppercase text-neutral-500">
+                Anzeigename
+              </span>
+              <input
+                name="targetName"
+                placeholder="Optional"
+                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+              />
             </label>
             <label className="grid gap-2 lg:col-span-1">
               <span className="text-xs font-medium uppercase text-neutral-500">
@@ -2981,7 +3001,7 @@ function ModerationSection({
               <button
                 type="submit"
                 title="Moderation ausfuehren"
-                disabled={!mfaReady || moderationMembers.length === 0}
+                disabled={!mfaReady}
                 className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45 lg:w-auto"
               >
                 <Shield className="size-4" aria-hidden="true" />
@@ -2991,8 +3011,8 @@ function ModerationSection({
           </fieldset>
         </form>
         <div className="border-t border-[var(--line)] bg-[var(--surface-muted)] px-3 py-2 text-xs text-neutral-700">
-          Bans werden als Lifetime gesetzt. Discord-Timeouts brauchen eine
-          Minutendauer.
+          Ohne Aktenauswahl reicht eine Discord-ID. Der Railway-Bot fuehrt den
+          Auftrag live aus und schreibt den Status ins Register.
         </div>
       </section>
 
@@ -3087,6 +3107,11 @@ function ModerationSection({
                       >
                         {event.statusLabel}
                       </span>
+                      {event.commandError ? (
+                        <div className="mt-1 max-w-[180px] truncate text-xs text-[var(--danger)]">
+                          {event.commandError}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3">
                       <div>{event.totalDuration}</div>
@@ -3147,7 +3172,7 @@ function SyncSection({
             }
           />
           <div className="grid gap-3 border-t border-[var(--line-strong)] p-3 md:grid-cols-4">
-            <DetailBox label="Letzter Lauf" value={sync.lastFullSync} />
+            <DetailBox label="Live-Signal" value={sync.lastFullSync} />
             <DetailBox
               label="Discord Server"
               value={
@@ -3368,10 +3393,19 @@ function SyncSection({
           <h2 className="font-semibold">Sync-Status</h2>
         </div>
         <dl className="mt-5 grid gap-3 text-sm">
-          <DetailRow label="Letzter Vollabgleich" value={sync.lastFullSync} />
+          <DetailRow label="Live-Signal" value={sync.lastFullSync} />
+          <DetailRow label="Signal-Alter" value={sync.liveSignalAge} />
           <DetailRow label="Fehler" value={formatNumber(sync.errorCount)} />
           <DetailRow label="Manueller Sync" value={sync.manualSync} />
           <DetailRow label="Bot" value={sync.botState} />
+          <DetailRow
+            label="Voice live"
+            value={formatNumber(sync.liveVoiceSessions)}
+          />
+          <DetailRow
+            label="Auftraege"
+            value={formatNumber(sync.moderationQueueSize)}
+          />
         </dl>
       </aside>
     </div>
@@ -3605,6 +3639,14 @@ function getInviteDmStatusClass(status: string) {
 
   if (status === "failed") {
     return "bg-red-50 text-[var(--danger)]";
+  }
+
+  if (status === "pending") {
+    return "bg-[#fff4d6] text-[var(--warning)]";
+  }
+
+  if (status === "running") {
+    return "bg-blue-100 text-blue-800";
   }
 
   return "bg-[var(--surface-muted)] text-neutral-600";

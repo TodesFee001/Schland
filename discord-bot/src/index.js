@@ -29,7 +29,12 @@ const timers = [];
 let invitePollRunning = false;
 let auditPollRunning = false;
 let fullSyncRunning = false;
+let heartbeatRunning = false;
 let messageFlushRunning = false;
+let moderationPollRunning = false;
+let voiceFlushRunning = false;
+let lastFullSyncStats = null;
+let moderationQueueSize = 0;
 
 client.once(Events.ClientReady, async () => {
   console.log(`Schland bot online as ${client.user.tag}`);
@@ -38,10 +43,15 @@ client.once(Events.ClientReady, async () => {
   await fullSyncGuild("startup");
   await primeVoiceSessions();
   await pollInvites();
+  await pollModerationActions();
   await pollAuditLogs("startup");
+  await sendHeartbeat();
 
   timers.push(setInterval(() => void flushMessages(), config.activityFlushMs));
+  timers.push(setInterval(() => void flushVoiceSessions(), config.voiceFlushMs));
+  timers.push(setInterval(() => void sendHeartbeat(), config.heartbeatMs));
   timers.push(setInterval(() => void pollInvites(), config.invitePollMs));
+  timers.push(setInterval(() => void pollModerationActions(), config.moderationPollMs));
   timers.push(setInterval(() => void refreshPrivacy(), config.privacyRefreshMs));
   timers.push(setInterval(() => void fullSyncGuild("interval"), config.fullSyncIntervalMs));
   timers.push(setInterval(() => void pollAuditLogs("interval"), config.auditPollMs));
@@ -201,6 +211,15 @@ async function fullSyncGuild(trigger) {
       method: "PATCH",
     });
 
+    lastFullSyncStats = {
+      guildMemberEstimate: members.size,
+      guildName: guild.name,
+      humansOnServer: humans.length,
+      skippedBots: members.size - humans.length,
+    };
+
+    await sendHeartbeat();
+
     console.log(`Full member sync (${trigger}) done: ${synced} humans, ${members.size - humans.length} bots skipped`);
   } catch (error) {
     console.error(`Full member sync (${trigger}) failed`, errorMessage(error));
@@ -217,6 +236,7 @@ async function syncMember(member, trigger) {
 
     if (result.member) {
       console.log(`Member ${trigger}: ${result.member.name}`);
+      await sendHeartbeat();
     }
   } catch (error) {
     console.error(`Member ${trigger} failed`, errorMessage(error));
@@ -233,6 +253,7 @@ async function markMemberLeft(member) {
         isBot: member.user.bot,
       },
     });
+    await sendHeartbeat();
   } catch (error) {
     console.error("Member leave sync failed", errorMessage(error));
   }
@@ -259,6 +280,7 @@ async function flushMessages() {
       });
       messageCounts.delete(discordUserId);
     }
+    await sendHeartbeat();
   } catch (error) {
     console.error("Message activity flush failed", errorMessage(error));
   } finally {
@@ -290,9 +312,12 @@ async function primeVoiceSessions() {
 }
 
 function startVoiceSession(discordUserId, data) {
+  const now = new Date().toISOString();
+
   voiceSessions.set(discordUserId, {
     ...data,
-    startedAt: new Date().toISOString(),
+    lastFlushedAt: now,
+    startedAt: now,
   });
 }
 
@@ -306,8 +331,9 @@ async function endVoiceSession(discordUserId, fallback) {
   voiceSessions.delete(discordUserId);
 
   const endedAt = new Date().toISOString();
+  const startedAt = session.lastFlushedAt ?? session.startedAt;
   const durationSeconds = Math.round(
-    (new Date(endedAt).getTime() - new Date(session.startedAt).getTime()) / 1000,
+    (new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 1000,
   );
 
   if (durationSeconds < 60) {
@@ -325,11 +351,58 @@ async function endVoiceSession(discordUserId, fallback) {
         durationSeconds,
         endedAt,
         eventType: "voice_session",
-        startedAt: session.startedAt,
+        startedAt,
       },
     });
   } catch (error) {
     console.error("Voice activity write failed", errorMessage(error));
+  }
+}
+
+async function flushVoiceSessions() {
+  if (voiceFlushRunning || voiceSessions.size === 0) {
+    return;
+  }
+
+  voiceFlushRunning = true;
+
+  try {
+    const now = new Date();
+
+    for (const [discordUserId, session] of voiceSessions.entries()) {
+      const lastFlushedAt = new Date(session.lastFlushedAt ?? session.startedAt);
+      const durationSeconds = Math.round(
+        (now.getTime() - lastFlushedAt.getTime()) / 1000,
+      );
+
+      if (!Number.isFinite(durationSeconds) || durationSeconds < 60) {
+        continue;
+      }
+
+      const endedAt = now.toISOString();
+
+      await api("/activity", {
+        body: {
+          channelId: session.channelId,
+          channelName: session.channelName,
+          discordDisplayName: session.displayName,
+          discordUserId,
+          discordUsername: session.username,
+          durationSeconds,
+          endedAt,
+          eventType: "voice_session",
+          startedAt: lastFlushedAt.toISOString(),
+        },
+      });
+
+      session.lastFlushedAt = endedAt;
+      voiceSessions.set(discordUserId, session);
+    }
+    await sendHeartbeat();
+  } catch (error) {
+    console.error("Voice activity flush failed", errorMessage(error));
+  } finally {
+    voiceFlushRunning = false;
   }
 }
 
@@ -354,6 +427,11 @@ async function pollInvites() {
 }
 
 async function processInvite(inviteRequest) {
+  if (inviteRequest.status === "cancelled") {
+    await cancelInvite(inviteRequest);
+    return;
+  }
+
   try {
     const channel = await client.channels.fetch(config.inviteChannelId);
 
@@ -401,6 +479,44 @@ async function processInvite(inviteRequest) {
   }
 }
 
+async function cancelInvite(inviteRequest) {
+  try {
+    if (inviteRequest.discordInviteCode) {
+      await discordApi(`/invites/${inviteRequest.discordInviteCode}`, {
+        method: "DELETE",
+      });
+    }
+
+    await api("/invites", {
+      body: {
+        botError: null,
+        id: inviteRequest.id,
+        status: "cancelled",
+      },
+      method: "PATCH",
+    });
+
+    console.log(`Invite cancelled for ${inviteRequest.inviteeName}`);
+  } catch (error) {
+    const message = errorMessage(error);
+
+    if (!message.includes("Discord 404")) {
+      console.error("Invite cancel failed", message);
+    }
+
+    await api("/invites", {
+      body: {
+        botError: message.includes("Discord 404") ? null : message,
+        id: inviteRequest.id,
+        status: "cancelled",
+      },
+      method: "PATCH",
+    }).catch((updateError) => {
+      console.error("Invite cancel update failed", errorMessage(updateError));
+    });
+  }
+}
+
 async function sendInviteDm(inviteRequest, inviteUrl) {
   if (!inviteRequest.inviteeDiscordId) {
     return { error: null, status: "skipped" };
@@ -442,6 +558,136 @@ async function refreshPrivacy() {
   } catch (error) {
     console.error("Privacy refresh failed", errorMessage(error));
   }
+}
+
+async function pollModerationActions() {
+  if (moderationPollRunning) {
+    return;
+  }
+
+  moderationPollRunning = true;
+
+  try {
+    const result = await api("/moderation-actions", { method: "GET" });
+    const actions = Array.isArray(result.actions) ? result.actions : [];
+    moderationQueueSize = actions.length;
+
+    for (const action of actions) {
+      await processModerationAction(action);
+    }
+
+    await sendHeartbeat();
+  } catch (error) {
+    console.error("Moderation action poll failed", errorMessage(error));
+  } finally {
+    moderationPollRunning = false;
+  }
+}
+
+async function processModerationAction(action) {
+  const startedAt = new Date().toISOString();
+
+  try {
+    await api("/moderation-actions", {
+      body: {
+        id: action.id,
+        commandStatus: "running",
+        startedAt,
+      },
+      method: "PATCH",
+    });
+
+    const result = await executeModerationAction(action, startedAt);
+
+    await api("/moderation-actions", {
+      body: {
+        commandStatus: "executed",
+        durationSeconds: result.durationSeconds,
+        endedAt: result.endedAt,
+        id: action.id,
+        startedAt: result.startedAt,
+      },
+      method: "PATCH",
+    });
+
+    moderationQueueSize = Math.max(0, moderationQueueSize - 1);
+    console.log(`Moderation action executed: ${action.eventType} ${action.discordUserId}`);
+  } catch (error) {
+    moderationQueueSize = Math.max(0, moderationQueueSize - 1);
+    console.error("Moderation action failed", errorMessage(error));
+
+    await api("/moderation-actions", {
+      body: {
+        botError: errorMessage(error),
+        commandStatus: "failed",
+        id: action.id,
+        startedAt,
+      },
+      method: "PATCH",
+    }).catch((updateError) => {
+      console.error("Moderation action failure update failed", errorMessage(updateError));
+    });
+  }
+}
+
+async function executeModerationAction(action, startedAt) {
+  const guild = await getGuild();
+  const reason = trimReason(
+    `Schland ${action.eventType}: ${action.reason ?? "kein Grund"}`,
+  );
+  const durationSeconds =
+    action.eventType === "timeout"
+      ? Math.min(Math.max(Number(action.durationSeconds ?? 0), 60), 28 * 24 * 60 * 60)
+      : null;
+  const endedAt =
+    durationSeconds !== null
+      ? new Date(new Date(startedAt).getTime() + durationSeconds * 1000).toISOString()
+      : null;
+
+  if (action.eventType === "ban") {
+    await guild.members.ban(action.discordUserId, {
+      deleteMessageSeconds: 0,
+      reason,
+    });
+  } else if (action.eventType === "kick") {
+    const member = await guild.members.fetch(action.discordUserId);
+    await member.kick(reason);
+  } else if (action.eventType === "timeout") {
+    if (!durationSeconds) {
+      throw new Error("Timeout braucht eine gueltige Dauer.");
+    }
+
+    const member = await guild.members.fetch(action.discordUserId);
+    await member.timeout(durationSeconds * 1000, reason);
+  } else if (action.eventType === "voice_disconnect") {
+    const member = await guild.members.fetch(action.discordUserId);
+
+    if (!member.voice.channelId) {
+      throw new Error("Mitglied ist nicht im Voice.");
+    }
+
+    await member.voice.disconnect(reason);
+  } else if (action.eventType === "warn") {
+    const user = await client.users.fetch(action.discordUserId);
+
+    await user.send(
+      [
+        "Schland Verwarnung",
+        action.reason ? `Grund: ${action.reason}` : null,
+        action.moderatorName ? `Ausgestellt von: ${action.moderatorName}` : null,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+  } else {
+    throw new Error(`Unbekannte Moderationsaktion: ${action.eventType}`);
+  }
+
+  return {
+    durationSeconds,
+    endedAt,
+    startedAt,
+  };
 }
 
 async function pollAuditLogs(trigger) {
@@ -643,6 +889,42 @@ async function getGuild() {
   return client.guilds.cache.get(config.guildId) ?? client.guilds.fetch(config.guildId);
 }
 
+async function sendHeartbeat() {
+  if (heartbeatRunning) {
+    return;
+  }
+
+  heartbeatRunning = true;
+
+  try {
+    const guild = await getGuild();
+    const stats = lastFullSyncStats ?? {
+      guildMemberEstimate: guild.memberCount ?? null,
+      guildName: guild.name,
+      humansOnServer: null,
+      skippedBots: null,
+    };
+
+    await api("/heartbeat", {
+      body: {
+        activeVoiceSessions: voiceSessions.size,
+        disabledAnalytics: disabledAnalyticsIds.size,
+        guildMemberEstimate: stats.guildMemberEstimate,
+        guildName: stats.guildName ?? guild.name,
+        humansOnServer: stats.humansOnServer,
+        messageBufferSize: messageCounts.size,
+        moderationQueueSize,
+        skippedBots: stats.skippedBots,
+        uptimeSeconds: Math.round(process.uptime()),
+      },
+    });
+  } catch (error) {
+    console.error("Heartbeat failed", errorMessage(error));
+  } finally {
+    heartbeatRunning = false;
+  }
+}
+
 async function api(path, options = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.apiTimeoutMs);
@@ -669,6 +951,25 @@ async function api(path, options = {}) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function discordApi(path, options = {}) {
+  const response = await fetch(`https://discord.com/api/v10${path}`, {
+    ...options,
+    headers: {
+      Authorization: `Bot ${config.discordBotToken}`,
+      "Content-Type": "application/json",
+      ...(options.headers ?? {}),
+    },
+  });
+  const text = await response.text();
+  const body = parseJson(text);
+
+  if (!response.ok) {
+    throw new Error(`Discord ${response.status}: ${body?.message ?? text}`);
+  }
+
+  return body ?? {};
 }
 
 async function shutdown(signal) {
@@ -704,18 +1005,21 @@ function loadConfig() {
   }
 
   return {
-    activityFlushMs: readMs(env.ACTIVITY_FLUSH_MS, 10_000),
+    activityFlushMs: readMs(env.ACTIVITY_FLUSH_MS, 5_000),
     apiTimeoutMs: readMs(env.API_TIMEOUT_MS, 15_000),
     appUrl: env.SCHLAND_APP_URL.trim().replace(/\/+$/, ""),
     auditBackfillMs: readMs(env.AUDIT_BACKFILL_MS, 15 * 60_000),
-    auditPollMs: readMs(env.AUDIT_POLL_MS, 30_000),
+    auditPollMs: readMs(env.AUDIT_POLL_MS, 20_000),
     discordBotToken: env.DISCORD_BOT_TOKEN.trim(),
-    fullSyncIntervalMs: readMs(env.FULL_SYNC_INTERVAL_MS, 5 * 60_000),
+    fullSyncIntervalMs: readMs(env.FULL_SYNC_INTERVAL_MS, 2 * 60_000),
     guildId: env.DISCORD_GUILD_ID.trim(),
+    heartbeatMs: readMs(env.HEARTBEAT_MS, 10_000),
     inviteChannelId: env.DISCORD_INVITE_CHANNEL_ID.trim(),
-    invitePollMs: readMs(env.INVITE_POLL_MS, 15_000),
-    privacyRefreshMs: readMs(env.PRIVACY_REFRESH_MS, 60_000),
+    invitePollMs: readMs(env.INVITE_POLL_MS, 10_000),
+    moderationPollMs: readMs(env.MODERATION_POLL_MS, 5_000),
+    privacyRefreshMs: readMs(env.PRIVACY_REFRESH_MS, 30_000),
     syncToken: env.DISCORD_BOT_SYNC_TOKEN.trim(),
+    voiceFlushMs: readMs(env.VOICE_FLUSH_MS, 60_000),
   };
 }
 

@@ -132,6 +132,8 @@ export type WorkspaceDiscordInvite = {
 
 export type WorkspaceModerationEvent = {
   channel: string;
+  commandError: string;
+  commandStatus: string;
   discordId: string;
   discordName: string;
   durationMode: string;
@@ -198,6 +200,9 @@ export type WorkspaceSyncStatus = {
   botState: string;
   errorCount: number;
   lastFullSync: string;
+  liveSignalAge: string;
+  liveSignalFresh: boolean;
+  liveVoiceSessions: number;
   manualSync: string;
   memberCoverageComplete: boolean;
   memberGuildName: string;
@@ -207,6 +212,7 @@ export type WorkspaceSyncStatus = {
   memberScanned: number;
   memberSkippedBots: number;
   memberUpserted: number;
+  moderationQueueSize: number;
   rows: {
     active: boolean;
     label: string;
@@ -584,6 +590,8 @@ export const demoWorkspaceData: WorkspaceData = {
       moderator: "Mara Seidel",
       moderatorDiscordId: "demo-mod-1",
       channel: "-",
+      commandError: "",
+      commandStatus: "",
       reason: "Spam im Textkanal",
       source: "demo",
       startedAt: "Heute, 13:20",
@@ -605,6 +613,8 @@ export const demoWorkspaceData: WorkspaceData = {
       moderator: "System",
       moderatorDiscordId: "demo-system",
       channel: "-",
+      commandError: "",
+      commandStatus: "",
       reason: "Pruefung laeuft",
       source: "demo",
       startedAt: "Gestern, 21:10",
@@ -626,6 +636,8 @@ export const demoWorkspaceData: WorkspaceData = {
       moderator: "Elias Kramer",
       moderatorDiscordId: "demo-mod-2",
       channel: "Voice 1",
+      commandError: "",
+      commandStatus: "",
       reason: "Stoergeraeusche",
       source: "demo",
       startedAt: "Gestern, 19:30",
@@ -736,6 +748,9 @@ export const demoWorkspaceData: WorkspaceData = {
   sync: {
     lastFullSync: "Noch offen",
     errorCount: 0,
+    liveSignalAge: "-",
+    liveSignalFresh: false,
+    liveVoiceSessions: 0,
     manualSync: "Adminrecht",
     botState: "nicht gestartet",
     memberCoverageComplete: true,
@@ -746,6 +761,7 @@ export const demoWorkspaceData: WorkspaceData = {
     memberScanned: 0,
     memberSkippedBots: 0,
     memberUpserted: 0,
+    moderationQueueSize: 0,
     rows: [
       ["Rollen-Sync", "Schema vorbereitet", true],
       ["Neue Mitglieder", "Auto-Aktenabgleich aktiv", true],
@@ -920,6 +936,7 @@ export async function getWorkspaceData(
             requested_permission:permissions!discord_invite_requests_requested_permission_id_fkey(permission_key, description)
           `,
         )
+        .neq("status", "cancelled")
         .order("created_at", { ascending: false })
         .limit(20),
       supabase
@@ -1249,8 +1266,14 @@ function mapModerationEvents(rows: Record<string, unknown>[]): WorkspaceModerati
     .map((row) => {
     const member = asObject(row.members);
     const metadata = asObject(row.metadata);
+    const commandStatus = String(metadata.commandStatus ?? "");
+    const commandError = String(metadata.botError ?? "");
     const eventType = String(row.event_type ?? "kick");
-    const status = String(row.status ?? "recorded");
+    const storedStatus = String(row.status ?? "recorded");
+    const status =
+      commandStatus === "pending" || commandStatus === "running"
+        ? commandStatus
+        : storedStatus;
     const source = String(row.source ?? "");
     const moderator = String(row.moderator_name ?? "-");
     const moderatorDiscordId = String(row.moderator_discord_id ?? "");
@@ -1273,6 +1296,8 @@ function mapModerationEvents(rows: Record<string, unknown>[]): WorkspaceModerati
 
     return {
       id: String(row.id ?? ""),
+      commandError,
+      commandStatus,
       durationMode,
       eventType,
       eventTypeLabel: mapModerationEventType(eventType),
@@ -1368,7 +1393,18 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
       "railway-discord-gateway";
   const errors = latestStatus === "failed" ? 1 : 0;
   const latestMetadata = asObject(latest?.metadata);
+  const heartbeatMetadata = asObject(latestMetadata.heartbeat);
   const memberMetadata = asObject(latestMetadata.members);
+  const heartbeatAt = String(heartbeatMetadata.lastSeenAt ?? "");
+  const liveSignalAgeSeconds = getAgeSeconds(heartbeatAt);
+  const liveSignalFresh =
+    isRailwayLive &&
+    liveSignalAgeSeconds !== null &&
+    liveSignalAgeSeconds <= 45;
+  const liveSignalAge =
+    liveSignalAgeSeconds === null ? "-" : formatAgeShort(liveSignalAgeSeconds);
+  const liveVoiceSessions = Number(heartbeatMetadata.activeVoiceSessions ?? 0);
+  const moderationQueueSize = Number(heartbeatMetadata.moderationQueueSize ?? 0);
   const memberScanned = Number(memberMetadata.scanned ?? 0);
   const memberPageLimitHit = Boolean(memberMetadata.pageLimitHit);
   const memberSkippedBots = Number(memberMetadata.skippedBots ?? 0);
@@ -1395,13 +1431,22 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
 
   return {
     lastFullSync: latest
-      ? formatDate(String(latest.finished_at ?? latest.started_at ?? ""))
+      ? formatDate(
+          isRailwayLive && heartbeatAt
+            ? heartbeatAt
+            : String(latest.finished_at ?? latest.started_at ?? ""),
+        )
       : "Noch offen",
-    errorCount: errors,
+    errorCount: isRailwayLive ? (liveSignalFresh ? 0 : 1) : errors,
+    liveSignalAge,
+    liveSignalFresh,
+    liveVoiceSessions,
     manualSync: isRailwayLive ? "Railway Live" : "Adminrecht",
     botState: latest
-      ? isRailwayLive && latestStatus === "success"
+      ? isRailwayLive && latestStatus === "success" && liveSignalFresh
         ? "Online"
+        : isRailwayLive
+          ? "Kein Live-Signal"
         : mapSyncStatusLabel(latestStatus)
       : "nicht gestartet",
     memberCoverageComplete,
@@ -1412,15 +1457,25 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
     memberScanned,
     memberSkippedBots,
     memberUpserted,
+    moderationQueueSize,
     rows: [
       {
+        label: "Gateway-Herzschlag",
+        status: liveSignalFresh
+          ? `Live-Signal ${liveSignalAge}`
+          : isRailwayLive
+            ? `Kein frisches Signal (${liveSignalAge})`
+            : "Wartet auf Railway",
+        active: liveSignalFresh,
+      },
+      {
         label: "Rollen-Sync",
-        status: isRailwayLive
-          ? "Railway Live-Dienst aktiv"
+        status: liveSignalFresh
+          ? "Railway Rollenabgleich aktiv"
           : latest
             ? "Letzter Lauf vorhanden"
             : "Schema vorbereitet",
-        active: true,
+        active: liveSignalFresh || !isRailwayLive,
       },
       {
         label: "Neue Mitglieder",
@@ -1429,17 +1484,17 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
       },
       {
         label: "Nachrichtenzaehler",
-        status: isRailwayLive
+        status: liveSignalFresh
           ? "Gateway zaehlt neue Nachrichten live"
           : "Monatsmodell vorbereitet",
-        active: true,
+        active: liveSignalFresh || !isRailwayLive,
       },
       {
         label: "Voice-Sessions",
-        status: isRailwayLive
-          ? "Gateway erfasst Voice-Sessions live"
+        status: liveSignalFresh
+          ? `${liveVoiceSessions} aktive Voice-Sessions`
           : "Tabellen vorbereitet",
-        active: true,
+        active: liveSignalFresh || !isRailwayLive,
       },
       {
         label: "Datenschutz Opt-out",
@@ -1453,17 +1508,23 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
       },
       {
         label: "Moderationsregister",
-        status: "Datenbankregister vorbereitet",
-        active: true,
+        status: liveSignalFresh
+          ? moderationQueueSize > 0
+            ? `${moderationQueueSize} offene Bot-Auftraege`
+            : "Bot-Auftraege live verbunden"
+          : "Datenbankregister vorbereitet",
+        active: liveSignalFresh || !isRailwayLive,
       },
       {
         label: "Bot-Implementierung",
-        status: isRailwayLive
-          ? "Railway Gateway verbunden"
+        status: liveSignalFresh
+          ? "Railway Gateway online"
+          : isRailwayLive
+            ? "Railway Gateway ohne frisches Signal"
           : latest
             ? "Alter REST-Sync erkannt"
             : "Live-Sync vorbereitet",
-        active: isRailwayLive,
+        active: liveSignalFresh,
       },
     ],
   };
@@ -1556,7 +1617,9 @@ function mapModerationStatus(status: string) {
     expired: "Abgelaufen",
     failed: "Fehler",
     lifted: "Aufgehoben",
+    pending: "Wartet",
     recorded: "Erfasst",
+    running: "Laeuft",
   };
 
   return labels[status] ?? status;
@@ -1599,6 +1662,40 @@ function formatDate(value: string) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(date);
+}
+
+function getAgeSeconds(value: string) {
+  if (!value) {
+    return null;
+  }
+
+  const time = new Date(value).getTime();
+
+  if (!Number.isFinite(time)) {
+    return null;
+  }
+
+  return Math.max(0, Math.round((Date.now() - time) / 1000));
+}
+
+function formatAgeShort(seconds: number) {
+  if (seconds < 5) {
+    return "gerade eben";
+  }
+
+  if (seconds < 60) {
+    return `vor ${seconds} Sek.`;
+  }
+
+  const minutes = Math.floor(seconds / 60);
+
+  if (minutes < 60) {
+    return `vor ${minutes} Min.`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+
+  return `vor ${hours} Std.`;
 }
 
 function formatDurationSeconds(value: number | null, eventType: string) {
