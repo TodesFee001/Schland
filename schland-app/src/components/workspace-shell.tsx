@@ -63,6 +63,7 @@ import {
 import type { AuthStatus } from "@/lib/auth";
 import type { DashboardSnapshot } from "@/lib/dashboard";
 import type { EnvironmentStatus } from "@/lib/env";
+import { patchNotes } from "@/lib/patch-notes";
 import type {
   MemberStatusLabel,
   WorkspaceCategory,
@@ -163,6 +164,7 @@ export function WorkspaceShell({
   const [selectedMemberOverride, setSelectedMemberId] = useState("");
   const [caseDetailsSuppressed, setCaseDetailsSuppressed] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [patchNotesOpen, setPatchNotesOpen] = useState(false);
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState<string[]>([]);
   const selectedMemberId = members.some(
     (member) => member.id === selectedMemberOverride,
@@ -265,6 +267,7 @@ export function WorkspaceShell({
     visibleNotifications.length > 99
       ? "99+"
       : formatNumber(visibleNotifications.length);
+  const latestPatchVersion = patchNotes[0]?.version ?? "-";
 
   return (
     <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
@@ -347,6 +350,16 @@ export function WorkspaceShell({
                     label={authStatus.mfaLevel === "aal2" ? "2FA aktiv" : "2FA offen"}
                   />
                 ) : null}
+                <button
+                  type="button"
+                  title="Patchnotes"
+                  aria-expanded={patchNotesOpen}
+                  onClick={() => setPatchNotesOpen(true)}
+                  className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-[var(--surface)] px-3 text-sm"
+                >
+                  <FileText className="size-4" aria-hidden="true" />
+                  <span className="hidden sm:inline">{latestPatchVersion}</span>
+                </button>
                 <div className="relative">
                   <button
                     type="button"
@@ -494,6 +507,9 @@ export function WorkspaceShell({
           </div>
         </section>
       </div>
+      {patchNotesOpen ? (
+        <PatchNotesLayer onClose={() => setPatchNotesOpen(false)} />
+      ) : null}
     </main>
   );
 
@@ -3996,6 +4012,72 @@ function SyncSection({
   );
 }
 
+function PatchNotesLayer({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6"
+      role="dialog"
+    >
+      <div className="flex max-h-[86vh] w-full max-w-3xl flex-col border border-[var(--line-strong)] bg-[var(--surface)] shadow-[10px_10px_0_rgba(0,0,0,0.28)]">
+        <div className="flex items-start justify-between gap-3 border-b border-[var(--line-strong)] bg-[var(--surface-muted)] px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-sm font-bold uppercase">Patchnotes</p>
+            <p className="truncate text-xs text-neutral-600">
+              Aenderungen an Schland DB
+            </p>
+          </div>
+          <button
+            type="button"
+            title="Patchnotes schliessen"
+            onClick={onClose}
+            className="flex size-8 items-center justify-center border border-[var(--line)] bg-white text-neutral-700"
+          >
+            <XCircle className="size-4" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="grid gap-3 overflow-y-auto p-4">
+          {patchNotes.map((note) => (
+            <article
+              key={note.id}
+              className="border border-[var(--line)] bg-white"
+            >
+              <div className="flex flex-col gap-2 border-b border-[var(--line)] bg-[var(--surface-muted)] px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <h2 className="truncate text-sm font-bold">{note.title}</h2>
+                  <p className="text-xs text-neutral-600">
+                    {note.date} {"-"} Version {note.version}
+                  </p>
+                </div>
+                <span
+                  className={[
+                    "w-fit border px-2 py-1 text-xs font-bold uppercase",
+                    getPatchNoteTypeClass(note.type),
+                  ].join(" ")}
+                >
+                  {getPatchNoteTypeLabel(note.type)}
+                </span>
+              </div>
+              <ul className="grid gap-2 p-3 text-sm text-neutral-800">
+                {note.items.map((item) => (
+                  <li key={item} className="flex gap-2">
+                    <CheckCircle2
+                      className="mt-0.5 size-4 shrink-0 text-[var(--accent)]"
+                      aria-hidden="true"
+                    />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SettingsSection({
   authStatus,
   environmentStatus,
@@ -4441,6 +4523,30 @@ function getNotificationDotClass(tone: WorkspaceNotification["tone"]) {
   }
 
   return "bg-[var(--accent)]";
+}
+
+function getPatchNoteTypeClass(type: "feature" | "fix" | "system") {
+  if (type === "feature") {
+    return "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-strong)]";
+  }
+
+  if (type === "fix") {
+    return "border-amber-300 bg-[#fff4d6] text-amber-950";
+  }
+
+  return "border-[var(--line)] bg-white text-neutral-700";
+}
+
+function getPatchNoteTypeLabel(type: "feature" | "fix" | "system") {
+  if (type === "feature") {
+    return "Neu";
+  }
+
+  if (type === "fix") {
+    return "Fix";
+  }
+
+  return "System";
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
