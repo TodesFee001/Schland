@@ -1,9 +1,14 @@
 "use server";
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { hasSupabasePublicEnv, hasSupabaseServerEnv } from "@/lib/env";
+import {
+  createSessionStartedValue,
+  getSessionCookieOptions,
+  SESSION_STARTED_COOKIE,
+} from "@/lib/session-timebox";
 import {
   createSupabaseServerClient,
   getSupabaseAdminClient,
@@ -60,6 +65,8 @@ export async function signInAction(formData: FormData) {
       `/login?error=${encodeURIComponent("Benutzername oder Passwort ist falsch.")}&next=${encodeURIComponent(nextPath)}`,
     );
   }
+
+  await startLimitedSession();
 
   redirect(nextPath);
 }
@@ -277,4 +284,14 @@ function isLocalOrigin(value: string) {
   } catch {
     return true;
   }
+}
+
+async function startLimitedSession() {
+  const cookieStore = await cookies();
+
+  cookieStore.set(
+    SESSION_STARTED_COOKIE,
+    createSessionStartedValue(),
+    getSessionCookieOptions(),
+  );
 }

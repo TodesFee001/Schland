@@ -2,6 +2,11 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { getSupabasePublishableKey, hasSupabasePublicEnv } from "@/lib/env";
+import {
+  clearSessionCookies,
+  isSessionTimeboxExpired,
+  SESSION_STARTED_COOKIE,
+} from "@/lib/session-timebox";
 
 const PUBLIC_PATHS = [
   "/login",
@@ -52,6 +57,43 @@ export async function proxy(request: NextRequest) {
   const isPublicPath = PUBLIC_PATHS.some((path) =>
     request.nextUrl.pathname.startsWith(path),
   );
+
+  if (
+    user &&
+    isSessionTimeboxExpired(
+      request.cookies.get(SESSION_STARTED_COOKIE)?.value,
+    )
+  ) {
+    await supabase.auth.signOut();
+
+    if (isPublicPath) {
+      clearSessionCookies(
+        response,
+        request.cookies.getAll().map((cookie) => cookie.name),
+      );
+      return response;
+    }
+
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = "/login";
+    loginUrl.searchParams.set(
+      "message",
+      "Sitzung abgelaufen. Bitte neu anmelden und 2FA erneut bestaetigen.",
+    );
+    loginUrl.searchParams.set(
+      "next",
+      `${request.nextUrl.pathname}${request.nextUrl.search}`,
+    );
+
+    const redirectResponse = NextResponse.redirect(loginUrl);
+
+    clearSessionCookies(
+      redirectResponse,
+      request.cookies.getAll().map((cookie) => cookie.name),
+    );
+
+    return redirectResponse;
+  }
 
   if (!user && !isPublicPath) {
     const loginUrl = request.nextUrl.clone();

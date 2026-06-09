@@ -1,5 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import {
+  createSessionStartedValue,
+  getSessionCookieOptions,
+  SESSION_STARTED_COOKIE,
+} from "@/lib/session-timebox";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
@@ -18,7 +23,15 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.redirect(new URL(nextPath, request.url));
+  const response = NextResponse.redirect(new URL(nextPath, request.url));
+
+  response.cookies.set(
+    SESSION_STARTED_COOKIE,
+    createSessionStartedValue(),
+    getSessionCookieOptions(),
+  );
+
+  return response;
 }
 
 function sanitizeNextPath(value: string) {

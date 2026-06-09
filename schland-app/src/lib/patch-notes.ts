@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "09.06.2026",
+    id: "auth-session-timebox",
+    items: [
+      "Anmeldesitzungen laufen jetzt hart nach 45 Minuten ab.",
+      "Nach Ablauf wird die Supabase-Session geloescht und der Login neu verlangt.",
+      "2FA muss nach dem neuen Login erneut bestaetigt werden.",
+    ],
+    title: "Session-Limit auf 45 Minuten",
+    type: "fix",
+    version: "0.9.3",
+  },
+  {
+    date: "09.06.2026",
     id: "member-case-list-load-limit",
     items: [
       "Mitgliederkartei laedt jetzt bis zu 1000 Akten statt nur die neuesten 50.",
