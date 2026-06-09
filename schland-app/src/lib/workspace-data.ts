@@ -242,6 +242,7 @@ const now = new Date();
 const currentYear = now.getFullYear();
 const currentMonth = now.getMonth() + 1;
 const displayTimeZone = "Europe/Berlin";
+const memberCaseLoadLimit = 1000;
 
 export const demoWorkspaceData: WorkspaceData = {
   source: "demo",
@@ -852,7 +853,7 @@ export async function getWorkspaceData(
           `,
         )
         .order("updated_at", { ascending: false })
-        .limit(50),
+        .limit(memberCaseLoadLimit),
       supabase
         .from("file_categories")
         .select("id, name, description, sort_order, active")

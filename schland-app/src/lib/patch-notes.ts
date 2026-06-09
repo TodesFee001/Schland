@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "09.06.2026",
+    id: "member-case-list-load-limit",
+    items: [
+      "Mitgliederkartei laedt jetzt bis zu 1000 Akten statt nur die neuesten 50.",
+      "Vorhandene Discord-Akten wie Marcel / 777 fallen dadurch nicht mehr aus der sichtbaren Liste.",
+      "Datenbankabgleich bestaetigt: Marcel / 777 ist als Akte vorhanden und auf dem Server markiert.",
+    ],
+    title: "Alle Mitgliederakten sichtbar",
+    type: "fix",
+    version: "0.9.2",
+  },
+  {
+    date: "09.06.2026",
     id: "member-cases-preserve-off-server",
     items: [
       "Discord-Leave, Kick und Ban loeschen keine Mitgliederakten mehr.",
