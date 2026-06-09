@@ -118,6 +118,14 @@ type SetupNotice = {
   text: string;
 };
 
+type WorkspaceNotification = {
+  detail: string;
+  id: string;
+  section: SectionId;
+  title: string;
+  tone: "error" | "info" | "warning";
+};
+
 const sections: Section[] = [
   { id: "dashboard", label: "Dashboard", icon: Gauge },
   { id: "members", label: "Mitgliederakten", icon: Shield },
@@ -151,6 +159,8 @@ export function WorkspaceShell({
   const [memberSearch, setMemberSearch] = useState("");
   const [accessReason, setAccessReason] = useState("");
   const [selectedMemberOverride, setSelectedMemberId] = useState("");
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [dismissedNotificationIds, setDismissedNotificationIds] = useState<string[]>([]);
   const selectedMemberId = members.some(
     (member) => member.id === selectedMemberOverride,
   )
@@ -228,6 +238,28 @@ export function WorkspaceShell({
     ],
     [dashboardSnapshot],
   );
+  const notifications = useMemo(
+    () =>
+      buildWorkspaceNotifications({
+        authStatus,
+        environmentStatus,
+        mfaReady,
+        setupNotice,
+        workspaceData,
+      }),
+    [authStatus, environmentStatus, mfaReady, setupNotice, workspaceData],
+  );
+  const visibleNotifications = useMemo(
+    () =>
+      notifications.filter(
+        (notification) => !dismissedNotificationIds.includes(notification.id),
+      ),
+    [dismissedNotificationIds, notifications],
+  );
+  const notificationCountLabel =
+    visibleNotifications.length > 99
+      ? "99+"
+      : formatNumber(visibleNotifications.length);
 
   return (
     <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
@@ -310,14 +342,115 @@ export function WorkspaceShell({
                     label={authStatus.mfaLevel === "aal2" ? "2FA aktiv" : "2FA offen"}
                   />
                 ) : null}
-                <button
-                  type="button"
-                  title="Benachrichtigungen"
-                  className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-[var(--surface)] px-3 text-sm"
-                >
-                  <Bell className="size-4" aria-hidden="true" />
-                  <span className="hidden sm:inline">3</span>
-                </button>
+                <div className="relative">
+                  <button
+                    type="button"
+                    title="Benachrichtigungen"
+                    aria-expanded={notificationsOpen}
+                    onClick={() => setNotificationsOpen((open) => !open)}
+                    className={[
+                      "flex h-9 items-center gap-2 rounded-md border px-3 text-sm",
+                      notificationsOpen
+                        ? "border-[var(--line-strong)] bg-[var(--accent-soft)] text-[var(--accent-strong)]"
+                        : "border-[var(--line)] bg-[var(--surface)]",
+                    ].join(" ")}
+                  >
+                    <Bell className="size-4" aria-hidden="true" />
+                    <span className="hidden sm:inline">
+                      {notificationCountLabel}
+                    </span>
+                  </button>
+
+                  {notificationsOpen ? (
+                    <div className="absolute right-0 top-11 z-30 w-[min(92vw,380px)] border border-[var(--line-strong)] bg-[var(--surface)] shadow-[6px_6px_0_rgba(0,0,0,0.18)]">
+                      <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] bg-[var(--surface-muted)] px-3 py-2">
+                        <div>
+                          <p className="text-sm font-bold">Benachrichtigungen</p>
+                          <p className="text-xs text-neutral-600">
+                            {visibleNotifications.length > 0
+                              ? `${notificationCountLabel} offen`
+                              : "Alles ruhig"}
+                          </p>
+                        </div>
+                        {visibleNotifications.length > 0 ? (
+                          <button
+                            type="button"
+                            title="Alle als gelesen markieren"
+                            onClick={() =>
+                              setDismissedNotificationIds((current) => [
+                                ...new Set([
+                                  ...current,
+                                  ...notifications.map((notification) => notification.id),
+                                ]),
+                              ])
+                            }
+                            className="h-8 border border-[var(--line)] bg-white px-2 text-xs font-medium"
+                          >
+                            Gelesen
+                          </button>
+                        ) : null}
+                      </div>
+
+                      <div className="max-h-[420px] overflow-y-auto">
+                        {visibleNotifications.length > 0 ? (
+                          visibleNotifications.map((notification) => (
+                            <div
+                              key={notification.id}
+                              className="grid grid-cols-[1fr_auto] border-b border-[var(--line)] last:border-b-0"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveSection(notification.section);
+                                  setNotificationsOpen(false);
+                                }}
+                                className="grid gap-1 px-3 py-3 text-left hover:bg-[var(--surface-muted)]"
+                              >
+                                <span className="flex items-center gap-2">
+                                  <span
+                                    className={[
+                                      "size-2 shrink-0 rounded-full",
+                                      getNotificationDotClass(notification.tone),
+                                    ].join(" ")}
+                                    aria-hidden="true"
+                                  />
+                                  <span className="text-sm font-semibold">
+                                    {notification.title}
+                                  </span>
+                                </span>
+                                <span className="text-xs leading-5 text-neutral-600">
+                                  {notification.detail}
+                                </span>
+                              </button>
+                              <button
+                                type="button"
+                                title="Benachrichtigung ausblenden"
+                                onClick={() =>
+                                  setDismissedNotificationIds((current) =>
+                                    current.includes(notification.id)
+                                      ? current
+                                      : [...current, notification.id],
+                                  )
+                                }
+                                className="flex w-10 items-start justify-center px-2 py-3 text-neutral-500 hover:text-[var(--danger)]"
+                              >
+                                <XCircle className="size-4" aria-hidden="true" />
+                              </button>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="grid gap-2 p-4 text-sm text-neutral-600">
+                            <CheckCircle2
+                              className="size-5 text-[var(--accent)]"
+                              aria-hidden="true"
+                            />
+                            <span>Keine offenen Meldungen.</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
                 {authStatus.signedIn ? (
                   <form action="/auth/sign-out" method="post">
                     <button
@@ -3885,6 +4018,179 @@ function getEditableModerationStatus(status: string) {
   return ["active", "expired", "failed", "lifted", "recorded"].includes(status)
     ? status
     : "recorded";
+}
+
+function buildWorkspaceNotifications({
+  authStatus,
+  environmentStatus,
+  mfaReady,
+  setupNotice,
+  workspaceData,
+}: {
+  authStatus: AuthStatus;
+  environmentStatus: EnvironmentStatus;
+  mfaReady: boolean;
+  setupNotice?: SetupNotice;
+  workspaceData: WorkspaceData;
+}) {
+  const notifications: WorkspaceNotification[] = [];
+
+  if (setupNotice && setupNotice.tone !== "success") {
+    notifications.push({
+      detail: setupNotice.text,
+      id: `setup-${setupNotice.tone}-${setupNotice.text}`,
+      section: "dashboard",
+      title: setupNotice.tone === "error" ? "Aktion fehlgeschlagen" : "Hinweis",
+      tone: setupNotice.tone,
+    });
+  }
+
+  if (workspaceData.warning) {
+    notifications.push({
+      detail: workspaceData.warning,
+      id: `workspace-warning-${workspaceData.warning}`,
+      section: "settings",
+      title: "Datenhinweis",
+      tone: "warning",
+    });
+  }
+
+  if (authStatus.signedIn && !mfaReady) {
+    notifications.push({
+      detail: "Sensible Aktionen sind blockiert, bis die Sitzung mit 2FA freigeschaltet ist.",
+      id: "mfa-open",
+      section: "settings",
+      title: "2FA offen",
+      tone: "warning",
+    });
+  }
+
+  const missingEnvironment = [
+    ["Supabase URL", environmentStatus.supabaseUrl],
+    ["Supabase Key", environmentStatus.supabasePublishableKey],
+    ["Supabase Service", environmentStatus.supabaseServiceRole],
+    ["Bot-Token", environmentStatus.discordBotToken],
+    ["Bot-Sync", environmentStatus.discordBotSyncToken],
+    ["Discord Server", environmentStatus.discordGuildId],
+  ].filter(([, active]) => !active);
+
+  if (missingEnvironment.length > 0) {
+    notifications.push({
+      detail: `${formatNumber(missingEnvironment.length)} Einstellung(en) fehlen.`,
+      id: `env-missing-${missingEnvironment.length}`,
+      section: "settings",
+      title: "Umgebung unvollstaendig",
+      tone: "error",
+    });
+  }
+
+  if (!workspaceData.sync.liveSignalFresh) {
+    notifications.push({
+      detail: `Letztes Signal: ${workspaceData.sync.lastFullSync}.`,
+      id: `live-signal-${workspaceData.sync.lastFullSync}`,
+      section: "sync",
+      title: "Live-Signal alt",
+      tone: "error",
+    });
+  }
+
+  if (workspaceData.sync.errorCount > 0) {
+    notifications.push({
+      detail: `${formatNumber(workspaceData.sync.errorCount)} Fehler im Sync-Status.`,
+      id: `sync-errors-${workspaceData.sync.errorCount}-${workspaceData.sync.lastFullSync}`,
+      section: "sync",
+      title: "Sync meldet Fehler",
+      tone: "error",
+    });
+  }
+
+  if (!workspaceData.sync.memberCoverageComplete) {
+    const missing =
+      workspaceData.sync.memberMissingEstimate !== null
+        ? `${formatNumber(workspaceData.sync.memberMissingEstimate)} fehlen`
+        : "Abgleich pruefen";
+
+    notifications.push({
+      detail: `Discord-Mitglieder sind noch nicht vollstaendig erfasst: ${missing}.`,
+      id: `member-coverage-${workspaceData.sync.memberScanned}-${workspaceData.sync.memberMissingEstimate ?? "unknown"}`,
+      section: "members",
+      title: "Mitglieder-Sync unvollstaendig",
+      tone: "warning",
+    });
+  }
+
+  if (workspaceData.sync.moderationQueueSize > 0) {
+    notifications.push({
+      detail: `${formatNumber(workspaceData.sync.moderationQueueSize)} Bot-Auftrag(e) warten noch.`,
+      id: `moderation-queue-${workspaceData.sync.moderationQueueSize}`,
+      section: "moderation",
+      title: "Moderation wartet",
+      tone: "info",
+    });
+  }
+
+  const failedModerationEvents = workspaceData.moderationEvents.filter(
+    (event) => event.status === "failed" || Boolean(event.commandError),
+  );
+
+  if (failedModerationEvents.length > 0) {
+    notifications.push({
+      detail: `${formatNumber(failedModerationEvents.length)} Moderationsereignis(se) brauchen Pruefung.`,
+      id: `moderation-failed-${failedModerationEvents.length}`,
+      section: "moderation",
+      title: "Moderationsfehler",
+      tone: "error",
+    });
+  }
+
+  const failedInvites = workspaceData.discordInvites.filter(
+    (invite) =>
+      invite.status === "failed" ||
+      invite.dmStatus === "failed" ||
+      Boolean(invite.botError) ||
+      Boolean(invite.dmError),
+  );
+
+  if (failedInvites.length > 0) {
+    notifications.push({
+      detail: `${formatNumber(failedInvites.length)} Einladung(en) haben einen Bot- oder DM-Fehler.`,
+      id: `invite-failed-${failedInvites.length}`,
+      section: "sync",
+      title: "Einladung fehlgeschlagen",
+      tone: "error",
+    });
+  }
+
+  const pendingInvites = workspaceData.discordInvites.filter(
+    (invite) =>
+      invite.status === "pending" ||
+      invite.dmStatus === "pending" ||
+      invite.dmStatus === "running",
+  );
+
+  if (pendingInvites.length > 0) {
+    notifications.push({
+      detail: `${formatNumber(pendingInvites.length)} Einladung(en) sind noch offen.`,
+      id: `invite-pending-${pendingInvites.length}`,
+      section: "sync",
+      title: "Einladungen offen",
+      tone: "info",
+    });
+  }
+
+  return notifications;
+}
+
+function getNotificationDotClass(tone: WorkspaceNotification["tone"]) {
+  if (tone === "error") {
+    return "bg-[var(--danger)]";
+  }
+
+  if (tone === "warning") {
+    return "bg-[var(--warning)]";
+  }
+
+  return "bg-[var(--accent)]";
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
