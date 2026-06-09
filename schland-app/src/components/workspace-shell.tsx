@@ -205,7 +205,6 @@ export function WorkspaceShell({
   }, [router]);
 
   const mfaReady = authStatus.mfaLevel === "aal2";
-  const canOpenMember = mfaReady && accessReason.trim().length >= 8;
   const canViewSelectedMember =
     mfaReady &&
     Boolean(openedMemberId) &&
@@ -504,7 +503,6 @@ export function WorkspaceShell({
         return (
           <MembersSection
             accessReason={accessReason}
-            canOpenMember={canOpenMember}
             canViewSelectedMember={canViewSelectedMember}
             files={workspaceData.files}
             filteredMembers={filteredMembers}
@@ -750,7 +748,6 @@ function DashboardSection({
 
 function MembersSection({
   accessReason,
-  canOpenMember,
   canViewSelectedMember,
   files,
   filteredMembers,
@@ -767,7 +764,6 @@ function MembersSection({
   sync,
 }: {
   accessReason: string;
-  canOpenMember: boolean;
   canViewSelectedMember: boolean;
   files: WorkspaceFile[];
   filteredMembers: WorkspaceMember[];
@@ -783,6 +779,11 @@ function MembersSection({
   setSelectedMemberId: (value: string) => void;
   sync: WorkspaceSyncStatus;
 }) {
+  const [openCaseMemberId, setOpenCaseMemberId] = useState("");
+  const memberForOpenDialog =
+    filteredMembers.find((member) => member.id === openCaseMemberId) ??
+    (selectedMember?.id === openCaseMemberId ? selectedMember : null);
+  const canConfirmCaseOpen = mfaReady && accessReason.trim().length >= 8;
   const selectedModerationEvents = useMemo(() => {
     if (!selectedMember) {
       return [];
@@ -1057,7 +1058,7 @@ function MembersSection({
           </form>
           </details>
 
-          <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
+          <div className="grid gap-3">
             <label className="grid gap-2">
               <span className="text-xs font-medium uppercase text-neutral-500">
                 Suche
@@ -1071,17 +1072,6 @@ function MembersSection({
                   className="min-w-0 flex-1 bg-transparent text-sm outline-none"
                 />
               </div>
-            </label>
-            <label className="grid gap-2">
-              <span className="text-xs font-medium uppercase text-neutral-500">
-                Zugriffsgrund
-              </span>
-              <input
-                value={accessReason}
-                onChange={(event) => setAccessReason(event.target.value)}
-                placeholder="z.B. Moderationsfall pruefen"
-                className="h-9 border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
-              />
             </label>
           </div>
 
@@ -1165,27 +1155,20 @@ function MembersSection({
                           <Pencil className="size-4" aria-hidden="true" />
                           <span>Auswaehlen</span>
                         </button>
-                        <form
-                          action={openMemberCaseAction}
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          <input type="hidden" name="memberId" value={member.id} />
-                          <input type="hidden" name="reason" value={accessReason} />
                           <button
-                            type="submit"
-                            onClick={() => onOpenMemberCase(member.id)}
-                            title={
-                              canOpenMember
-                                ? "Akte oeffnen"
-                                : "Zugriffsgrund eintragen"
-                            }
-                            disabled={!canOpenMember}
-                            className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm disabled:cursor-not-allowed disabled:opacity-45"
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setAccessReason("");
+                              setSelectedMemberId(member.id);
+                              setOpenCaseMemberId(member.id);
+                            }}
+                            title="Akte oeffnen"
+                            className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm"
                           >
                             <Eye className="size-4" aria-hidden="true" />
                             <span>Oeffnen</span>
                           </button>
-                        </form>
                       </div>
                     </td>
                   </tr>
@@ -1197,6 +1180,85 @@ function MembersSection({
             </table>
           </div>
         </div>
+
+        {memberForOpenDialog ? (
+          <div
+            aria-modal="true"
+            className="fixed inset-0 z-40 flex items-center justify-center bg-black/35 px-4 py-6"
+            role="dialog"
+          >
+            <div className="w-full max-w-lg border border-[var(--line-strong)] bg-[var(--surface)] shadow-[8px_8px_0_rgba(0,0,0,0.24)]">
+              <div className="flex items-start justify-between gap-3 border-b border-[var(--line-strong)] bg-[var(--surface-muted)] px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold uppercase">Akte oeffnen</p>
+                  <p className="truncate text-xs text-neutral-600">
+                    {memberForOpenDialog.name}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  title="Abbrechen"
+                  onClick={() => setOpenCaseMemberId("")}
+                  className="flex size-8 items-center justify-center border border-[var(--line)] bg-white text-neutral-700"
+                >
+                  <XCircle className="size-4" aria-hidden="true" />
+                </button>
+              </div>
+              <form
+                action={openMemberCaseAction}
+                className="grid gap-3 p-4"
+                onSubmit={() => {
+                  onOpenMemberCase(memberForOpenDialog.id);
+                  setOpenCaseMemberId("");
+                }}
+              >
+                <input
+                  type="hidden"
+                  name="memberId"
+                  value={memberForOpenDialog.id}
+                />
+                <label className="grid gap-2">
+                  <span className="text-xs font-medium uppercase text-neutral-500">
+                    Zugriffsgrund
+                  </span>
+                  <input
+                    name="reason"
+                    value={accessReason}
+                    onChange={(event) => setAccessReason(event.target.value)}
+                    minLength={8}
+                    required
+                    autoFocus
+                    placeholder="z.B. Moderationsfall pruefen"
+                    className="h-10 border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+                  />
+                </label>
+                {!mfaReady ? (
+                  <div className="border border-amber-300 bg-[#fff4d6] p-3 text-sm text-amber-950">
+                    2FA muss aktiv sein, bevor die Akte geoeffnet werden kann.
+                  </div>
+                ) : null}
+                <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setOpenCaseMemberId("")}
+                    className="flex h-10 items-center justify-center gap-2 border border-[var(--line)] bg-white px-4 text-sm"
+                  >
+                    <XCircle className="size-4" aria-hidden="true" />
+                    <span>Abbrechen</span>
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!canConfirmCaseOpen}
+                    className="flex h-10 items-center justify-center gap-2 bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <Eye className="size-4" aria-hidden="true" />
+                    <span>Bestaetigen</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        ) : null}
       </section>
       ) : null}
 
@@ -1277,7 +1339,7 @@ function MembersSection({
                 <button
                   type="submit"
                   onClick={() => onOpenMemberCase(selectedMember.id)}
-                  disabled={!canOpenMember}
+                  disabled={!canConfirmCaseOpen}
                   className="flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <Eye className="size-4" aria-hidden="true" />
