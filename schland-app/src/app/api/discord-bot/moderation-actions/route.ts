@@ -140,10 +140,14 @@ export async function PATCH(request: Request) {
       : null);
   const previousMetadata = asRecord(existing.metadata);
   const botError = asText(body?.botError ?? body?.bot_error);
+  const dmError = asText(body?.dmError ?? body?.dm_error);
+  const dmStatus = asText(body?.dmStatus ?? body?.dm_status);
   const metadata = {
     ...previousMetadata,
     botError: commandStatus === "failed" ? botError : null,
     commandStatus,
+    dmError: dmError ?? previousMetadata.dmError,
+    dmStatus: dmStatus ?? previousMetadata.dmStatus,
     executedAt:
       commandStatus === "executed" || commandStatus === "failed"
         ? now

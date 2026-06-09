@@ -41,6 +41,7 @@ import {
   createMemberAction,
   deleteFolderAction,
   deleteMemberCaseAction,
+  deleteModerationEventAction,
   downloadFileAction,
   linkMemberFileAction,
   openMemberCaseAction,
@@ -54,6 +55,7 @@ import {
   setUserRoleAction,
   unlinkMemberFileAction,
   updateMemberCaseAction,
+  updateModerationEventAction,
   uploadFileAction,
 } from "@/app/actions";
 import type { AuthStatus } from "@/lib/auth";
@@ -369,6 +371,7 @@ export function WorkspaceShell({
             filteredMembers={filteredMembers}
             memberSearch={memberSearch}
             mfaReady={mfaReady}
+            moderationEvents={workspaceData.moderationEvents}
             selectedMember={selectedMember}
             selectedMemberId={selectedMemberId}
             setAccessReason={setAccessReason}
@@ -605,6 +608,7 @@ function MembersSection({
   filteredMembers,
   memberSearch,
   mfaReady,
+  moderationEvents,
   selectedMember,
   selectedMemberId,
   setAccessReason,
@@ -619,6 +623,7 @@ function MembersSection({
   filteredMembers: WorkspaceMember[];
   memberSearch: string;
   mfaReady: boolean;
+  moderationEvents: WorkspaceModerationEvent[];
   selectedMember: WorkspaceMember | null;
   selectedMemberId: string;
   setAccessReason: (value: string) => void;
@@ -626,6 +631,20 @@ function MembersSection({
   setSelectedMemberId: (value: string) => void;
   sync: WorkspaceSyncStatus;
 }) {
+  const selectedModerationEvents = useMemo(() => {
+    if (!selectedMember) {
+      return [];
+    }
+
+    return moderationEvents.filter((event) => {
+      const matchesMember = event.memberId && event.memberId === selectedMember.id;
+      const matchesDiscord =
+        selectedMember.discordId !== "-" && event.discordId === selectedMember.discordId;
+
+      return matchesMember || matchesDiscord;
+    });
+  }, [moderationEvents, selectedMember]);
+
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(700px,1fr)_430px]">
       <section className="border border-[var(--line-strong)] bg-[var(--surface)]">
@@ -1430,6 +1449,188 @@ function MembersSection({
                     </span>
                   </button>
                 </form>
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold">Strafen & Warns</h3>
+                  <span className="rounded-md bg-[var(--surface-muted)] px-2 py-1 text-xs font-medium text-neutral-600">
+                    {formatNumber(selectedModerationEvents.length)}
+                  </span>
+                </div>
+                <div className="grid gap-2">
+                  {selectedModerationEvents.length > 0 ? (
+                    selectedModerationEvents.map((event) => (
+                      <details
+                        key={event.id}
+                        className="border border-[var(--line)] bg-[var(--surface-muted)]"
+                      >
+                        <summary className="grid cursor-pointer gap-2 p-3 sm:grid-cols-[1fr_auto] sm:items-center">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span
+                                className={[
+                                  "rounded-md px-2 py-1 text-xs font-medium",
+                                  getModerationTypeClass(event.eventType),
+                                ].join(" ")}
+                              >
+                                {event.eventTypeLabel}
+                              </span>
+                              <span
+                                className={[
+                                  "rounded-md px-2 py-1 text-xs font-medium",
+                                  getModerationStatusClass(event.status),
+                                ].join(" ")}
+                              >
+                                {event.statusLabel}
+                              </span>
+                              {event.lifetime ? (
+                                <span className="rounded-md bg-[#e8eef2] px-2 py-1 text-xs font-medium text-neutral-700">
+                                  Lifetime
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="mt-2 truncate text-sm font-medium">
+                              {event.reason}
+                            </p>
+                            <p className="mt-1 text-xs text-neutral-500">
+                              {event.startedAt} {"-"} {event.moderator}
+                            </p>
+                            {event.commandError ? (
+                              <p className="mt-1 truncate text-xs text-[var(--danger)]">
+                                Bot/DM: {event.commandError}
+                              </p>
+                            ) : null}
+                          </div>
+                          <div className="text-left text-xs text-neutral-600 sm:text-right">
+                            <div>{event.totalDuration}</div>
+                            <div>Rest: {event.remainingDuration}</div>
+                          </div>
+                        </summary>
+                        <div className="grid gap-3 border-t border-[var(--line)] p-3">
+                          <form
+                            action={updateModerationEventAction}
+                            className="grid gap-2"
+                          >
+                            <input type="hidden" name="eventId" value={event.id} />
+                            <input
+                              type="hidden"
+                              name="memberId"
+                              value={selectedMember.id}
+                            />
+                            <div className="grid gap-2 sm:grid-cols-3">
+                              <label className="grid gap-1">
+                                <span className="text-xs font-medium uppercase text-neutral-500">
+                                  Art
+                                </span>
+                                <select
+                                  name="eventType"
+                                  defaultValue={event.eventType}
+                                  className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                                >
+                                  <option value="warn">Warn</option>
+                                  <option value="timeout">Timeout</option>
+                                  <option value="kick">Kick</option>
+                                  <option value="voice_disconnect">Disconnect</option>
+                                  <option value="ban">Ban</option>
+                                </select>
+                              </label>
+                              <label className="grid gap-1">
+                                <span className="text-xs font-medium uppercase text-neutral-500">
+                                  Status
+                                </span>
+                                <select
+                                  name="status"
+                                  defaultValue={getEditableModerationStatus(
+                                    event.status,
+                                  )}
+                                  className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                                >
+                                  <option value="active">Aktiv</option>
+                                  <option value="recorded">Erfasst</option>
+                                  <option value="expired">Abgelaufen</option>
+                                  <option value="lifted">Aufgehoben</option>
+                                  <option value="failed">Fehlgeschlagen</option>
+                                </select>
+                              </label>
+                              <label className="grid gap-1">
+                                <span className="text-xs font-medium uppercase text-neutral-500">
+                                  Minuten
+                                </span>
+                                <input
+                                  name="durationMinutes"
+                                  type="number"
+                                  min={1}
+                                  defaultValue={
+                                    event.durationSeconds
+                                      ? Math.round(event.durationSeconds / 60)
+                                      : ""
+                                  }
+                                  placeholder="nur Timeout"
+                                  className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                                />
+                              </label>
+                            </div>
+                            <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                              <label className="grid gap-1">
+                                <span className="text-xs font-medium uppercase text-neutral-500">
+                                  Grund
+                                </span>
+                                <input
+                                  name="reason"
+                                  required
+                                  minLength={8}
+                                  defaultValue={event.reason === "-" ? "" : event.reason}
+                                  className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                                />
+                              </label>
+                              <div className="flex items-end">
+                                <button
+                                  type="submit"
+                                  title="Strafe anpassen"
+                                  className="flex h-9 items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-3 text-sm text-white"
+                                >
+                                  <Save className="size-4" aria-hidden="true" />
+                                  <span>Anpassen</span>
+                                </button>
+                              </div>
+                            </div>
+                          </form>
+                          <form
+                            action={deleteModerationEventAction}
+                            className="grid gap-2 border-t border-[var(--line)] pt-3 sm:grid-cols-[1fr_auto]"
+                          >
+                            <input type="hidden" name="eventId" value={event.id} />
+                            <input
+                              type="hidden"
+                              name="memberId"
+                              value={selectedMember.id}
+                            />
+                            <input
+                              name="reason"
+                              required
+                              minLength={8}
+                              placeholder="Grund fuer Loeschung"
+                              className="h-9 rounded-md border border-red-200 bg-white px-2 text-sm outline-none focus:border-[var(--danger)]"
+                            />
+                            <button
+                              type="submit"
+                              title="Strafe loeschen"
+                              className="flex h-9 items-center justify-center gap-2 rounded-md border border-red-200 bg-white px-3 text-sm text-[var(--danger)]"
+                            >
+                              <Trash2 className="size-4" aria-hidden="true" />
+                              <span>Loeschen</span>
+                            </button>
+                          </form>
+                        </div>
+                      </details>
+                    ))
+                  ) : (
+                    <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-muted)] p-3 text-sm text-neutral-600">
+                      Keine Strafen oder Warns fuer diese Akte.
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div>
@@ -3678,6 +3879,12 @@ function getModerationStatusClass(status: string) {
   }
 
   return "bg-[var(--surface-muted)] text-neutral-600";
+}
+
+function getEditableModerationStatus(status: string) {
+  return ["active", "expired", "failed", "lifted", "recorded"].includes(status)
+    ? status
+    : "recorded";
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {

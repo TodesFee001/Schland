@@ -136,12 +136,14 @@ export type WorkspaceModerationEvent = {
   commandStatus: string;
   discordId: string;
   discordName: string;
+  durationSeconds: number | null;
   durationMode: string;
   endedAt: string;
   eventType: string;
   eventTypeLabel: string;
   id: string;
   lifetime: boolean;
+  memberId: string;
   memberName: string;
   moderator: string;
   moderatorDiscordId: string;
@@ -579,6 +581,8 @@ export const demoWorkspaceData: WorkspaceData = {
   moderationEvents: [
     {
       id: "mod-demo-1",
+      memberId: "member-demo-2",
+      durationSeconds: 7200,
       durationMode: "timed",
       eventType: "timeout",
       eventTypeLabel: "Timeout",
@@ -602,6 +606,8 @@ export const demoWorkspaceData: WorkspaceData = {
     },
     {
       id: "mod-demo-2",
+      memberId: "member-demo-1",
+      durationSeconds: null,
       durationMode: "lifetime",
       eventType: "ban",
       eventTypeLabel: "Ban",
@@ -625,6 +631,8 @@ export const demoWorkspaceData: WorkspaceData = {
     },
     {
       id: "mod-demo-3",
+      memberId: "member-demo-3",
+      durationSeconds: null,
       durationMode: "lifetime",
       eventType: "voice_disconnect",
       eventTypeLabel: "Verbindung getrennt",
@@ -945,6 +953,7 @@ export async function getWorkspaceData(
         .select(
           `
             id,
+            member_id,
             discord_user_id,
             discord_username,
             event_type,
@@ -1268,7 +1277,7 @@ function mapModerationEvents(rows: Record<string, unknown>[]): WorkspaceModerati
     const member = asObject(row.members);
     const metadata = asObject(row.metadata);
     const commandStatus = String(metadata.commandStatus ?? "");
-    const commandError = String(metadata.botError ?? "");
+    const commandError = String(metadata.botError ?? metadata.dmError ?? "");
     const eventType = String(row.event_type ?? "kick");
     const storedStatus = String(row.status ?? "recorded");
     const status =
@@ -1299,10 +1308,12 @@ function mapModerationEvents(rows: Record<string, unknown>[]): WorkspaceModerati
       id: String(row.id ?? ""),
       commandError,
       commandStatus,
+      durationSeconds,
       durationMode,
       eventType,
       eventTypeLabel: mapModerationEventType(eventType),
       lifetime,
+      memberId: String(row.member_id ?? ""),
       status,
       statusLabel: mapModerationStatus(status),
       memberName: String(member.name ?? row.discord_username ?? "Unbekannt"),

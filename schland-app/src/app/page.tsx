@@ -232,6 +232,62 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "moderation-event-updated") {
+    return {
+      tone: "success" as const,
+      text: "Strafe oder Warn wurde in der Mitgliederakte angepasst und protokolliert.",
+    };
+  }
+
+  if (setup === "moderation-event-deleted") {
+    return {
+      tone: "success" as const,
+      text: "Strafe oder Warn wurde aus der Mitgliederakte entfernt und protokolliert.",
+    };
+  }
+
+  if (setup === "moderation-event-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Dieser Moderationseintrag wurde nicht gefunden oder gehoert nicht zu dieser Akte.",
+    };
+  }
+
+  if (setup === "moderation-event-reason") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte gib fuer die Aenderung einen Grund mit mindestens 8 Zeichen an.",
+    };
+  }
+
+  if (setup === "moderation-event-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum Bearbeiten von Strafen muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "moderation-event-denied") {
+    return {
+      tone: "error" as const,
+      text: "Strafe konnte nicht geaendert werden. Der Account hat keine Moderations-Berechtigung.",
+    };
+  }
+
+  if (setup === "moderation-event-running") {
+    return {
+      tone: "warning" as const,
+      text: "Dieser Bot-Auftrag laeuft noch und kann erst nach der Ausfuehrung angepasst werden.",
+    };
+  }
+
+  if (setup === "moderation-event-failed") {
+    return {
+      tone: "error" as const,
+      text: "Strafe konnte nicht geaendert werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
   if (setup === "member-analytics-enabled") {
     return {
       tone: "success" as const,

@@ -3,6 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import {
   AuditLogEvent,
   Client,
+  EmbedBuilder,
   Events,
   GatewayIntentBits,
   PermissionFlagsBits,
@@ -602,6 +603,8 @@ async function processModerationAction(action) {
     await api("/moderation-actions", {
       body: {
         commandStatus: "executed",
+        dmError: result.dmError,
+        dmStatus: result.dmStatus,
         durationSeconds: result.durationSeconds,
         endedAt: result.endedAt,
         id: action.id,
@@ -632,6 +635,12 @@ async function processModerationAction(action) {
 
 async function executeModerationAction(action, startedAt) {
   const guild = await getGuild();
+  const knownAction = getModerationActionInfo(action.eventType);
+
+  if (!knownAction) {
+    throw new Error(`Unbekannte Moderationsaktion: ${action.eventType}`);
+  }
+
   const reason = trimReason(
     `Schland ${action.eventType}: ${action.reason ?? "kein Grund"}`,
   );
@@ -643,6 +652,11 @@ async function executeModerationAction(action, startedAt) {
     durationSeconds !== null
       ? new Date(new Date(startedAt).getTime() + durationSeconds * 1000).toISOString()
       : null;
+  const dmResult = await sendModerationDirectMessage(action, {
+    durationSeconds,
+    endedAt,
+    startedAt,
+  });
 
   if (action.eventType === "ban") {
     await guild.members.ban(action.discordUserId, {
@@ -668,26 +682,85 @@ async function executeModerationAction(action, startedAt) {
 
     await member.voice.disconnect(reason);
   } else if (action.eventType === "warn") {
-    const user = await client.users.fetch(action.discordUserId);
-
-    await user.send(
-      [
-        "Schland Verwarnung",
-        action.reason ? `Grund: ${action.reason}` : null,
-        action.moderatorName ? `Ausgestellt von: ${action.moderatorName}` : null,
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    );
-  } else {
-    throw new Error(`Unbekannte Moderationsaktion: ${action.eventType}`);
+    // Warns are delivered through the direct message above.
   }
 
   return {
+    dmError: dmResult.error,
+    dmStatus: dmResult.status,
     durationSeconds,
     endedAt,
     startedAt,
   };
+}
+
+async function sendModerationDirectMessage(action, context) {
+  try {
+    const user = await client.users.fetch(action.discordUserId);
+
+    await user.send({
+      embeds: [buildModerationDirectMessageEmbed(action, context)],
+    });
+
+    return { error: null, status: "sent" };
+  } catch (error) {
+    console.warn(
+      `Moderation DM failed for ${action.discordUserId}`,
+      errorMessage(error),
+    );
+
+    return { error: errorMessage(error), status: "failed" };
+  }
+}
+
+function buildModerationDirectMessageEmbed(action, context) {
+  const info = getModerationActionInfo(action.eventType);
+  const title = info ? info.label : "Moderation";
+  const color = info ? info.color : 0x263f72;
+  const fields = [
+    { name: "Aktion", value: title, inline: true },
+    {
+      name: "Status",
+      value: action.eventType === "warn" ? "Hinweis erfasst" : "Wird umgesetzt",
+      inline: true,
+    },
+    {
+      name: "Dauer",
+      value: formatModerationDirectMessageDuration(action, context),
+      inline: true,
+    },
+    {
+      name: "Grund",
+      value: trimEmbedField(action.reason ?? "Kein Grund angegeben."),
+      inline: false,
+    },
+  ];
+
+  if (action.moderatorName) {
+    fields.push({
+      name: "Ausgestellt von",
+      value: trimEmbedField(action.moderatorName),
+      inline: true,
+    });
+  }
+
+  if (context.endedAt) {
+    fields.push({
+      name: "Gueltig bis",
+      value: formatDiscordMessageDate(context.endedAt),
+      inline: true,
+    });
+  }
+
+  return new EmbedBuilder()
+    .setColor(color)
+    .setTitle(`Schland DB - ${title}`)
+    .setDescription(
+      "Du hast eine Moderationsnachricht aus der Schland Verwaltung erhalten.",
+    )
+    .addFields(fields)
+    .setFooter({ text: "Schland DB - Verwaltung" })
+    .setTimestamp(new Date(context.startedAt));
 }
 
 async function pollAuditLogs(trigger) {
@@ -1051,6 +1124,66 @@ function formatAuditTarget(target) {
   }
 
   return formatUser(target);
+}
+
+function getModerationActionInfo(eventType) {
+  const actions = {
+    ban: { color: 0xb91c1c, label: "Ban" },
+    kick: { color: 0xdc2626, label: "Kick" },
+    timeout: { color: 0xd97706, label: "Timeout" },
+    voice_disconnect: { color: 0x263f72, label: "Disconnect" },
+    warn: { color: 0x92400e, label: "Warn" },
+  };
+
+  return actions[eventType] ?? null;
+}
+
+function formatModerationDirectMessageDuration(action, context) {
+  if (action.eventType === "timeout" && context.durationSeconds) {
+    return formatDuration(context.durationSeconds);
+  }
+
+  if (action.durationMode === "lifetime" || action.eventType === "ban") {
+    return "Lifetime";
+  }
+
+  return "Einmalige Aktion";
+}
+
+function formatDuration(seconds) {
+  const minutes = Math.max(Math.round(Number(seconds) / 60), 1);
+
+  if (minutes < 60) {
+    return `${minutes} Min.`;
+  }
+
+  const hours = Math.round(minutes / 60);
+
+  if (hours < 48) {
+    return `${hours} Std.`;
+  }
+
+  return `${Math.round(hours / 24)} Tage`;
+}
+
+function formatDiscordMessageDate(value) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("de-DE", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "Europe/Berlin",
+  }).format(date);
+}
+
+function trimEmbedField(value) {
+  const text = String(value || "-").trim() || "-";
+
+  return text.length > 1024 ? `${text.slice(0, 1021)}...` : text;
 }
 
 function parseJson(text) {

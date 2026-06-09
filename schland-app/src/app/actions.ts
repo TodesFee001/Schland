@@ -8,7 +8,10 @@ import {
   executeDiscordModerationAction,
 } from "@/lib/discord-sync";
 import { hasSupabasePublicEnv, hasSupabaseServerEnv } from "@/lib/env";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  createSupabaseServerClient,
+  getSupabaseAdminClient,
+} from "@/lib/supabase/server";
 
 const FILE_BUCKET = "schland-files";
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
@@ -134,15 +137,16 @@ export async function openMemberCaseAction(formData: FormData) {
 }
 
 export async function linkMemberFileAction(formData: FormData) {
-  if (!hasSupabasePublicEnv()) {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
     redirect("/?section=members&setup=missing-supabase");
   }
 
   const memberId = getFormText(formData, "memberId");
   const fileId = getFormText(formData, "fileId");
   const reason = getFormText(formData, "reason");
+  const relationType = getMemberFileRelationType(formData);
 
-  if (!memberId || !fileId) {
+  if (!isUuidText(memberId) || !isUuidText(fileId)) {
     redirect("/?section=members&setup=member-file-missing");
   }
 
@@ -164,19 +168,36 @@ export async function linkMemberFileAction(formData: FormData) {
     );
   }
 
-  const { error } = await supabase.rpc("set_member_file_link", {
-    p_file_id: fileId,
-    p_link: true,
-    p_member_id: memberId,
-    p_reason: reason,
-    p_relation_type: getFormText(formData, "relationType") || "linked",
+  const { data: canEdit } = await supabase.rpc("has_permission", {
+    required_key: "members.edit",
+  });
+  const { data: canViewFiles } = await supabase.rpc("has_permission", {
+    required_key: "files.view",
+  });
+  const { data: canOpenFiles } = await supabase.rpc("has_permission", {
+    required_key: "files.open",
   });
 
-  if (error) {
-    console.error("set_member_file_link link failed", {
-      code: error.code,
-      details: error.details,
-      message: error.message,
+  if (canEdit !== true || canViewFiles !== true || canOpenFiles !== true) {
+    redirect(
+      `/?section=members&member=${encodeURIComponent(
+        memberId,
+      )}&setup=member-file-permission`,
+    );
+  }
+
+  try {
+    await setMemberFileLinkWithAudit({
+      fileId,
+      link: true,
+      memberId,
+      reason,
+      relationType,
+      supabase,
+    });
+  } catch (error) {
+    console.error("member file link failed", {
+      message: error instanceof Error ? error.message : String(error),
     });
     redirect(
       `/?section=members&member=${encodeURIComponent(
@@ -194,7 +215,7 @@ export async function linkMemberFileAction(formData: FormData) {
 }
 
 export async function unlinkMemberFileAction(formData: FormData) {
-  if (!hasSupabasePublicEnv()) {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
     redirect("/?section=members&setup=missing-supabase");
   }
 
@@ -202,7 +223,7 @@ export async function unlinkMemberFileAction(formData: FormData) {
   const fileId = getFormText(formData, "fileId");
   const reason = getFormText(formData, "reason");
 
-  if (!memberId || !fileId) {
+  if (!isUuidText(memberId) || !isUuidText(fileId)) {
     redirect("/?section=members&setup=member-file-missing");
   }
 
@@ -224,19 +245,36 @@ export async function unlinkMemberFileAction(formData: FormData) {
     );
   }
 
-  const { error } = await supabase.rpc("set_member_file_link", {
-    p_file_id: fileId,
-    p_link: false,
-    p_member_id: memberId,
-    p_reason: reason,
-    p_relation_type: "linked",
+  const { data: canEdit } = await supabase.rpc("has_permission", {
+    required_key: "members.edit",
+  });
+  const { data: canViewFiles } = await supabase.rpc("has_permission", {
+    required_key: "files.view",
+  });
+  const { data: canOpenFiles } = await supabase.rpc("has_permission", {
+    required_key: "files.open",
   });
 
-  if (error) {
-    console.error("set_member_file_link unlink failed", {
-      code: error.code,
-      details: error.details,
-      message: error.message,
+  if (canEdit !== true || canViewFiles !== true || canOpenFiles !== true) {
+    redirect(
+      `/?section=members&member=${encodeURIComponent(
+        memberId,
+      )}&setup=member-file-permission`,
+    );
+  }
+
+  try {
+    await setMemberFileLinkWithAudit({
+      fileId,
+      link: false,
+      memberId,
+      reason,
+      relationType: "linked",
+      supabase,
+    });
+  } catch (error) {
+    console.error("member file unlink failed", {
+      message: error instanceof Error ? error.message : String(error),
     });
     redirect(
       `/?section=members&member=${encodeURIComponent(
@@ -796,6 +834,175 @@ export async function runModerationAction(formData: FormData) {
   redirect("/?section=moderation&setup=moderation-action-done");
 }
 
+export async function updateModerationEventAction(formData: FormData) {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
+    redirect("/?section=members&setup=moderation-event-failed");
+  }
+
+  const eventId = getFormText(formData, "eventId");
+  const memberId = getFormText(formData, "memberId");
+  const eventType = getFormText(formData, "eventType");
+  const status = getFormText(formData, "status");
+  const reason = getFormText(formData, "reason");
+  const durationMinutes = getOptionalFormNumber(formData, "durationMinutes");
+
+  if (!isUuidText(eventId) || !isUuidText(memberId) || !isModerationAction(eventType)) {
+    redirect(`/?section=members&member=${encodeURIComponent(memberId)}&setup=moderation-event-missing`);
+  }
+
+  if (!isModerationStatus(status)) {
+    redirect(`/?section=members&member=${encodeURIComponent(memberId)}&setup=moderation-event-missing`);
+  }
+
+  if (reason.length < 8) {
+    redirect(`/?section=members&member=${encodeURIComponent(memberId)}&setup=moderation-event-reason`);
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect(`/?section=members&member=${encodeURIComponent(memberId)}&setup=moderation-event-aal2`);
+  }
+
+  const { data: canManage } = await supabase.rpc("has_permission", {
+    required_key: "moderation.manage",
+  });
+
+  if (canManage !== true) {
+    redirect(`/?section=members&member=${encodeURIComponent(memberId)}&setup=moderation-event-denied`);
+  }
+
+  const admin = getSupabaseAdminClient();
+  const event = await getModerationEventForMember(admin, eventId, memberId);
+
+  if (!event) {
+    redirect(`/?section=members&member=${encodeURIComponent(memberId)}&setup=moderation-event-missing`);
+  }
+
+  if (isLiveCommandStatus(getRecordMetadata(event.metadata).commandStatus)) {
+    redirect(`/?section=members&member=${encodeURIComponent(memberId)}&setup=moderation-event-running`);
+  }
+
+  const durationSeconds =
+    eventType === "timeout" && durationMinutes && durationMinutes > 0
+      ? Math.round(durationMinutes * 60)
+      : null;
+  const endedAt =
+    eventType === "timeout" && durationSeconds
+      ? new Date(Date.now() + durationSeconds * 1000).toISOString()
+      : null;
+  const lifetime = eventType === "ban" && status === "active";
+  const metadata = getRecordMetadata(event.metadata);
+
+  const { error } = await admin
+    .from("discord_moderation_events")
+    .update({
+      duration_seconds: durationSeconds,
+      ended_at: endedAt,
+      event_type: eventType,
+      last_synced_at: new Date().toISOString(),
+      metadata: {
+        ...metadata,
+        editedFromWebsite: true,
+        durationMode:
+          eventType === "timeout" ? "timed" : lifetime ? "lifetime" : "record",
+        lifetime,
+      },
+      member_id: memberId,
+      reason,
+      status,
+    })
+    .eq("id", eventId);
+
+  if (error) {
+    console.error("moderation event update failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect(`/?section=members&member=${encodeURIComponent(memberId)}&setup=moderation-event-failed`);
+  }
+
+  await writeMemberCaseAuditLog({
+    fieldName: "moderation_event",
+    memberId,
+    newValue: eventId,
+    reason,
+    supabase,
+  });
+
+  revalidatePath("/", "layout");
+  redirect(`/?section=members&member=${encodeURIComponent(memberId)}&setup=moderation-event-updated`);
+}
+
+export async function deleteModerationEventAction(formData: FormData) {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
+    redirect("/?section=members&setup=moderation-event-failed");
+  }
+
+  const eventId = getFormText(formData, "eventId");
+  const memberId = getFormText(formData, "memberId");
+  const reason = getFormText(formData, "reason");
+
+  if (!isUuidText(eventId) || !isUuidText(memberId)) {
+    redirect(`/?section=members&member=${encodeURIComponent(memberId)}&setup=moderation-event-missing`);
+  }
+
+  if (reason.length < 8) {
+    redirect(`/?section=members&member=${encodeURIComponent(memberId)}&setup=moderation-event-reason`);
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect(`/?section=members&member=${encodeURIComponent(memberId)}&setup=moderation-event-aal2`);
+  }
+
+  const { data: canManage } = await supabase.rpc("has_permission", {
+    required_key: "moderation.manage",
+  });
+
+  if (canManage !== true) {
+    redirect(`/?section=members&member=${encodeURIComponent(memberId)}&setup=moderation-event-denied`);
+  }
+
+  const admin = getSupabaseAdminClient();
+  const event = await getModerationEventForMember(admin, eventId, memberId);
+
+  if (!event) {
+    redirect(`/?section=members&member=${encodeURIComponent(memberId)}&setup=moderation-event-missing`);
+  }
+
+  if (isLiveCommandStatus(getRecordMetadata(event.metadata).commandStatus)) {
+    redirect(`/?section=members&member=${encodeURIComponent(memberId)}&setup=moderation-event-running`);
+  }
+
+  const { error } = await admin
+    .from("discord_moderation_events")
+    .delete()
+    .eq("id", eventId);
+
+  if (error) {
+    console.error("moderation event delete failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect(`/?section=members&member=${encodeURIComponent(memberId)}&setup=moderation-event-failed`);
+  }
+
+  await writeMemberCaseAuditLog({
+    fieldName: "moderation_event_deleted",
+    memberId,
+    oldValue: eventId,
+    reason,
+    supabase,
+  });
+
+  revalidatePath("/", "layout");
+  redirect(`/?section=members&member=${encodeURIComponent(memberId)}&setup=moderation-event-deleted`);
+}
+
 export async function createFolderAction(formData: FormData) {
   if (!hasSupabasePublicEnv()) {
     redirect("/?section=files&setup=missing-supabase");
@@ -996,13 +1203,13 @@ export async function uploadFileAction(formData: FormData) {
 }
 
 export async function downloadFileAction(formData: FormData) {
-  if (!hasSupabasePublicEnv()) {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
     redirect("/?section=files&setup=missing-supabase");
   }
 
   const fileId = getFormText(formData, "fileId");
 
-  if (!fileId) {
+  if (!isUuidText(fileId)) {
     redirect("/?section=files&setup=file-download-missing");
   }
 
@@ -1012,7 +1219,19 @@ export async function downloadFileAction(formData: FormData) {
     redirect("/?section=files&setup=file-download-aal2");
   }
 
-  const { data: fileRow, error: fileError } = await supabase
+  const { data: canDownload } = await supabase.rpc("has_permission", {
+    required_key: "files.download",
+  });
+  const { data: canViewFiles } = await supabase.rpc("has_permission", {
+    required_key: "files.view",
+  });
+
+  if (canDownload !== true || canViewFiles !== true) {
+    redirect("/?section=files&setup=file-download-permission");
+  }
+
+  const admin = getSupabaseAdminClient();
+  const { data: fileRow, error: fileError } = await admin
     .from("files")
     .select("storage_path")
     .eq("id", fileId)
@@ -1027,7 +1246,7 @@ export async function downloadFileAction(formData: FormData) {
     redirect(`/?section=files&setup=${getFileDownloadErrorSetup(fileError)}`);
   }
 
-  const { data, error } = await supabase.storage
+  const { data, error } = await admin.storage
     .from(FILE_BUCKET)
     .createSignedUrl(String(fileRow.storage_path), 60);
 
@@ -1058,11 +1277,235 @@ function getFormTags(formData: FormData, key: string) {
 }
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
+type SupabaseAdminClient = ReturnType<typeof getSupabaseAdminClient>;
+
+type ActionErrorLike = {
+  code?: string;
+  message?: string;
+};
 
 async function hasMfaLevel2(supabase: SupabaseServerClient) {
   const { data } = await supabase.rpc("has_mfa_level2");
 
   return data === true;
+}
+
+async function getActionActor(supabase: SupabaseServerClient) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error("user not found");
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("display_name,username,email")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  return {
+    id: user.id,
+    name: String(
+      profile?.display_name ?? profile?.username ?? profile?.email ?? user.email ?? user.id,
+    ),
+  };
+}
+
+async function getModerationEventForMember(
+  admin: SupabaseAdminClient,
+  eventId: string,
+  memberId: string,
+) {
+  const { data: member, error: memberError } = await admin
+    .from("members")
+    .select("id,discord_id")
+    .eq("id", memberId)
+    .maybeSingle();
+
+  if (memberError || !member?.id) {
+    if (memberError) {
+      console.error("moderation member lookup failed", {
+        code: memberError.code,
+        details: memberError.details,
+        message: memberError.message,
+      });
+    }
+
+    return null;
+  }
+
+  const { data: event, error: eventError } = await admin
+    .from("discord_moderation_events")
+    .select("id,member_id,discord_user_id,metadata")
+    .eq("id", eventId)
+    .maybeSingle();
+
+  if (eventError || !event?.id) {
+    if (eventError) {
+      console.error("moderation event lookup failed", {
+        code: eventError.code,
+        details: eventError.details,
+        message: eventError.message,
+      });
+    }
+
+    return null;
+  }
+
+  const eventMemberId = String(event.member_id ?? "");
+  const eventDiscordId = String(event.discord_user_id ?? "");
+  const memberDiscordId = String(member.discord_id ?? "");
+
+  if (eventMemberId === memberId || (memberDiscordId && eventDiscordId === memberDiscordId)) {
+    return event;
+  }
+
+  return null;
+}
+
+function getRecordMetadata(value: unknown): Record<string, unknown> {
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+
+  return {};
+}
+
+async function writeMemberCaseAuditLog(input: {
+  fieldName: string;
+  memberId: string;
+  newValue?: string;
+  oldValue?: string;
+  reason: string;
+  supabase: SupabaseServerClient;
+}) {
+  try {
+    const admin = getSupabaseAdminClient();
+    const actor = await getActionActor(input.supabase);
+    const { error } = await admin.from("member_case_logs").insert({
+      action: "edit",
+      field_name: input.fieldName,
+      member_id: input.memberId,
+      new_value: input.newValue ?? null,
+      old_value: input.oldValue ?? null,
+      reason: input.reason,
+      success: true,
+      user_id: actor.id,
+      username: actor.name,
+    });
+
+    if (error) {
+      console.error("member moderation audit log failed", {
+        code: error.code,
+        details: error.details,
+        message: error.message,
+      });
+    }
+  } catch (error) {
+    console.error("member moderation audit log failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+async function setMemberFileLinkWithAudit(input: {
+  fileId: string;
+  link: boolean;
+  memberId: string;
+  reason: string;
+  relationType: string;
+  supabase: SupabaseServerClient;
+}) {
+  const admin = getSupabaseAdminClient();
+  const actor = await getActionActor(input.supabase);
+  const { data: member, error: memberError } = await admin
+    .from("members")
+    .select("id,name")
+    .eq("id", input.memberId)
+    .maybeSingle();
+
+  if (memberError) {
+    throw new Error(memberError.message);
+  }
+
+  if (!member?.id) {
+    throw new Error("member not found");
+  }
+
+  const { data: file, error: fileError } = await admin
+    .from("files")
+    .select("id")
+    .eq("id", input.fileId)
+    .maybeSingle();
+
+  if (fileError) {
+    throw new Error(fileError.message);
+  }
+
+  if (!file?.id) {
+    throw new Error("file not found");
+  }
+
+  if (input.link) {
+    const { error } = await admin.from("member_files").upsert(
+      {
+        created_by: actor.id,
+        file_id: input.fileId,
+        member_id: input.memberId,
+        relation_type: input.relationType,
+      },
+      { onConflict: "member_id,file_id" },
+    );
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  } else {
+    const { data, error } = await admin
+      .from("member_files")
+      .delete()
+      .eq("member_id", input.memberId)
+      .eq("file_id", input.fileId)
+      .select("member_id");
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    if (!data || data.length === 0) {
+      throw new Error("link not found");
+    }
+  }
+
+  const { error: logError } = await admin.from("member_case_logs").insert({
+    action: input.link ? "link_file" : "unlink_file",
+    member_id: input.memberId,
+    reason: input.reason,
+    related_file_id: input.fileId,
+    success: true,
+    user_id: actor.id,
+    username: actor.name,
+  });
+
+  if (logError) {
+    console.error("member file audit log failed", {
+      code: logError.code,
+      details: logError.details,
+      message: logError.message,
+    });
+  }
+}
+
+function getMemberFileRelationType(formData: FormData) {
+  const value = getFormText(formData, "relationType");
+
+  if (["avatar", "evidence", "linked", "note"].includes(value)) {
+    return value;
+  }
+
+  return "linked";
 }
 
 function getOptionalFormNumber(formData: FormData, key: string) {
@@ -1095,6 +1538,26 @@ function isModerationAction(
 
 function isDiscordSnowflake(value: string) {
   return /^[0-9]{15,25}$/.test(value);
+}
+
+function isUuidText(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
+function isModerationStatus(value: string) {
+  return (
+    value === "active" ||
+    value === "expired" ||
+    value === "failed" ||
+    value === "lifted" ||
+    value === "recorded"
+  );
+}
+
+function isLiveCommandStatus(value: unknown) {
+  return value === "pending" || value === "running";
 }
 
 function buildStoragePath(userId: string, originalName: string) {
@@ -1155,8 +1618,9 @@ function getMemberOpenErrorSetup(error: { message?: string }) {
   return "member-open-error";
 }
 
-function getMemberFileLinkErrorSetup(error: { code?: string; message?: string }) {
-  const message = error.message?.toLowerCase() ?? "";
+function getMemberFileLinkErrorSetup(error: unknown) {
+  const actionError = getActionError(error);
+  const message = actionError.message?.toLowerCase() ?? "";
 
   if (message.includes("reason")) {
     return "member-file-reason";
@@ -1182,11 +1646,23 @@ function getMemberFileLinkErrorSetup(error: { code?: string; message?: string })
     return "member-file-permission";
   }
 
-  if (error.code === "23505" || message.includes("duplicate")) {
+  if (actionError.code === "23505" || message.includes("duplicate")) {
     return "member-file-duplicate";
   }
 
   return "member-file-error";
+}
+
+function getActionError(error: unknown): ActionErrorLike {
+  if (error instanceof Error) {
+    return { message: error.message };
+  }
+
+  if (typeof error === "object" && error !== null) {
+    return error as ActionErrorLike;
+  }
+
+  return { message: String(error) };
 }
 
 function getMemberDiscordAnalyticsErrorSetup(error: { message?: string }) {
