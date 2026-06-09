@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "10.06.2026",
+    id: "hardware-key-mfa",
+    items: [
+      "Hardware-Key/WebAuthn als zweite 2FA-Methode ergaenzt.",
+      "QR/TOTP bleibt bestehen, Nutzer koennen Code oder Key verwenden.",
+      "Die 2FA-Seite zeigt klare Hinweise, wenn Browser oder Supabase-Projekt WebAuthn noch nicht zulassen.",
+    ],
+    title: "Hardware-Key fuer 2FA",
+    type: "feature",
+    version: "0.9.5",
+  },
+  {
+    date: "10.06.2026",
     id: "session-countdown-timer",
     items: [
       "Oben rechts zeigt jetzt ein Timer die verbleibende Login-Sitzung.",

@@ -7,10 +7,40 @@ import { useEffect, useMemo, useState } from "react";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
-type TotpFactor = {
+type MfaFactor = {
   id: string;
+  factor_type?: string;
   friendly_name?: string | null;
   status?: string;
+};
+
+type MfaFactorGroups = {
+  all?: MfaFactor[];
+  totp?: MfaFactor[];
+  webauthn?: MfaFactor[];
+};
+
+type MfaErrorLike = {
+  code?: string;
+  message?: string;
+  name?: string;
+};
+
+type WebAuthnOptions = {
+  rpId?: string;
+  rpOrigins?: string[];
+  signal?: AbortSignal;
+};
+
+type WebAuthnMfaApi = {
+  authenticate(params: {
+    factorId: string;
+    webauthn?: WebAuthnOptions;
+  }): Promise<{ data: unknown; error: MfaErrorLike | null }>;
+  register(params: {
+    friendlyName: string;
+    webauthn?: WebAuthnOptions;
+  }): Promise<{ data: unknown; error: MfaErrorLike | null }>;
 };
 
 export function MfaManager({ email }: { email?: string }) {
@@ -20,10 +50,17 @@ export function MfaManager({ email }: { email?: string }) {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [factorId, setFactorId] = useState("");
-  const [factors, setFactors] = useState<TotpFactor[]>([]);
+  const [totpFactors, setTotpFactors] = useState<MfaFactor[]>([]);
+  const [webAuthnFactors, setWebAuthnFactors] = useState<MfaFactor[]>([]);
+  const [webAuthnBusy, setWebAuthnBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [qrCode, setQrCode] = useState("");
+
+  function applyFactorGroups(data: unknown) {
+    setTotpFactors(readMfaFactors(data, "totp"));
+    setWebAuthnFactors(readMfaFactors(data, "webauthn"));
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -41,7 +78,7 @@ export function MfaManager({ email }: { email?: string }) {
       if (factorResult.error) {
         setError(factorResult.error.message);
       } else {
-        setFactors(factorResult.data?.totp ?? []);
+        applyFactorGroups(factorResult.data);
       }
 
       if (aalResult.data?.currentLevel) {
@@ -70,7 +107,7 @@ export function MfaManager({ email }: { email?: string }) {
     if (factorResult.error) {
       setError(factorResult.error.message);
     } else {
-      setFactors(factorResult.data?.totp ?? []);
+      applyFactorGroups(factorResult.data);
     }
 
     if (aalResult.data?.currentLevel) {
@@ -115,10 +152,10 @@ export function MfaManager({ email }: { email?: string }) {
     setError("");
     setMessage("");
 
-    const existingFactor = factors.find((factor) => factor.status === "verified");
+    const existingFactor = totpFactors.find((factor) => factor.status === "verified");
 
     if (!existingFactor) {
-      setError("Kein bestaetigter 2FA-Faktor gefunden.");
+      setError("Kein bestaetigter TOTP-Faktor gefunden.");
       return;
     }
 
@@ -171,7 +208,106 @@ export function MfaManager({ email }: { email?: string }) {
     await refreshStatus();
   }
 
-  const hasVerifiedFactor = factors.some((factor) => factor.status === "verified");
+  async function registerWebAuthn() {
+    setError("");
+    setMessage("");
+    setWebAuthnBusy(true);
+
+    try {
+      const webauthn = getWebAuthnApi();
+
+      if (!webauthn) {
+        setError("Hardware-Key 2FA ist in dieser Supabase-Version nicht verfuegbar.");
+        return;
+      }
+
+      if (!isWebAuthnSupported()) {
+        setError("Hardware-Key braucht HTTPS und einen aktuellen Browser.");
+        return;
+      }
+
+      const { error: registerError } = await webauthn.register({
+        friendlyName: "Schland Hardware-Key",
+        webauthn: getWebAuthnOptions(),
+      });
+
+      if (registerError) {
+        setError(formatMfaError(registerError));
+        return;
+      }
+
+      await supabase.rpc("mark_own_two_factor_enabled");
+
+      setMessage("Hardware-Key wurde aktiviert.");
+      await refreshStatus();
+    } finally {
+      setWebAuthnBusy(false);
+    }
+  }
+
+  async function authenticateWebAuthn() {
+    setError("");
+    setMessage("");
+    setWebAuthnBusy(true);
+
+    try {
+      const webauthn = getWebAuthnApi();
+
+      if (!webauthn) {
+        setError("Hardware-Key 2FA ist in dieser Supabase-Version nicht verfuegbar.");
+        return;
+      }
+
+      if (!isWebAuthnSupported()) {
+        setError("Hardware-Key braucht HTTPS und einen aktuellen Browser.");
+        return;
+      }
+
+      const existingFactor =
+        webAuthnFactors.find((factor) => factor.status === "verified") ??
+        webAuthnFactors[0];
+
+      if (!existingFactor) {
+        setError("Kein bestaetigter Hardware-Key gefunden.");
+        return;
+      }
+
+      const { error: authError } = await webauthn.authenticate({
+        factorId: existingFactor.id,
+        webauthn: getWebAuthnOptions(),
+      });
+
+      if (authError) {
+        setError(formatMfaError(authError));
+        return;
+      }
+
+      await supabase.rpc("mark_own_two_factor_enabled");
+
+      setMessage("Sitzung wurde per Hardware-Key freigeschaltet.");
+      await refreshStatus();
+    } finally {
+      setWebAuthnBusy(false);
+    }
+  }
+
+  function getWebAuthnApi() {
+    return (supabase.auth.mfa as { webauthn?: WebAuthnMfaApi }).webauthn;
+  }
+
+  const registeredFactors = [
+    ...totpFactors.map((factor) => ({
+      ...factor,
+      factor_type: "totp",
+    })),
+    ...webAuthnFactors.map((factor) => ({
+      ...factor,
+      factor_type: "webauthn",
+    })),
+  ];
+  const hasVerifiedTotpFactor = totpFactors.some(isVerifiedFactor);
+  const hasVerifiedWebAuthnFactor = webAuthnFactors.some(isVerifiedFactor);
+  const hasVerifiedFactor = hasVerifiedTotpFactor || hasVerifiedWebAuthnFactor;
 
   return (
     <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
@@ -191,27 +327,39 @@ export function MfaManager({ email }: { email?: string }) {
           <p className="text-sm text-neutral-500">Status wird geladen...</p>
         ) : (
           <div className="grid gap-3">
-            {factors.length > 0 ? (
-              factors.map((factor) => (
+            {registeredFactors.length > 0 ? (
+              registeredFactors.map((factor) => (
                 <div
-                  key={factor.id}
+                  key={`${factor.factor_type}-${factor.id}`}
                   className="flex items-center justify-between gap-3 rounded-lg border border-[var(--line)] p-3"
                 >
-                  <div>
+                  <div className="min-w-0">
                     <p className="font-medium">
-                      {factor.friendly_name ?? "Authenticator-App"}
+                      {factor.friendly_name ??
+                        (factor.factor_type === "webauthn"
+                          ? "Hardware-Key"
+                          : "Authenticator-App")}
                     </p>
-                    <p className="text-sm text-neutral-500">{factor.status}</p>
+                    <p className="truncate text-sm text-neutral-500">
+                      {factor.factor_type === "webauthn"
+                        ? "Hardware-Key"
+                        : "QR/TOTP"}{" "}
+                      · {factor.status}
+                    </p>
                   </div>
-                  <CheckCircle2
-                    className="size-5 text-[var(--accent)]"
-                    aria-hidden="true"
-                  />
+                  {factor.factor_type === "webauthn" ? (
+                    <KeyRound className="size-5 text-[var(--accent)]" aria-hidden="true" />
+                  ) : (
+                    <CheckCircle2
+                      className="size-5 text-[var(--accent)]"
+                      aria-hidden="true"
+                    />
+                  )}
                 </div>
               ))
             ) : (
               <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-muted)] p-3 text-sm text-neutral-600">
-                Noch kein TOTP-Faktor hinterlegt.
+                Noch kein 2FA-Faktor hinterlegt.
               </div>
             )}
           </div>
@@ -253,7 +401,7 @@ export function MfaManager({ email }: { email?: string }) {
             <button
               type="button"
               onClick={verifyTotp}
-              className="flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white"
+              className="flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white transition hover:-translate-y-0.5 hover:shadow-sm active:translate-y-0"
             >
               <CheckCircle2 className="size-4" aria-hidden="true" />
               <span>Code bestaetigen</span>
@@ -265,24 +413,50 @@ export function MfaManager({ email }: { email?: string }) {
               Diese Sitzung ist fuer Mitgliederakten freigeschaltet.
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={challengeExistingTotp}
-              className="flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white"
-            >
-              <KeyRound className="size-4" aria-hidden="true" />
-              <span>Sitzung freischalten</span>
-            </button>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {hasVerifiedTotpFactor ? (
+                <button
+                  type="button"
+                  onClick={challengeExistingTotp}
+                  className="flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white transition hover:-translate-y-0.5 hover:shadow-sm active:translate-y-0"
+                >
+                  <QrCode className="size-4" aria-hidden="true" />
+                  <span>Per Code freischalten</span>
+                </button>
+              ) : null}
+              {hasVerifiedWebAuthnFactor ? (
+                <button
+                  type="button"
+                  onClick={authenticateWebAuthn}
+                  disabled={webAuthnBusy}
+                  className="flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white transition hover:-translate-y-0.5 hover:shadow-sm active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <KeyRound className="size-4" aria-hidden="true" />
+                  <span>{webAuthnBusy ? "Key pruefen..." : "Per Key freischalten"}</span>
+                </button>
+              ) : null}
+            </div>
           )
         ) : (
-          <button
-            type="button"
-            onClick={enrollTotp}
-            className="flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white"
-          >
-            <KeyRound className="size-4" aria-hidden="true" />
-            <span>2FA einrichten</span>
-          </button>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={enrollTotp}
+              className="flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white transition hover:-translate-y-0.5 hover:shadow-sm active:translate-y-0"
+            >
+              <QrCode className="size-4" aria-hidden="true" />
+              <span>QR/TOTP einrichten</span>
+            </button>
+              <button
+                type="button"
+                onClick={registerWebAuthn}
+                disabled={webAuthnBusy}
+                className="flex h-10 items-center justify-center gap-2 rounded-md border border-[var(--line)] bg-white px-4 text-sm font-medium text-[var(--foreground)] transition hover:-translate-y-0.5 hover:shadow-sm active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <KeyRound className="size-4" aria-hidden="true" />
+                <span>{webAuthnBusy ? "Key pruefen..." : "Hardware-Key einrichten"}</span>
+              </button>
+          </div>
         )}
 
         {message ? (
@@ -330,6 +504,75 @@ function buildSchlandTotpUri(uri: string, email?: string) {
   url.searchParams.set("issuer", "Schland DB");
 
   return url.toString();
+}
+
+function readMfaFactors(data: unknown, type: "totp" | "webauthn") {
+  const groups = (data ?? {}) as MfaFactorGroups;
+  const directGroup = groups[type];
+
+  if (Array.isArray(directGroup)) {
+    return directGroup;
+  }
+
+  return Array.isArray(groups.all)
+    ? groups.all.filter((factor) => factor.factor_type === type && isVerifiedFactor(factor))
+    : [];
+}
+
+function isVerifiedFactor(factor: MfaFactor) {
+  return factor.status === "verified";
+}
+
+function getWebAuthnOptions(): WebAuthnOptions {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  return {
+    rpId: window.location.hostname,
+    rpOrigins: [window.location.origin],
+  };
+}
+
+function isWebAuthnSupported() {
+  return Boolean(
+    typeof window !== "undefined" &&
+      window.isSecureContext &&
+      "PublicKeyCredential" in window &&
+      "credentials" in navigator &&
+      typeof navigator.credentials.create === "function" &&
+      typeof navigator.credentials.get === "function",
+  );
+}
+
+function formatMfaError(error: MfaErrorLike) {
+  const raw = `${error.code ?? ""} ${error.name ?? ""} ${error.message ?? ""}`.toLowerCase();
+
+  if (
+    raw.includes("webauthn_enroll_not_enabled") ||
+    raw.includes("webauthn_verify_not_enabled")
+  ) {
+    return "Hardware-Key 2FA ist im Supabase-Projekt noch nicht aktiviert.";
+  }
+
+  if (raw.includes("browser does not support webauthn")) {
+    return "Dieser Browser unterstuetzt Hardware-Key 2FA nicht.";
+  }
+
+  if (raw.includes("previously registered")) {
+    return "Dieser Hardware-Key ist fuer diesen Account bereits registriert.";
+  }
+
+  if (
+    raw.includes("notallowed") ||
+    raw.includes("not allowed") ||
+    raw.includes("aborted") ||
+    raw.includes("timed out")
+  ) {
+    return "Key-Vorgang wurde abgebrochen oder ist abgelaufen.";
+  }
+
+  return error.message ?? "2FA-Aktion konnte nicht abgeschlossen werden.";
 }
 
 function StatusBadge({ active, label }: { active: boolean; label: string }) {
