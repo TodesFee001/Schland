@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "10.06.2026",
+    id: "lockdown-dm-delivery-guard",
+    items: [
+      "Lockdown bricht vor jeder Discord-Rechteaenderung ab, wenn kein Notfallschluessel per DM zugestellt wurde.",
+      "Bei fehlgeschlagener Lockdown-Aktivierung wird der Web-Lockdown automatisch wieder deaktiviert.",
+      "Nicht zugestellte Notfallschluessel werden aus der Bot-Queue entfernt und im Protokoll mit Empfaengerstatus gespeichert.",
+    ],
+    title: "Lockdown nur mit zugestellter DM",
+    type: "fix",
+    version: "0.9.17",
+  },
+  {
+    date: "10.06.2026",
     id: "discord-bot-boot-check",
     items: [
       "Discord-Bot startet wieder: Lockdown-Konstanten werden vor der Konfiguration initialisiert.",

@@ -157,6 +157,10 @@ export async function PATCH(request: Request) {
     update.emergency_code = null;
   }
 
+  if (status === "failed" && action === "activate") {
+    update.emergency_code = null;
+  }
+
   const { data, error } = await supabase
     .from("discord_lockdown_commands")
     .update(update)
@@ -236,12 +240,22 @@ async function updateLockdownBotState(
           ? "idle"
           : "locked";
 
+  const update: Record<string, unknown> = {
+    bot_error: status === "failed" ? botError : null,
+    bot_status: botStatus,
+  };
+
+  if (status === "failed" && action === "activate") {
+    update.active = false;
+    update.deactivated_at = new Date().toISOString();
+    update.deactivated_by = null;
+    update.deactivated_by_name = "Discord-Bot Sicherheitsabbruch";
+    update.emergency_code_hash = null;
+  }
+
   const { error } = await supabase
     .from("lockdown_state")
-    .update({
-      bot_error: status === "failed" ? botError : null,
-      bot_status: botStatus,
-    })
+    .update(update)
     .eq("id", true);
 
   if (error) {

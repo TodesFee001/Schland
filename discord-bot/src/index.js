@@ -703,6 +703,7 @@ async function processLockdownCommand(command) {
       body: {
         botError: errorMessage(error),
         id: command.id,
+        recipientStatus: error?.recipientStatus,
         status: "failed",
       },
       method: "PATCH",
@@ -756,6 +757,7 @@ async function executeLockdownCommand(command) {
     command,
     importantChannelIds,
   );
+  assertLockdownEmergencyMessageDelivered(recipientStatus);
   const lockdownResult = await applyDiscordLockdown(
     command,
     importantChannelIds,
@@ -816,6 +818,19 @@ async function sendLockdownEmergencyMessages(command, importantChannelIds) {
   }
 
   return statuses;
+}
+
+function assertLockdownEmergencyMessageDelivered(statuses) {
+  if (statuses.some((status) => status.status === "sent")) {
+    return;
+  }
+
+  const error = new Error(
+    "Lockdown-Notfallschluessel konnte an keinen Empfaenger per Discord-DM zugestellt werden.",
+  );
+  error.recipientStatus = statuses;
+
+  throw error;
 }
 
 async function resolveLockdownRecipients(command) {
