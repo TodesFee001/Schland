@@ -11,6 +11,19 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "10.06.2026",
+    id: "lockdown-ui-recipient-select",
+    items: [
+      "Lockdown-Overlay deutlich kompakter und weniger stoerend gestaltet.",
+      "Lockdown-Panel optisch aufgeraeumt und Statuskarten beruhigt.",
+      "Notfallschluessel-Empfaenger koennen jetzt aus verknuepften Mitgliedern ausgewaehlt werden, statt Discord-IDs per Hand einzutragen.",
+      "losoverdrive bleibt als Sicherheits-Empfaenger fuer Lockdown-DMs hinterlegt.",
+    ],
+    title: "Lockdown-UI bereinigt",
+    type: "fix",
+    version: "0.9.8",
+  },
+  {
+    date: "10.06.2026",
     id: "drive-import-lockdown",
     items: [
       "Google-Drive-Dokumente als geordnete Datei-Datenbank-Eintraege importiert und Kategorien fuer Kommunikation, Ermittlungen, Gesetzgebung, Verwaltung, Sonderbereiche und Ungeordnet angelegt.",

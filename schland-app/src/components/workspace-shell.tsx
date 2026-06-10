@@ -655,6 +655,7 @@ export function WorkspaceShell({
             authStatus={authStatus}
             environmentStatus={environmentStatus}
             lockdown={workspaceData.lockdown}
+            members={members}
             mfaReady={mfaReady}
           />
         );
@@ -4250,42 +4251,36 @@ function LockdownOverlay({ lockdown }: { lockdown: LockdownStatus }) {
   }, [soundEnabled]);
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden">
-      <div className="lockdown-scan absolute inset-0 bg-red-950/35" />
-      <div className="absolute inset-0 border-[18px] border-red-700/35 shadow-[inset_0_0_90px_rgba(220,38,38,0.45)]" />
-      <div className="absolute left-1/2 top-8 w-[min(760px,calc(100vw-2rem))] -translate-x-1/2 border-2 border-red-500 bg-black/75 p-5 text-center text-white shadow-[0_0_60px_rgba(248,113,113,0.45)] backdrop-blur">
-        <div className="mx-auto flex size-20 items-center justify-center rounded-full border-2 border-red-400 bg-red-700 lockdown-pulse">
-          <Siren className="size-10" aria-hidden="true" />
+    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-3">
+      <div className="w-[min(620px,100%)] overflow-hidden rounded-md border border-red-500/80 bg-[#140202]/95 text-white shadow-[0_18px_70px_rgba(127,29,29,0.45)] backdrop-blur">
+        <div className="lockdown-scan h-1 bg-red-500" />
+        <div className="grid gap-3 p-4 sm:grid-cols-[auto_1fr_auto] sm:items-center">
+          <div className="flex size-12 items-center justify-center rounded-md border border-red-500/70 bg-red-950 lockdown-pulse">
+            <Siren className="size-6 text-red-200" aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <p className="font-mono text-xs font-black uppercase tracking-[0.22em] text-red-200">
+              Lockdown aktiv
+            </p>
+            <p className="mt-1 truncate text-sm text-red-50">
+              Webzugang nur mit Notfallschluessel. Discord:{" "}
+              <span className="font-mono">{lockdown.botStatus || "pending"}</span>
+            </p>
+            {lockdown.reason ? (
+              <p className="mt-1 truncate text-xs text-red-200">
+                Grund: {lockdown.reason}
+              </p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => setSoundEnabled((value) => !value)}
+            className="pointer-events-auto flex h-9 items-center justify-center gap-2 rounded-md border border-red-300/70 bg-red-700 px-3 text-xs font-bold uppercase tracking-[0.12em] text-white transition hover:bg-red-600"
+          >
+            <Flame className="size-4" aria-hidden="true" />
+            <span>{soundEnabled ? "Sound aus" : "Sound"}</span>
+          </button>
         </div>
-        <p className="mt-4 font-mono text-xs font-black uppercase tracking-[0.5em] text-red-200">
-          Emergency Broadcast System
-        </p>
-        <h2 className="mt-2 text-4xl font-black uppercase tracking-[0.18em] text-red-100 md:text-6xl">
-          Lockdown
-        </h2>
-        <p className="mx-auto mt-3 max-w-2xl text-sm text-red-100">
-          Verwaltung gesperrt. Zugriff nur mit Notfallschluessel.
-          {lockdown.reason ? ` Grund: ${lockdown.reason}` : ""}
-        </p>
-        <div className="mt-4 grid gap-2 text-xs uppercase tracking-[0.25em] text-red-200 sm:grid-cols-3">
-          <span className="border border-red-700/70 bg-red-950/60 px-3 py-2">
-            Discord: {lockdown.botStatus || "pending"}
-          </span>
-          <span className="border border-red-700/70 bg-red-950/60 px-3 py-2">
-            Web: sealed
-          </span>
-          <span className="border border-red-700/70 bg-red-950/60 px-3 py-2">
-            Code: DM only
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={() => setSoundEnabled((value) => !value)}
-          className="pointer-events-auto mt-4 inline-flex h-9 items-center gap-2 border border-red-300 bg-red-700 px-3 text-xs font-bold uppercase tracking-[0.18em] text-white"
-        >
-          <Flame className="size-4" aria-hidden="true" />
-          <span>{soundEnabled ? "Sound aus" : "Sound an"}</span>
-        </button>
       </div>
     </div>
   );
@@ -4295,16 +4290,27 @@ function SettingsSection({
   authStatus,
   environmentStatus,
   lockdown,
+  members,
   mfaReady,
 }: {
   authStatus: AuthStatus;
   environmentStatus: EnvironmentStatus;
   lockdown: LockdownStatus;
+  members: WorkspaceMember[];
   mfaReady: boolean;
 }) {
+  const lockdownRecipients = members
+    .filter((member) => member.discordId && member.discordOnServer)
+    .sort((left, right) => {
+      const leftName = left.displayName || left.discordName || left.name;
+      const rightName = right.displayName || right.discordName || right.name;
+
+      return leftName.localeCompare(rightName, "de");
+    });
+
   return (
     <div className="grid gap-5 xl:grid-cols-2">
-      <section className="rounded-lg border-2 border-red-700 bg-[#210606] text-white shadow-[0_0_0_1px_rgba(185,28,28,0.25),0_18px_60px_rgba(127,29,29,0.28)] xl:col-span-2">
+      <section className="rounded-lg border border-red-900/70 bg-[#170606] text-white shadow-[0_12px_40px_rgba(127,29,29,0.22)] xl:col-span-2">
         <SectionHeader
           icon={Siren}
           title="Lockdown"
@@ -4321,29 +4327,29 @@ function SettingsSection({
             </span>
           }
         />
-        <div className="grid gap-4 border-t border-red-900/70 p-4 lg:grid-cols-[1fr_420px]">
+        <div className="grid gap-4 border-t border-red-950 p-4 lg:grid-cols-[1fr_420px]">
           <div className="grid gap-3">
             <div className="grid gap-3 sm:grid-cols-3">
-              <article className="border border-red-900/70 bg-black/25 p-3">
+              <article className="rounded-md border border-red-900/70 bg-black/20 p-3">
                 <p className="text-xs uppercase text-red-200">Status</p>
                 <p className="mt-1 font-mono text-lg font-bold">
                   {lockdown.active ? "LOCKDOWN" : "STANDBY"}
                 </p>
               </article>
-              <article className="border border-red-900/70 bg-black/25 p-3">
+              <article className="rounded-md border border-red-900/70 bg-black/20 p-3">
                 <p className="text-xs uppercase text-red-200">Bot</p>
                 <p className="mt-1 font-mono text-lg font-bold">
                   {lockdown.botStatus || "idle"}
                 </p>
               </article>
-              <article className="border border-red-900/70 bg-black/25 p-3">
+              <article className="rounded-md border border-red-900/70 bg-black/20 p-3">
                 <p className="text-xs uppercase text-red-200">Ausgeloest</p>
                 <p className="mt-1 truncate font-mono text-lg font-bold">
                   {lockdown.activatedByName || "-"}
                 </p>
               </article>
             </div>
-            <div className="border border-red-900/70 bg-black/25 p-3 text-sm text-red-50">
+            <div className="rounded-md border border-red-900/70 bg-black/20 p-3 text-sm text-red-50">
               <p className="font-semibold">Wirkung</p>
               <p className="mt-1 text-red-100">
                 Discord sperrt Nicht-Admins auf Kanalebene. In Schland ist der
@@ -4361,7 +4367,7 @@ function SettingsSection({
           {lockdown.active ? (
             <form
               action={deactivateLockdownAction}
-              className="grid gap-3 border border-red-900/70 bg-black/35 p-3"
+              className="grid gap-3 rounded-md border border-red-900/70 bg-black/25 p-3"
             >
               <div className="flex items-center gap-2 text-red-100">
                 <Shield className="size-4" aria-hidden="true" />
@@ -4387,7 +4393,7 @@ function SettingsSection({
           ) : (
             <form
               action={activateLockdownAction}
-              className="grid gap-3 border border-red-900/70 bg-black/35 p-3"
+              className="grid gap-3 rounded-md border border-red-900/70 bg-black/25 p-3"
             >
               <div className="flex items-center gap-2 text-red-100">
                 <TriangleAlert className="size-4" aria-hidden="true" />
@@ -4401,19 +4407,34 @@ function SettingsSection({
                 placeholder="Grund fuer Lockdown"
                 className="h-10 rounded-md border border-red-900 bg-black/40 px-3 text-sm text-white outline-none placeholder:text-red-200 focus:border-red-400 disabled:cursor-not-allowed disabled:opacity-50"
               />
-              <input
-                name="recipientDiscordIds"
-                disabled={!mfaReady || !lockdown.canManage}
-                placeholder="Discord-IDs fuer Code-DM, optional"
-                className="h-10 rounded-md border border-red-900 bg-black/40 px-3 text-sm text-white outline-none placeholder:text-red-200 focus:border-red-400 disabled:cursor-not-allowed disabled:opacity-50"
-              />
-              <input
-                name="recipientUsernames"
-                defaultValue="losoverdrive"
-                disabled={!mfaReady || !lockdown.canManage}
-                placeholder="Discord-Namen fuer Code-DM"
-                className="h-10 rounded-md border border-red-900 bg-black/40 px-3 text-sm text-white outline-none placeholder:text-red-200 focus:border-red-400 disabled:cursor-not-allowed disabled:opacity-50"
-              />
+              <label className="grid gap-1">
+                <span className="text-xs font-bold uppercase text-red-200">
+                  Notfallschluessel per DM an
+                </span>
+                <select
+                  name="recipientDiscordIds"
+                  multiple
+                  size={Math.min(Math.max(lockdownRecipients.length, 3), 7)}
+                  disabled={!mfaReady || !lockdown.canManage}
+                  className="min-h-28 rounded-md border border-red-900 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {lockdownRecipients.map((member) => {
+                    const label =
+                      member.displayName || member.discordName || member.name;
+
+                    return (
+                      <option key={member.id} value={member.discordId}>
+                        {label} {member.discordName ? `(${member.discordName})` : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+                <span className="text-xs text-red-200/80">
+                  Mehrfachauswahl mit Strg. losoverdrive bleibt als
+                  Sicherheits-Empfaenger hinterlegt.
+                </span>
+              </label>
+              <input name="recipientUsernames" type="hidden" value="losoverdrive" />
               <input
                 name="importantChannelIds"
                 disabled={!mfaReady || !lockdown.canManage}
