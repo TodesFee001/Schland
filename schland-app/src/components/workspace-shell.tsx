@@ -4379,7 +4379,7 @@ function SettingsSection({
                 minLength={8}
                 disabled={!mfaReady || !lockdown.canManage}
                 placeholder="Grund fuer Entsperrung"
-                className="h-10 rounded-md border border-red-900 bg-black/40 px-3 text-sm text-white outline-none placeholder:text-red-200 focus:border-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+                className="lockdown-input h-10 px-3 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-50"
               />
               <button
                 type="submit"
@@ -4405,41 +4405,64 @@ function SettingsSection({
                 minLength={8}
                 disabled={!mfaReady || !lockdown.canManage}
                 placeholder="Grund fuer Lockdown"
-                className="h-10 rounded-md border border-red-900 bg-black/40 px-3 text-sm text-white outline-none placeholder:text-red-200 focus:border-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+                className="lockdown-input h-10 px-3 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-50"
               />
-              <label className="grid gap-1">
-                <span className="text-xs font-bold uppercase text-red-200">
+              <div className="grid gap-1">
+                <p className="text-xs font-bold uppercase text-red-200">
                   Notfallschluessel per DM an
-                </span>
-                <select
-                  name="recipientDiscordIds"
-                  multiple
-                  size={Math.min(Math.max(lockdownRecipients.length, 3), 7)}
-                  disabled={!mfaReady || !lockdown.canManage}
-                  className="min-h-28 rounded-md border border-red-900 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-red-400 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {lockdownRecipients.map((member) => {
-                    const label =
-                      member.displayName || member.discordName || member.name;
+                </p>
+                <details className="lockdown-dropdown">
+                  <summary className="flex min-h-10 cursor-pointer items-center justify-between px-3 text-sm font-bold text-white">
+                    <span>Personen auswaehlen</span>
+                    <span className="font-mono text-xs text-red-200">
+                      {lockdownRecipients.length}
+                    </span>
+                  </summary>
+                  <div className="max-h-56 overflow-auto border-t border-red-900/70 p-2">
+                    {lockdownRecipients.length > 0 ? (
+                      lockdownRecipients.map((member) => {
+                        const label =
+                          member.displayName || member.discordName || member.name;
 
-                    return (
-                      <option key={member.id} value={member.discordId}>
-                        {label} {member.discordName ? `(${member.discordName})` : ""}
-                      </option>
-                    );
-                  })}
-                </select>
+                        return (
+                          <label
+                            key={member.id}
+                            className="flex cursor-pointer items-center gap-2 px-2 py-2 text-sm text-red-50 hover:bg-red-950/70"
+                          >
+                            <input
+                              type="checkbox"
+                              name="recipientDiscordIds"
+                              value={member.discordId}
+                              disabled={!mfaReady || !lockdown.canManage}
+                              className="size-4 accent-red-600"
+                            />
+                            <span className="min-w-0">
+                              <span className="block truncate font-bold">{label}</span>
+                              <span className="block truncate font-mono text-xs text-red-200">
+                                {member.discordName || member.discordId}
+                              </span>
+                            </span>
+                          </label>
+                        );
+                      })
+                    ) : (
+                      <p className="px-2 py-3 text-sm text-red-200">
+                        Keine Discord-Mitglieder mit verknuepfter ID gefunden.
+                      </p>
+                    )}
+                  </div>
+                </details>
                 <span className="text-xs text-red-200/80">
-                  Mehrfachauswahl mit Strg. losoverdrive bleibt als
-                  Sicherheits-Empfaenger hinterlegt.
+                  Ausgewaehlte Personen bekommen den Code per DM. losoverdrive
+                  bleibt als Sicherheits-Empfaenger hinterlegt.
                 </span>
-              </label>
+              </div>
               <input name="recipientUsernames" type="hidden" value="losoverdrive" />
               <input
                 name="importantChannelIds"
                 disabled={!mfaReady || !lockdown.canManage}
                 placeholder="Wichtige Channel-IDs, optional"
-                className="h-10 rounded-md border border-red-900 bg-black/40 px-3 text-sm text-white outline-none placeholder:text-red-200 focus:border-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+                className="lockdown-input h-10 px-3 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-50"
               />
               <button
                 type="submit"

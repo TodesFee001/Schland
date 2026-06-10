@@ -60,6 +60,41 @@ select {
     inset -1px -1px 0 #a1a6a2;
 }
 
+.lockdown-input {
+  background: #120202 !important;
+  border: 1px solid #991b1b !important;
+  box-shadow:
+    inset 1px 1px 0 rgba(248, 113, 113, 0.18),
+    inset -1px -1px 0 rgba(0, 0, 0, 0.75) !important;
+  color: #ffffff !important;
+}
+
+.lockdown-input::placeholder {
+  color: #fecaca !important;
+  opacity: 1;
+}
+
+.lockdown-input:focus {
+  border-color: #f87171 !important;
+  box-shadow:
+    0 0 0 1px rgba(248, 113, 113, 0.65),
+    inset 1px 1px 0 rgba(248, 113, 113, 0.18),
+    inset -1px -1px 0 rgba(0, 0, 0, 0.75) !important;
+}
+
+.lockdown-dropdown {
+  background: #120202 !important;
+  border: 1px solid #991b1b;
+  color: #ffffff;
+  box-shadow:
+    inset 1px 1px 0 rgba(248, 113, 113, 0.18),
+    inset -1px -1px 0 rgba(0, 0, 0, 0.75);
+}
+
+.lockdown-dropdown[open] summary {
+  background: #2a0505;
+}
+
 button,
 a[href],
 summary {

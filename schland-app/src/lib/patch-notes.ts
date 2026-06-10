@@ -16,6 +16,7 @@ export const patchNotes: PatchNote[] = [
       "Lockdown-Overlay deutlich kompakter und weniger stoerend gestaltet.",
       "Lockdown-Panel optisch aufgeraeumt und Statuskarten beruhigt.",
       "Notfallschluessel-Empfaenger koennen jetzt aus verknuepften Mitgliedern ausgewaehlt werden, statt Discord-IDs per Hand einzutragen.",
+      "Lockdown-Felder haben eigene Kontrastklassen, damit Eingaben und Mitgliedernamen sichtbar bleiben.",
       "losoverdrive bleibt als Sicherheits-Empfaenger fuer Lockdown-DMs hinterlegt.",
     ],
     title: "Lockdown-UI bereinigt",
