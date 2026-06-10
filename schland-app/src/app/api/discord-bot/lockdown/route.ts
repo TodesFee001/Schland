@@ -256,6 +256,8 @@ async function updateLockdownBotState(
 function mapCommand(row: unknown, restoreSnapshot: unknown[]) {
   const command = asRecord(row);
   const action = asText(command.action) ?? "activate";
+  const metadata = asRecord(command.metadata);
+  const commandSnapshot = metadata.snapshot;
 
   return {
     action,
@@ -267,10 +269,11 @@ function mapCommand(row: unknown, restoreSnapshot: unknown[]) {
     reason: asText(command.reason) ?? "Schland Lockdown",
     recipientDiscordIds: asTextArray(command.recipient_discord_ids),
     recipientUsernames: asTextArray(command.recipient_usernames),
-    repairMode: asText(asRecord(command.metadata).repairMode),
+    preLockdownSnapshot: Array.isArray(commandSnapshot) ? commandSnapshot : [],
+    repairMode: asText(metadata.repairMode),
     restoreSnapshot: action === "deactivate" ? restoreSnapshot : [],
-    restoreFrom: asText(asRecord(command.metadata).restoreFrom),
-    restoreUntil: asText(asRecord(command.metadata).restoreUntil),
+    restoreFrom: asText(metadata.restoreFrom),
+    restoreUntil: asText(metadata.restoreUntil),
     status: String(command.status ?? "pending"),
     triggeredByName: asText(command.triggered_by_name) ?? "Schland Verwaltung",
   };

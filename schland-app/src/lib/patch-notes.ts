@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "10.06.2026",
+    id: "lockdown-dm-before-channel-lock",
+    items: [
+      "Lockdown-Notfallschluessel wird jetzt direkt nach Snapshot-Sicherung per DM verschickt.",
+      "Discord-Channel-Sperren starten erst nach dem DM-Versand, damit Rate-Limits den Notfallschluessel nicht verzoegern.",
+      "Bot-API gibt vorhandene Pre-Lockdown-Snapshots auch fuer Aktivierungsbefehle weiter.",
+    ],
+    title: "Lockdown-DM vor Sperre",
+    type: "fix",
+    version: "0.9.13",
+  },
+  {
+    date: "10.06.2026",
     id: "discord-server-snapshot",
     items: [
       "Discord-Bot kann einen aktuellen Server-Snapshot ohne Rechteaenderung erfassen.",

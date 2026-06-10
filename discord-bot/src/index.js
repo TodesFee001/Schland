@@ -708,10 +708,19 @@ async function executeLockdownCommand(command) {
     importantChannelIds.push(config.inviteChannelId);
   }
 
-  const lockdownResult = await applyDiscordLockdown(command, importantChannelIds);
+  const preLockdownSnapshot =
+    Array.isArray(command.preLockdownSnapshot) &&
+    command.preLockdownSnapshot.length > 0
+      ? command.preLockdownSnapshot
+      : await captureDiscordLockdownSnapshot(importantChannelIds);
   const recipientStatus = await sendLockdownEmergencyMessages(
     command,
     importantChannelIds,
+  );
+  const lockdownResult = await applyDiscordLockdown(
+    command,
+    importantChannelIds,
+    preLockdownSnapshot,
   );
 
   return {
@@ -856,7 +865,43 @@ function buildLockdownEmergencyEmbed(command, importantChannelIds) {
     .setTimestamp(new Date());
 }
 
-async function applyDiscordLockdown(command, importantChannelIds) {
+async function captureDiscordLockdownSnapshot(importantChannelIds) {
+  const guild = await getGuild();
+
+  await guild.roles.fetch();
+  await guild.channels.fetch();
+
+  const importantChannels = new Set(importantChannelIds.filter(Boolean));
+  const targetRoles = getLockdownTargetRoles(guild);
+  const snapshot = [];
+
+  for (const channel of guild.channels.cache.values()) {
+    if (!canEditChannelOverwrites(channel)) {
+      continue;
+    }
+
+    const readOnly = importantChannels.has(channel.id);
+
+    for (const role of targetRoles) {
+      snapshot.push({
+        channelId: channel.id,
+        channelName: channel.name ?? channel.id,
+        important: readOnly,
+        permissions: captureChannelRolePermissions(channel, role.id),
+        roleId: role.id,
+        roleName: role.name ?? role.id,
+      });
+    }
+  }
+
+  return snapshot;
+}
+
+async function applyDiscordLockdown(
+  command,
+  importantChannelIds,
+  preLockdownSnapshot = [],
+) {
   const guild = await getGuild();
   const me = guild.members.me ?? (await guild.members.fetchMe());
 
@@ -869,7 +914,8 @@ async function applyDiscordLockdown(command, importantChannelIds) {
 
   const importantChannels = new Set(importantChannelIds.filter(Boolean));
   const targetRoles = getLockdownTargetRoles(guild);
-  const snapshot = [];
+  const snapshot = Array.isArray(preLockdownSnapshot) ? preLockdownSnapshot : [];
+  const captureDuringApply = snapshot.length === 0;
   const failed = [];
   let changed = 0;
 
@@ -881,7 +927,9 @@ async function applyDiscordLockdown(command, importantChannelIds) {
     const readOnly = importantChannels.has(channel.id);
 
     for (const role of targetRoles) {
-      const permissions = captureChannelRolePermissions(channel, role.id);
+      const permissions = captureDuringApply
+        ? captureChannelRolePermissions(channel, role.id)
+        : null;
 
       try {
         await channel.permissionOverwrites.edit(
@@ -893,14 +941,16 @@ async function applyDiscordLockdown(command, importantChannelIds) {
             ),
           },
         );
-        snapshot.push({
-          channelId: channel.id,
-          channelName: channel.name ?? channel.id,
-          important: readOnly,
-          permissions,
-          roleId: role.id,
-          roleName: role.name ?? role.id,
-        });
+        if (captureDuringApply) {
+          snapshot.push({
+            channelId: channel.id,
+            channelName: channel.name ?? channel.id,
+            important: readOnly,
+            permissions,
+            roleId: role.id,
+            roleName: role.name ?? role.id,
+          });
+        }
         changed += 1;
       } catch (error) {
         failed.push({
