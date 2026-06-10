@@ -54,7 +54,7 @@ const LOCKDOWN_PERMISSION_KEYS = [
   "UseApplicationCommands",
 ].filter((key) => PermissionFlagsBits[key] !== undefined);
 const DISCORD_EPOCH_MS = 1_420_070_400_000n;
-const LOCKDOWN_AUDIT_RESTORE_WRITE_DELAY_MS = 750;
+const LOCKDOWN_AUDIT_RESTORE_WRITE_DELAY_MS = 1_500;
 const LOCKDOWN_AUDIT_RESTORE_PAGE_LIMIT = 100;
 const LOCKDOWN_AUDIT_RESTORE_MAX_PAGES_PER_ACTION = 40;
 const LOCKDOWN_AUDIT_OVERWRITE_ACTIONS = [
@@ -1140,6 +1140,12 @@ async function restoreDiscordOverwritesFromAudit(command) {
 
       await delay(LOCKDOWN_AUDIT_RESTORE_WRITE_DELAY_MS);
     } catch (error) {
+      if (plan.operation === "delete" && isDiscordMissingOverwriteError(error)) {
+        deleted += 1;
+        await delay(LOCKDOWN_AUDIT_RESTORE_WRITE_DELAY_MS);
+        continue;
+      }
+
       failed.push({
         channelId: plan.channelId,
         error: errorMessage(error),
@@ -1923,7 +1929,7 @@ async function api(path, options = {}) {
   }
 }
 
-async function discordApi(path, options = {}) {
+async function discordApi(path, options = {}, attempt = 0) {
   const response = await fetch(`https://discord.com/api/v10${path}`, {
     ...options,
     headers: {
@@ -1935,11 +1941,34 @@ async function discordApi(path, options = {}) {
   const text = await response.text();
   const body = parseJson(text);
 
+  if (response.status === 429 && attempt < 8) {
+    const retryAfterMs = getDiscordRetryAfterMs(response, body);
+
+    console.warn(
+      `Discord rate limit on ${options.method ?? "GET"} ${path}; retry in ${retryAfterMs}ms`,
+    );
+    await delay(retryAfterMs);
+
+    return discordApi(path, options, attempt + 1);
+  }
+
   if (!response.ok) {
     throw new Error(`Discord ${response.status}: ${body?.message ?? text}`);
   }
 
   return body ?? {};
+}
+
+function getDiscordRetryAfterMs(response, body) {
+  const bodyRetryAfter = Number(body?.retry_after);
+  const headerRetryAfter = Number(response.headers.get("retry-after"));
+  const retryAfterSeconds = Number.isFinite(bodyRetryAfter)
+    ? bodyRetryAfter
+    : Number.isFinite(headerRetryAfter)
+      ? headerRetryAfter
+      : 2;
+
+  return Math.min(Math.max(Math.ceil(retryAfterSeconds * 1000) + 500, 1_500), 60_000);
 }
 
 async function shutdown(signal) {
@@ -2124,6 +2153,16 @@ function trimReason(reason) {
 
 function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isDiscordMissingOverwriteError(error) {
+  const message = errorMessage(error).toLowerCase();
+
+  return (
+    message.includes("10009") ||
+    message.includes("unknown overwrite") ||
+    message.includes("unknown permission overwrite")
+  );
 }
 
 function chunkArray(values, size) {

@@ -16,6 +16,8 @@ export const patchNotes: PatchNote[] = [
       "Discord-Bot kann Channel-Overwrite-Audit-Logs fuer ein Zeitfenster auslesen.",
       "Audit-Restore stellt serverweite Channel-Berechtigungen anhand des fruehesten Vorher-Zustands im Lockdown-Zeitfenster wieder her.",
       "Restore laeuft gedrosselt gegen Discord, damit Rate-Limits nicht erneut den Reparaturlauf zerlegen.",
+      "Discord-429-Antworten werden automatisch mit Backoff erneut versucht.",
+      "Bereits geloeschte Overwrites werden beim Wiederholungslauf als erledigt behandelt.",
       "Lockdown-Bot-API reicht Reparaturmodus und Zeitfenster an den Railway-Bot durch.",
     ],
     title: "Discord-Rechte per Audit-Log reparieren",
