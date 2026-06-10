@@ -11,6 +11,20 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "10.06.2026",
+    id: "lockdown-login-emergency-gate",
+    items: [
+      "Login-Seite bekommt bei aktivem Lockdown einen vollflaechigen Notfall-Sperrbildschirm.",
+      "Lockdown-Sperrbildschirm verdeckt den normalen Login, bis der Notfallschluessel eingetragen wurde.",
+      "Emergency-Sound startet automatisch soweit der Browser es erlaubt und faellt auf erste Eingabe zurueck.",
+      "Lockdown kann im aktiven Zustand auch mit Notfallschluessel beendet werden, falls 2FA gerade blockiert.",
+      "Beim Beenden bleibt der Discord-Restore-Befehl erhalten, damit der Bot alte Channel-Rechte wiederherstellt.",
+    ],
+    title: "Lockdown-Sperrbildschirm",
+    type: "feature",
+    version: "0.9.9",
+  },
+  {
+    date: "10.06.2026",
     id: "lockdown-ui-recipient-select",
     items: [
       "Lockdown-Overlay deutlich kompakter und weniger stoerend gestaltet.",

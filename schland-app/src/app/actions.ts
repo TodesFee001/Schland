@@ -896,6 +896,7 @@ export async function deactivateLockdownAction(formData: FormData) {
   }
 
   const reason = getFormText(formData, "reason");
+  const emergencyCode = getFormText(formData, "emergencyCode");
 
   if (reason.length < 8) {
     redirect("/?section=settings&setup=lockdown-reason");
@@ -903,11 +904,12 @@ export async function deactivateLockdownAction(formData: FormData) {
 
   const supabase = await createSupabaseServerClient();
 
-  if (!(await hasMfaLevel2(supabase))) {
+  if (!(await hasMfaLevel2(supabase)) && emergencyCode.length < 8) {
     redirect("/?section=settings&setup=lockdown-aal2");
   }
 
   const { error } = await supabase.rpc("deactivate_system_lockdown", {
+    p_emergency_code: emergencyCode || null,
     p_reason: reason,
   });
 

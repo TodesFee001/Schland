@@ -4377,13 +4377,23 @@ function SettingsSection({
                 name="reason"
                 required
                 minLength={8}
-                disabled={!mfaReady || !lockdown.canManage}
                 placeholder="Grund fuer Entsperrung"
                 className="lockdown-input h-10 px-3 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-50"
               />
+              <input
+                name="emergencyCode"
+                placeholder="Notfallschluessel, falls 2FA blockiert"
+                className="lockdown-input h-10 px-3 font-mono text-sm uppercase tracking-[0.18em] outline-none"
+                type="password"
+              />
+              {!mfaReady || !lockdown.canManage ? (
+                <p className="text-xs text-red-200/80">
+                  Normalweg braucht 2FA und Lockdown-Recht. Im aktiven Lockdown
+                  kann der Notfallschluessel das Beenden freigeben.
+                </p>
+              ) : null}
               <button
                 type="submit"
-                disabled={!mfaReady || !lockdown.canManage}
                 className="flex h-11 items-center justify-center gap-2 rounded-md border border-red-300 bg-white px-4 text-sm font-black uppercase text-red-800 transition hover:translate-y-[-1px] hover:shadow-[0_0_25px_rgba(255,255,255,0.35)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <CheckCircle2 className="size-4" aria-hidden="true" />
@@ -4403,7 +4413,6 @@ function SettingsSection({
                 name="reason"
                 required
                 minLength={8}
-                disabled={!mfaReady || !lockdown.canManage}
                 placeholder="Grund fuer Lockdown"
                 className="lockdown-input h-10 px-3 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-50"
               />
@@ -4433,7 +4442,6 @@ function SettingsSection({
                               type="checkbox"
                               name="recipientDiscordIds"
                               value={member.discordId}
-                              disabled={!mfaReady || !lockdown.canManage}
                               className="size-4 accent-red-600"
                             />
                             <span className="min-w-0">
@@ -4460,13 +4468,17 @@ function SettingsSection({
               <input name="recipientUsernames" type="hidden" value="losoverdrive" />
               <input
                 name="importantChannelIds"
-                disabled={!mfaReady || !lockdown.canManage}
                 placeholder="Wichtige Channel-IDs, optional"
                 className="lockdown-input h-10 px-3 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-50"
               />
+              {!mfaReady || !lockdown.canManage ? (
+                <p className="text-xs text-red-200/80">
+                  Aktivieren wird serverseitig mit 2FA und Lockdown-Recht
+                  geprueft.
+                </p>
+              ) : null}
               <button
                 type="submit"
-                disabled={!mfaReady || !lockdown.canManage}
                 className="group relative flex h-12 items-center justify-center gap-2 overflow-hidden rounded-md border border-red-300 bg-red-700 px-4 text-sm font-black uppercase tracking-[0.18em] text-white transition hover:translate-y-[-1px] hover:bg-red-600 hover:shadow-[0_0_35px_rgba(248,113,113,0.6)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <span className="absolute inset-0 translate-x-[-110%] bg-gradient-to-r from-transparent via-white/30 to-transparent transition duration-700 group-hover:translate-x-[110%]" />

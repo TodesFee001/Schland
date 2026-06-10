@@ -3,9 +3,13 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { signInAction } from "@/app/login/actions";
-import { hasSupabasePublicEnv } from "@/lib/env";
+import { LockdownGate } from "@/app/login/lockdown-gate";
+import { hasSupabasePublicEnv, hasSupabaseServerEnv } from "@/lib/env";
 import { mapLockdownStatusRow } from "@/lib/lockdown";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  createSupabaseServerClient,
+  getSupabaseAdminClient,
+} from "@/lib/supabase/server";
 
 type LoginPageProps = {
   searchParams: Promise<{
@@ -24,14 +28,19 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   if (configured) {
     const supabase = await createSupabaseServerClient();
-    const { data: lockdownRows } = await supabase.rpc("get_lockdown_status");
-    const lockdown = mapLockdownStatusRow(
-      Array.isArray(lockdownRows)
-        ? (lockdownRows[0] as Record<string, unknown> | null)
-        : null,
-    );
-    lockdownActive = lockdown.active;
-    lockdownReason = lockdown.reason;
+
+    if (hasSupabaseServerEnv()) {
+      const { data: lockdownRow } = await getSupabaseAdminClient()
+        .from("lockdown_state")
+        .select("active,reason,bot_status,bot_error,activated_by_name,important_channel_ids")
+        .eq("id", true)
+        .maybeSingle();
+      const lockdown = mapLockdownStatusRow(
+        lockdownRow as Record<string, unknown> | null,
+      );
+      lockdownActive = lockdown.active;
+      lockdownReason = lockdown.reason;
+    }
 
     const {
       data: { user },
@@ -143,21 +152,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               />
             </label>
 
-            <label className="grid gap-2">
-              <span className="text-xs font-medium uppercase text-red-700">
-                {lockdownActive
-                  ? "Notfallschluessel"
-                  : "Notfallschluessel (optional)"}
-              </span>
-              <input
-                name="emergencyCode"
-                type="password"
-                autoComplete="one-time-code"
-                className="h-10 rounded-md border border-red-300 bg-white px-3 font-mono text-sm uppercase tracking-[0.2em] outline-none focus:border-red-600"
-                placeholder="Nur bei aktivem Lockdown"
-                required={lockdownActive}
-              />
-            </label>
+            <LockdownGate active={lockdownActive} reason={lockdownReason} />
 
             <button
               type="submit"
