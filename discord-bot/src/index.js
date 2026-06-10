@@ -694,11 +694,11 @@ async function executeLockdownCommand(command) {
     importantChannelIds.push(config.inviteChannelId);
   }
 
+  const lockdownResult = await applyDiscordLockdown(command, importantChannelIds);
   const recipientStatus = await sendLockdownEmergencyMessages(
     command,
     importantChannelIds,
   );
-  const lockdownResult = await applyDiscordLockdown(command, importantChannelIds);
 
   return {
     channelSummary: lockdownResult.summary,
@@ -708,8 +708,18 @@ async function executeLockdownCommand(command) {
 }
 
 async function sendLockdownEmergencyMessages(command, importantChannelIds) {
-  const recipientIds = await resolveLockdownRecipients(command);
   const statuses = [];
+  let recipientIds = [];
+
+  try {
+    recipientIds = await resolveLockdownRecipients(command);
+  } catch (error) {
+    statuses.push({
+      discordUserId: null,
+      error: `Empfaenger-Aufloesung fehlgeschlagen: ${errorMessage(error)}`,
+      status: "failed",
+    });
+  }
 
   for (const discordUserId of recipientIds) {
     try {
@@ -904,7 +914,7 @@ async function applyDiscordLockdown(command, importantChannelIds) {
 
 async function restoreDiscordLockdown(snapshot) {
   if (!Array.isArray(snapshot) || snapshot.length === 0) {
-    throw new Error("Kein Lockdown-Snapshot zum Zuruecksetzen gefunden.");
+    return cleanupDiscordLockdownWithoutSnapshot();
   }
 
   const guild = await getGuild();
@@ -957,6 +967,68 @@ async function restoreDiscordLockdown(snapshot) {
       failed,
       restored,
       snapshotEntries: snapshot.length,
+    },
+  };
+}
+
+async function cleanupDiscordLockdownWithoutSnapshot() {
+  const guild = await getGuild();
+  const me = guild.members.me ?? (await guild.members.fetchMe());
+
+  if (!me.permissions.has(PermissionFlagsBits.ManageChannels)) {
+    throw new Error("Bot braucht Manage Channels fuer Lockdown-Reparatur.");
+  }
+
+  await guild.roles.fetch();
+  await guild.channels.fetch();
+
+  const targetRoles = getLockdownTargetRoles(guild);
+  const targetRoleIds = new Set(targetRoles.map((role) => role.id));
+  const failed = [];
+  let repaired = 0;
+  let inspected = 0;
+
+  for (const channel of guild.channels.cache.values()) {
+    if (!canEditChannelOverwrites(channel)) {
+      continue;
+    }
+
+    for (const overwrite of channel.permissionOverwrites.cache.values()) {
+      if (overwrite.type !== 0 || !targetRoleIds.has(overwrite.id)) {
+        continue;
+      }
+
+      inspected += 1;
+
+      if (!isLockdownOverwrite(overwrite)) {
+        continue;
+      }
+
+      try {
+        await channel.permissionOverwrites.edit(
+          overwrite.id,
+          buildLockdownClearOverwrite(),
+          { reason: "Schland Lockdown Notfall-Reparatur" },
+        );
+        repaired += 1;
+      } catch (error) {
+        failed.push({
+          channelId: channel.id,
+          channelName: channel.name ?? channel.id,
+          error: errorMessage(error),
+          roleId: overwrite.id,
+        });
+      }
+    }
+  }
+
+  return {
+    summary: {
+      failed,
+      inspected,
+      repaired,
+      snapshotEntries: 0,
+      mode: "fallback_cleanup",
     },
   };
 }
@@ -1021,6 +1093,36 @@ function buildLockdownOverwrite(readOnly) {
   }
 
   return overwrite;
+}
+
+function buildLockdownClearOverwrite() {
+  const overwrite = {};
+
+  for (const key of LOCKDOWN_PERMISSION_KEYS) {
+    overwrite[key] = null;
+  }
+
+  return overwrite;
+}
+
+function isLockdownOverwrite(overwrite) {
+  const viewBit = PermissionFlagsBits.ViewChannel;
+
+  if (
+    viewBit === undefined ||
+    (!overwrite.allow.has(viewBit) && !overwrite.deny.has(viewBit))
+  ) {
+    return false;
+  }
+
+  return LOCKDOWN_PERMISSION_KEYS.every((key) => {
+    if (key === "ViewChannel") {
+      return true;
+    }
+
+    const bit = PermissionFlagsBits[key];
+    return bit === undefined || overwrite.deny.has(bit);
+  });
 }
 
 function normalizePermissionSnapshot(value) {

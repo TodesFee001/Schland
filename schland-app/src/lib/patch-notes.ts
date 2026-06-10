@@ -11,6 +11,19 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "10.06.2026",
+    id: "lockdown-snapshot-fallback-restore",
+    items: [
+      "Discord-Bot bricht beim Lockdown-Beenden nicht mehr ab, wenn kein Snapshot gespeichert wurde.",
+      "Ohne Snapshot entfernt der Bot gezielt erkannte Lockdown-Sperren von Nicht-Admin-Rollen.",
+      "Lockdown-Aktivierung speichert Rechte jetzt vor der Notfall-DM-Aufloesung, damit Discord-Rate-Limits keinen fehlenden Snapshot mehr verursachen.",
+      "Fehler beim Senden oder Aufloesen der Notfall-DMs werden protokolliert, blockieren aber nicht mehr den Rechte-Snapshot.",
+    ],
+    title: "Lockdown-Restore abgesichert",
+    type: "fix",
+    version: "0.9.10",
+  },
+  {
+    date: "10.06.2026",
     id: "lockdown-login-emergency-gate",
     items: [
       "Login-Seite bekommt bei aktivem Lockdown einen vollflaechigen Notfall-Sperrbildschirm.",
