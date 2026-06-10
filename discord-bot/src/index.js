@@ -53,6 +53,15 @@ const LOCKDOWN_PERMISSION_KEYS = [
   "UseVAD",
   "UseApplicationCommands",
 ].filter((key) => PermissionFlagsBits[key] !== undefined);
+const DISCORD_EPOCH_MS = 1_420_070_400_000n;
+const LOCKDOWN_AUDIT_RESTORE_WRITE_DELAY_MS = 750;
+const LOCKDOWN_AUDIT_RESTORE_PAGE_LIMIT = 100;
+const LOCKDOWN_AUDIT_RESTORE_MAX_PAGES_PER_ACTION = 40;
+const LOCKDOWN_AUDIT_OVERWRITE_ACTIONS = [
+  AuditLogEvent.ChannelOverwriteCreate,
+  AuditLogEvent.ChannelOverwriteUpdate,
+  AuditLogEvent.ChannelOverwriteDelete,
+];
 
 client.once(Events.ClientReady, async () => {
   console.log(`Schland bot online as ${client.user.tag}`);
@@ -666,7 +675,10 @@ async function processLockdownCommand(command) {
 
 async function executeLockdownCommand(command) {
   if (command.action === "deactivate") {
-    const restoreResult = await restoreDiscordLockdown(command.restoreSnapshot);
+    const restoreResult =
+      command.repairMode === "audit_overwrite_restore"
+        ? await restoreDiscordOverwritesFromAudit(command)
+        : await restoreDiscordLockdown(command.restoreSnapshot);
 
     return {
       channelSummary: restoreResult.summary,
@@ -1033,6 +1045,284 @@ async function cleanupDiscordLockdownWithoutSnapshot() {
       mode: "fallback_cleanup",
     },
   };
+}
+
+async function restoreDiscordOverwritesFromAudit(command) {
+  const guild = await getGuild();
+  const me = guild.members.me ?? (await guild.members.fetchMe());
+
+  if (!me.permissions.has(PermissionFlagsBits.ViewAuditLog)) {
+    throw new Error("Bot braucht View Audit Log fuer Audit-Restore.");
+  }
+
+  if (!me.permissions.has(PermissionFlagsBits.ManageChannels)) {
+    throw new Error("Bot braucht Manage Channels fuer Audit-Restore.");
+  }
+
+  const restoreFrom = parseRestoreWindowDate(command.restoreFrom);
+  const restoreUntil = parseRestoreWindowDate(command.restoreUntil) ?? new Date();
+
+  if (!restoreFrom) {
+    throw new Error("Audit-Restore braucht restoreFrom.");
+  }
+
+  if (restoreUntil.getTime() <= restoreFrom.getTime()) {
+    throw new Error("Audit-Restore Zeitfenster ist ungueltig.");
+  }
+
+  const entries = await fetchAuditOverwriteEntriesInWindow(
+    guild.id,
+    restoreFrom,
+    restoreUntil,
+  );
+  const plans = buildOverwriteRestorePlansFromAudit(entries);
+  const failed = [];
+  const skipped = [];
+  let restored = 0;
+  let deleted = 0;
+
+  await guild.channels.fetch();
+
+  for (const plan of plans) {
+    const channel =
+      guild.channels.cache.get(plan.channelId) ??
+      (await guild.channels.fetch(plan.channelId).catch(() => null));
+
+    if (!canEditChannelOverwrites(channel)) {
+      skipped.push({
+        channelId: plan.channelId,
+        reason: "channel_not_editable",
+        overwriteId: plan.overwriteId,
+      });
+      continue;
+    }
+
+    try {
+      if (plan.operation === "delete") {
+        await discordApi(
+          `/channels/${plan.channelId}/permissions/${plan.overwriteId}`,
+          {
+            headers: {
+              "X-Audit-Log-Reason": encodeURIComponent(
+                "Schland Audit-Restore: Lockdown-Fenster rueckgaengig",
+              ),
+            },
+            method: "DELETE",
+          },
+        );
+        deleted += 1;
+      } else if (plan.allow !== null && plan.deny !== null) {
+        await discordApi(
+          `/channels/${plan.channelId}/permissions/${plan.overwriteId}`,
+          {
+            body: JSON.stringify({
+              allow: plan.allow,
+              deny: plan.deny,
+              type: plan.overwriteType,
+            }),
+            headers: {
+              "X-Audit-Log-Reason": encodeURIComponent(
+                "Schland Audit-Restore: Lockdown-Fenster rueckgaengig",
+              ),
+            },
+            method: "PUT",
+          },
+        );
+        restored += 1;
+      } else {
+        skipped.push({
+          channelId: plan.channelId,
+          reason: "incomplete_audit_state",
+          overwriteId: plan.overwriteId,
+        });
+        continue;
+      }
+
+      await delay(LOCKDOWN_AUDIT_RESTORE_WRITE_DELAY_MS);
+    } catch (error) {
+      failed.push({
+        channelId: plan.channelId,
+        error: errorMessage(error),
+        overwriteId: plan.overwriteId,
+      });
+    }
+  }
+
+  return {
+    summary: {
+      deleted,
+      failed,
+      fetchedAuditEntries: entries.length,
+      mode: "audit_overwrite_restore",
+      plans: plans.length,
+      restored,
+      restoreFrom: restoreFrom.toISOString(),
+      restoreUntil: restoreUntil.toISOString(),
+      skipped,
+    },
+  };
+}
+
+async function fetchAuditOverwriteEntriesInWindow(guildId, restoreFrom, restoreUntil) {
+  const entries = [];
+
+  for (const actionType of LOCKDOWN_AUDIT_OVERWRITE_ACTIONS) {
+    let before = null;
+
+    for (let page = 0; page < LOCKDOWN_AUDIT_RESTORE_MAX_PAGES_PER_ACTION; page += 1) {
+      const params = new URLSearchParams({
+        action_type: String(actionType),
+        limit: String(LOCKDOWN_AUDIT_RESTORE_PAGE_LIMIT),
+      });
+
+      if (before) {
+        params.set("before", before);
+      }
+
+      const result = await discordApi(`/guilds/${guildId}/audit-logs?${params}`);
+      const pageEntries = Array.isArray(result.audit_log_entries)
+        ? result.audit_log_entries
+        : [];
+
+      if (pageEntries.length === 0) {
+        break;
+      }
+
+      let reachedBeforeWindow = false;
+
+      for (const entry of pageEntries) {
+        const createdAt = getDiscordSnowflakeDate(entry.id);
+
+        if (!createdAt) {
+          continue;
+        }
+
+        if (createdAt.getTime() > restoreUntil.getTime()) {
+          continue;
+        }
+
+        if (createdAt.getTime() < restoreFrom.getTime()) {
+          reachedBeforeWindow = true;
+          continue;
+        }
+
+        entries.push({
+          ...entry,
+          createdAt: createdAt.toISOString(),
+        });
+      }
+
+      before = String(pageEntries[pageEntries.length - 1]?.id ?? "");
+
+      if (!before || reachedBeforeWindow) {
+        break;
+      }
+    }
+  }
+
+  return entries.sort(
+    (left, right) =>
+      new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
+  );
+}
+
+function buildOverwriteRestorePlansFromAudit(entries) {
+  const plans = new Map();
+
+  for (const entry of entries) {
+    if (!LOCKDOWN_AUDIT_OVERWRITE_ACTIONS.includes(entry.action_type)) {
+      continue;
+    }
+
+    const channelId = String(entry.target_id ?? "");
+    const overwriteId = String(entry.options?.id ?? "");
+
+    if (!isDiscordSnowflake(channelId) || !isDiscordSnowflake(overwriteId)) {
+      continue;
+    }
+
+    const key = `${channelId}:${overwriteId}`;
+    const overwriteType = Number(entry.options?.type ?? 0) === 1 ? 1 : 0;
+    const existing = plans.get(key);
+
+    if (!existing) {
+      plans.set(key, {
+        action: entry.action_type,
+        allow: null,
+        channelId,
+        createdAt: entry.createdAt,
+        deny: null,
+        operation:
+          entry.action_type === AuditLogEvent.ChannelOverwriteCreate
+            ? "delete"
+            : "set",
+        overwriteId,
+        overwriteType,
+        roleName: entry.options?.role_name ?? null,
+      });
+    }
+
+    const plan = plans.get(key);
+
+    if (plan.operation === "delete") {
+      continue;
+    }
+
+    const oldAllow = getAuditPermissionChangeValue(entry.changes, "allow", "old");
+    const oldDeny = getAuditPermissionChangeValue(entry.changes, "deny", "old");
+
+    if (plan.allow === null && oldAllow !== null) {
+      plan.allow = oldAllow;
+    }
+
+    if (plan.deny === null && oldDeny !== null) {
+      plan.deny = oldDeny;
+    }
+  }
+
+  return [...plans.values()];
+}
+
+function getAuditPermissionChangeValue(changes, key, side) {
+  if (!Array.isArray(changes)) {
+    return null;
+  }
+
+  const change = changes.find((item) => item?.key === key);
+  const value = change?.[side];
+
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  try {
+    const bits = BigInt(value);
+    return bits >= 0n ? bits.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseRestoreWindowDate(value) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(String(value));
+
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getDiscordSnowflakeDate(value) {
+  try {
+    const snowflake = BigInt(value);
+    const timestamp = Number((snowflake >> 22n) + DISCORD_EPOCH_MS);
+    const date = new Date(timestamp);
+
+    return Number.isNaN(date.getTime()) ? null : date;
+  } catch {
+    return null;
+  }
 }
 
 function getLockdownTargetRoles(guild) {

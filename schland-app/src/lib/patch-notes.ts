@@ -11,6 +11,19 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "10.06.2026",
+    id: "discord-audit-lockdown-permission-restore",
+    items: [
+      "Discord-Bot kann Channel-Overwrite-Audit-Logs fuer ein Zeitfenster auslesen.",
+      "Audit-Restore stellt serverweite Channel-Berechtigungen anhand des fruehesten Vorher-Zustands im Lockdown-Zeitfenster wieder her.",
+      "Restore laeuft gedrosselt gegen Discord, damit Rate-Limits nicht erneut den Reparaturlauf zerlegen.",
+      "Lockdown-Bot-API reicht Reparaturmodus und Zeitfenster an den Railway-Bot durch.",
+    ],
+    title: "Discord-Rechte per Audit-Log reparieren",
+    type: "fix",
+    version: "0.9.11",
+  },
+  {
+    date: "10.06.2026",
     id: "lockdown-snapshot-fallback-restore",
     items: [
       "Discord-Bot bricht beim Lockdown-Beenden nicht mehr ab, wenn kein Snapshot gespeichert wurde.",

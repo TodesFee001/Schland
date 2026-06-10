@@ -267,7 +267,10 @@ function mapCommand(row: unknown, restoreSnapshot: unknown[]) {
     reason: asText(command.reason) ?? "Schland Lockdown",
     recipientDiscordIds: asTextArray(command.recipient_discord_ids),
     recipientUsernames: asTextArray(command.recipient_usernames),
+    repairMode: asText(asRecord(command.metadata).repairMode),
     restoreSnapshot: action === "deactivate" ? restoreSnapshot : [],
+    restoreFrom: asText(asRecord(command.metadata).restoreFrom),
+    restoreUntil: asText(asRecord(command.metadata).restoreUntil),
     status: String(command.status ?? "pending"),
     triggeredByName: asText(command.triggered_by_name) ?? "Schland Verwaltung",
   };
