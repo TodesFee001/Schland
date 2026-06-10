@@ -18,6 +18,7 @@ export const patchNotes: PatchNote[] = [
       "Restore laeuft gedrosselt gegen Discord, damit Rate-Limits nicht erneut den Reparaturlauf zerlegen.",
       "Discord-429-Antworten werden automatisch mit Backoff erneut versucht.",
       "Bereits geloeschte Overwrites werden beim Wiederholungslauf als erledigt behandelt.",
+      "Rohes Discord-Audit-Log wird jetzt mit old_value/new_value gelesen, damit Update/Delete-Overwrites nicht uebersprungen werden.",
       "Lockdown-Bot-API reicht Reparaturmodus und Zeitfenster an den Railway-Bot durch.",
     ],
     title: "Discord-Rechte per Audit-Log reparieren",

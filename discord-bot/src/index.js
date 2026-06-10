@@ -1295,7 +1295,7 @@ function getAuditPermissionChangeValue(changes, key, side) {
   }
 
   const change = changes.find((item) => item?.key === key);
-  const value = change?.[side];
+  const value = change?.[side] ?? change?.[`${side}_value`];
 
   if (value === null || value === undefined) {
     return null;
