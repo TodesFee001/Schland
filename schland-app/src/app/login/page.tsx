@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import { signInAction } from "@/app/login/actions";
 import { hasSupabasePublicEnv } from "@/lib/env";
+import { mapLockdownStatusRow } from "@/lib/lockdown";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type LoginPageProps = {
@@ -18,9 +19,20 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams;
   const configured = hasSupabasePublicEnv();
   const nextPath = sanitizeNextPath(params.next ?? "/");
+  let lockdownActive = false;
+  let lockdownReason = "";
 
   if (configured) {
     const supabase = await createSupabaseServerClient();
+    const { data: lockdownRows } = await supabase.rpc("get_lockdown_status");
+    const lockdown = mapLockdownStatusRow(
+      Array.isArray(lockdownRows)
+        ? (lockdownRows[0] as Record<string, unknown> | null)
+        : null,
+    );
+    lockdownActive = lockdown.active;
+    lockdownReason = lockdown.reason;
+
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -95,6 +107,16 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               </div>
             ) : null}
 
+            {lockdownActive ? (
+              <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-950">
+                <p className="font-semibold">Lockdown aktiv</p>
+                <p className="mt-1">
+                  Zugang nur mit Notfallschluessel.
+                  {lockdownReason ? ` Grund: ${lockdownReason}` : ""}
+                </p>
+              </div>
+            ) : null}
+
             <label className="grid gap-2">
               <span className="text-xs font-medium uppercase text-neutral-500">
                 Benutzername
@@ -118,6 +140,22 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                 autoComplete="current-password"
                 className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
                 required
+              />
+            </label>
+
+            <label className="grid gap-2">
+              <span className="text-xs font-medium uppercase text-red-700">
+                {lockdownActive
+                  ? "Notfallschluessel"
+                  : "Notfallschluessel (optional)"}
+              </span>
+              <input
+                name="emergencyCode"
+                type="password"
+                autoComplete="one-time-code"
+                className="h-10 rounded-md border border-red-300 bg-white px-3 font-mono text-sm uppercase tracking-[0.2em] outline-none focus:border-red-600"
+                placeholder="Nur bei aktivem Lockdown"
+                required={lockdownActive}
               />
             </label>
 

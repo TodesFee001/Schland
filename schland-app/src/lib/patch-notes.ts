@@ -11,6 +11,21 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "10.06.2026",
+    id: "drive-import-lockdown",
+    items: [
+      "Google-Drive-Dokumente als geordnete Datei-Datenbank-Eintraege importiert und Kategorien fuer Kommunikation, Ermittlungen, Gesetzgebung, Verwaltung, Sonderbereiche und Ungeordnet angelegt.",
+      "Externe Drive-Dateien koennen ueber die vorhandene geschuetzte Oeffnen-Logik direkt geoeffnet werden.",
+      "Roten Lockdown-Bereich in den Einstellungen mit animiertem Emergency-Overlay und optionalem Alarmton ergaenzt.",
+      "Lockdown sperrt Webzugriff ueber Notfallschluessel und queued Discord-Befehle fuer den Railway-Bot.",
+      "Discord-Bot kann Nicht-Admin-Rollen kanalweit sperren, wichtige Channels lesbar lassen, Notfallcodes per DM senden und Rechte beim Entsperren wiederherstellen.",
+      "Supabase Advisor-Funde fuer Lockdown-Funktionen nachgehaertet: keine anonyme Ausfuehrung und neue FK-Indizes.",
+    ],
+    title: "Drive-Import und Lockdown",
+    type: "feature",
+    version: "0.9.7",
+  },
+  {
+    date: "10.06.2026",
     id: "roles-permissions-restructure",
     items: [
       "Neue Zielstruktur fuer Rollen und Berechtigungen als additive Migration vorbereitet.",

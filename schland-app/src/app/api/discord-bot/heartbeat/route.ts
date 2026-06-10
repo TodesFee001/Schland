@@ -28,6 +28,7 @@ export async function POST(request: Request) {
     guildName: asText(body?.guildName),
     humansOnServer: asInteger(body?.humansOnServer),
     lastSeenAt: now,
+    lockdownQueueSize: asInteger(body?.lockdownQueueSize) ?? 0,
     messageBufferSize: asInteger(body?.messageBufferSize) ?? 0,
     moderationQueueSize: asInteger(body?.moderationQueueSize) ?? 0,
     skippedBots: asInteger(body?.skippedBots),

@@ -1,9 +1,15 @@
 "use server";
 
+import { randomBytes } from "node:crypto";
+
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { hasSupabasePublicEnv, hasSupabaseServerEnv } from "@/lib/env";
+import {
+  getLockdownCookieOptions,
+  LOCKDOWN_ACCESS_COOKIE,
+} from "@/lib/lockdown";
 import {
   createSessionStartedValue,
   getSessionCookieOptions,
@@ -17,6 +23,7 @@ import {
 export async function signInAction(formData: FormData) {
   const username = normalizeUsername(String(formData.get("username") ?? ""));
   const password = String(formData.get("password") ?? "");
+  const emergencyCode = String(formData.get("emergencyCode") ?? "").trim();
   const nextPath = sanitizeNextPath(String(formData.get("next") ?? "/"));
 
   if (!hasSupabasePublicEnv()) {
@@ -63,6 +70,42 @@ export async function signInAction(formData: FormData) {
   if (error) {
     redirect(
       `/login?error=${encodeURIComponent("Benutzername oder Passwort ist falsch.")}&next=${encodeURIComponent(nextPath)}`,
+    );
+  }
+
+  const { data: lockdownRows } = await supabase.rpc("get_lockdown_status");
+  const lockdownActive =
+    Array.isArray(lockdownRows) && lockdownRows.some((row) => row?.active === true);
+
+  if (lockdownActive) {
+    if (emergencyCode.length < 8) {
+      await supabase.auth.signOut();
+      redirect(
+        `/login?error=${encodeURIComponent("Lockdown aktiv. Notfallschluessel erforderlich.")}&next=${encodeURIComponent(nextPath)}`,
+      );
+    }
+
+    const lockdownToken = createLockdownAccessToken();
+    const { error: lockdownError } = await supabase.rpc(
+      "claim_lockdown_emergency_access",
+      {
+        p_code: emergencyCode,
+        p_token: lockdownToken,
+      },
+    );
+
+    if (lockdownError) {
+      await supabase.auth.signOut();
+      redirect(
+        `/login?error=${encodeURIComponent("Notfallschluessel wurde abgelehnt.")}&next=${encodeURIComponent(nextPath)}`,
+      );
+    }
+
+    const cookieStore = await cookies();
+    cookieStore.set(
+      LOCKDOWN_ACCESS_COOKIE,
+      lockdownToken,
+      getLockdownCookieOptions(),
     );
   }
 
@@ -294,4 +337,8 @@ async function startLimitedSession() {
     createSessionStartedValue(),
     getSessionCookieOptions(),
   );
+}
+
+function createLockdownAccessToken() {
+  return randomBytes(32).toString("base64url");
 }

@@ -64,6 +64,41 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "lockdown-activated") {
+    return {
+      tone: "success" as const,
+      text: "Lockdown wurde aktiviert. Der Notfallschluessel wird per Discord-DM zugestellt.",
+    };
+  }
+
+  if (setup === "lockdown-deactivated") {
+    return {
+      tone: "success" as const,
+      text: "Lockdown wurde deaktiviert. Der Bot stellt die Discord-Rechte wieder her.",
+    };
+  }
+
+  if (setup === "lockdown-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Lockdown-Aktionen brauchen eine aktive 2FA-Sitzung.",
+    };
+  }
+
+  if (setup === "lockdown-reason") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte gib einen Lockdown-Grund mit mindestens 8 Zeichen an.",
+    };
+  }
+
+  if (setup === "lockdown-failed") {
+    return {
+      tone: "error" as const,
+      text: "Lockdown-Aktion konnte nicht angelegt werden. Rechte, 2FA oder Bot-Status pruefen.",
+    };
+  }
+
   if (setup === "member-created") {
     return {
       tone: "success" as const,

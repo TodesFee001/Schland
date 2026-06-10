@@ -67,5 +67,8 @@ export function clearSessionCookies(
 }
 
 function isSupabaseAuthCookie(name: string) {
-  return name.startsWith("sb-") && name.includes("auth-token");
+  return (
+    (name.startsWith("sb-") && name.includes("auth-token")) ||
+    name === "schland_lockdown_access"
+  );
 }

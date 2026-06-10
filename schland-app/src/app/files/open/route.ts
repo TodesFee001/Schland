@@ -46,11 +46,11 @@ export async function GET(request: Request) {
   const admin = getSupabaseAdminClient();
   const { data: file, error: fileError } = await admin
     .from("files")
-    .select("id,folder_id,original_filename,storage_path")
+    .select("id,folder_id,original_filename,storage_path,external_url,source")
     .eq("id", fileId)
     .maybeSingle();
 
-  if (fileError || !file?.id || !file.storage_path) {
+  if (fileError || !file?.id || (!file.storage_path && !file.external_url)) {
     if (fileError) {
       console.error("open file lookup failed", {
         code: fileError.code,
@@ -73,6 +73,12 @@ export async function GET(request: Request) {
       memberId,
       supabase,
     });
+  }
+
+  const externalUrl = String(file.external_url ?? "").trim();
+
+  if (externalUrl) {
+    return NextResponse.redirect(externalUrl, 303);
   }
 
   const { data, error } = await admin.storage

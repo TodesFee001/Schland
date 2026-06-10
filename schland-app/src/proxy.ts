@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { getSupabasePublishableKey, hasSupabasePublicEnv } from "@/lib/env";
+import { LOCKDOWN_ACCESS_COOKIE } from "@/lib/lockdown";
 import {
   clearSessionCookies,
   isSessionTimeboxExpired,
@@ -93,6 +94,53 @@ export async function proxy(request: NextRequest) {
     );
 
     return redirectResponse;
+  }
+
+  if (user && !isPublicPath) {
+    const { data: lockdownRows } = await supabase.rpc("get_lockdown_status");
+    const lockdownActive =
+      Array.isArray(lockdownRows) &&
+      lockdownRows.some(
+        (row) =>
+          typeof row === "object" &&
+          row !== null &&
+          "active" in row &&
+          row.active === true,
+      );
+
+    if (lockdownActive) {
+      const lockdownToken =
+        request.cookies.get(LOCKDOWN_ACCESS_COOKIE)?.value ?? "";
+      const { data: lockdownSessionValid } = await supabase.rpc(
+        "is_lockdown_session_valid",
+        {
+          p_token: lockdownToken,
+        },
+      );
+
+      if (lockdownSessionValid !== true) {
+        await supabase.auth.signOut();
+
+        const loginUrl = request.nextUrl.clone();
+        loginUrl.pathname = "/login";
+        loginUrl.searchParams.set(
+          "message",
+          "Lockdown aktiv. Anmeldung nur mit Notfallschluessel.",
+        );
+        loginUrl.searchParams.set(
+          "next",
+          `${request.nextUrl.pathname}${request.nextUrl.search}`,
+        );
+
+        const redirectResponse = NextResponse.redirect(loginUrl);
+        clearSessionCookies(
+          redirectResponse,
+          request.cookies.getAll().map((cookie) => cookie.name),
+        );
+
+        return redirectResponse;
+      }
+    }
   }
 
   if (!user && !isPublicPath) {

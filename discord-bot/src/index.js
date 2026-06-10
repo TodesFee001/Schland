@@ -31,11 +31,28 @@ let invitePollRunning = false;
 let auditPollRunning = false;
 let fullSyncRunning = false;
 let heartbeatRunning = false;
+let lockdownPollRunning = false;
 let messageFlushRunning = false;
 let moderationPollRunning = false;
 let voiceFlushRunning = false;
 let lastFullSyncStats = null;
+let lockdownQueueSize = 0;
 let moderationQueueSize = 0;
+
+const LOCKDOWN_PERMISSION_KEYS = [
+  "ViewChannel",
+  "SendMessages",
+  "SendMessagesInThreads",
+  "CreatePublicThreads",
+  "CreatePrivateThreads",
+  "AddReactions",
+  "AttachFiles",
+  "Connect",
+  "Speak",
+  "Stream",
+  "UseVAD",
+  "UseApplicationCommands",
+].filter((key) => PermissionFlagsBits[key] !== undefined);
 
 client.once(Events.ClientReady, async () => {
   console.log(`Schland bot online as ${client.user.tag}`);
@@ -44,6 +61,7 @@ client.once(Events.ClientReady, async () => {
   await fullSyncGuild("startup");
   await primeVoiceSessions();
   await pollInvites();
+  await pollLockdownCommands();
   await pollModerationActions();
   await pollAuditLogs("startup");
   await sendHeartbeat();
@@ -52,6 +70,7 @@ client.once(Events.ClientReady, async () => {
   timers.push(setInterval(() => void flushVoiceSessions(), config.voiceFlushMs));
   timers.push(setInterval(() => void sendHeartbeat(), config.heartbeatMs));
   timers.push(setInterval(() => void pollInvites(), config.invitePollMs));
+  timers.push(setInterval(() => void pollLockdownCommands(), config.lockdownPollMs));
   timers.push(setInterval(() => void pollModerationActions(), config.moderationPollMs));
   timers.push(setInterval(() => void refreshPrivacy(), config.privacyRefreshMs));
   timers.push(setInterval(() => void fullSyncGuild("interval"), config.fullSyncIntervalMs));
@@ -576,6 +595,451 @@ async function sendInviteDm(inviteRequest, inviteUrl) {
   }
 }
 
+async function pollLockdownCommands() {
+  if (lockdownPollRunning) {
+    return;
+  }
+
+  lockdownPollRunning = true;
+
+  try {
+    const result = await api("/lockdown", { method: "GET" });
+    const commands = Array.isArray(result.commands) ? result.commands : [];
+    lockdownQueueSize = commands.length;
+
+    for (const command of commands) {
+      await processLockdownCommand(command);
+    }
+
+    await sendHeartbeat();
+  } catch (error) {
+    console.error("Lockdown poll failed", errorMessage(error));
+  } finally {
+    lockdownPollRunning = false;
+  }
+}
+
+async function processLockdownCommand(command) {
+  const startedAt = new Date().toISOString();
+
+  try {
+    await api("/lockdown", {
+      body: {
+        id: command.id,
+        startedAt,
+        status: "running",
+      },
+      method: "PATCH",
+    });
+
+    const result = await executeLockdownCommand(command);
+
+    await api("/lockdown", {
+      body: {
+        channelSummary: result.channelSummary,
+        id: command.id,
+        recipientStatus: result.recipientStatus,
+        snapshot: result.snapshot,
+        status: "executed",
+      },
+      method: "PATCH",
+    });
+
+    lockdownQueueSize = Math.max(0, lockdownQueueSize - 1);
+    console.log(`Lockdown command executed: ${command.action}`);
+  } catch (error) {
+    lockdownQueueSize = Math.max(0, lockdownQueueSize - 1);
+    console.error("Lockdown command failed", errorMessage(error));
+
+    await api("/lockdown", {
+      body: {
+        botError: errorMessage(error),
+        id: command.id,
+        status: "failed",
+      },
+      method: "PATCH",
+    }).catch((updateError) => {
+      console.error("Lockdown failure update failed", errorMessage(updateError));
+    });
+  }
+}
+
+async function executeLockdownCommand(command) {
+  if (command.action === "deactivate") {
+    const restoreResult = await restoreDiscordLockdown(command.restoreSnapshot);
+
+    return {
+      channelSummary: restoreResult.summary,
+      recipientStatus: [],
+      snapshot: command.restoreSnapshot ?? [],
+    };
+  }
+
+  if (command.action !== "activate") {
+    throw new Error(`Unbekannter Lockdown-Befehl: ${command.action}`);
+  }
+
+  if (!command.emergencyCode) {
+    throw new Error("Lockdown-Notfallcode fehlt.");
+  }
+
+  const importantChannelIds = uniqueStrings([
+    ...(Array.isArray(command.importantChannelIds)
+      ? command.importantChannelIds
+      : []),
+    ...config.lockdownReadOnlyChannelIds,
+  ]);
+
+  if (importantChannelIds.length === 0 && config.inviteChannelId) {
+    importantChannelIds.push(config.inviteChannelId);
+  }
+
+  const recipientStatus = await sendLockdownEmergencyMessages(
+    command,
+    importantChannelIds,
+  );
+  const lockdownResult = await applyDiscordLockdown(command, importantChannelIds);
+
+  return {
+    channelSummary: lockdownResult.summary,
+    recipientStatus,
+    snapshot: lockdownResult.snapshot,
+  };
+}
+
+async function sendLockdownEmergencyMessages(command, importantChannelIds) {
+  const recipientIds = await resolveLockdownRecipients(command);
+  const statuses = [];
+
+  for (const discordUserId of recipientIds) {
+    try {
+      const user = await client.users.fetch(discordUserId);
+
+      await user.send({
+        embeds: [
+          buildLockdownEmergencyEmbed(command, importantChannelIds),
+        ],
+      });
+
+      statuses.push({
+        discordUserId,
+        error: null,
+        status: "sent",
+      });
+    } catch (error) {
+      statuses.push({
+        discordUserId,
+        error: errorMessage(error),
+        status: "failed",
+      });
+    }
+  }
+
+  if (statuses.length === 0) {
+    statuses.push({
+      discordUserId: null,
+      error: "Keine Empfaenger fuer den Lockdown-Notfallcode gefunden.",
+      status: "failed",
+    });
+  }
+
+  return statuses;
+}
+
+async function resolveLockdownRecipients(command) {
+  const ids = new Set(
+    uniqueStrings([
+      ...(Array.isArray(command.recipientDiscordIds)
+        ? command.recipientDiscordIds
+        : []),
+      ...config.lockdownRecipientDiscordIds,
+    ]).filter(isDiscordSnowflake),
+  );
+  const names = uniqueStrings([
+    ...(Array.isArray(command.recipientUsernames)
+      ? command.recipientUsernames
+      : []),
+    ...config.lockdownRecipientUsernames,
+  ]).map(normalizeLookupText);
+
+  if (names.length > 0) {
+    const guild = await getGuild();
+    await guild.members.fetch();
+
+    for (const member of guild.members.cache.values()) {
+      if (member.user.bot) {
+        continue;
+      }
+
+      const candidates = [
+        member.displayName,
+        member.nickname,
+        member.user.globalName,
+        member.user.username,
+        formatUser(member.user),
+      ]
+        .map(normalizeLookupText)
+        .filter(Boolean);
+
+      if (
+        names.some((name) =>
+          candidates.some((candidate) => candidate === name || candidate.includes(name)),
+        )
+      ) {
+        ids.add(member.id);
+      }
+    }
+  }
+
+  return [...ids];
+}
+
+function buildLockdownEmergencyEmbed(command, importantChannelIds) {
+  const fields = [
+    {
+      name: "Notfallschluessel",
+      value: `\`${command.emergencyCode}\``,
+      inline: false,
+    },
+    {
+      name: "Ausgeloest von",
+      value: trimEmbedField(command.triggeredByName ?? "Schland Verwaltung"),
+      inline: true,
+    },
+    {
+      name: "Discord",
+      value:
+        importantChannelIds.length > 0
+          ? `${importantChannelIds.length} wichtige Channel bleiben lesbar.`
+          : "Alle Channel werden gesperrt.",
+      inline: true,
+    },
+    {
+      name: "Grund",
+      value: trimEmbedField(command.reason ?? "Schland Lockdown"),
+      inline: false,
+    },
+  ];
+
+  return new EmbedBuilder()
+    .setColor(0xb91c1c)
+    .setTitle("SCHLAND LOCKDOWN")
+    .setDescription(
+      "Der Verwaltungszugang ist im Notfallmodus. Login ist nur mit diesem Schluessel moeglich.",
+    )
+    .addFields(fields)
+    .setFooter({ text: "Schland DB - Emergency Broadcast" })
+    .setTimestamp(new Date());
+}
+
+async function applyDiscordLockdown(command, importantChannelIds) {
+  const guild = await getGuild();
+  const me = guild.members.me ?? (await guild.members.fetchMe());
+
+  if (!me.permissions.has(PermissionFlagsBits.ManageChannels)) {
+    throw new Error("Bot braucht Manage Channels fuer Lockdown.");
+  }
+
+  await guild.roles.fetch();
+  await guild.channels.fetch();
+
+  const importantChannels = new Set(importantChannelIds.filter(Boolean));
+  const targetRoles = getLockdownTargetRoles(guild);
+  const snapshot = [];
+  const failed = [];
+  let changed = 0;
+
+  for (const channel of guild.channels.cache.values()) {
+    if (!canEditChannelOverwrites(channel)) {
+      continue;
+    }
+
+    const readOnly = importantChannels.has(channel.id);
+
+    for (const role of targetRoles) {
+      const permissions = captureChannelRolePermissions(channel, role.id);
+
+      try {
+        await channel.permissionOverwrites.edit(
+          role.id,
+          buildLockdownOverwrite(readOnly),
+          {
+            reason: trimReason(
+              `Schland Lockdown: ${command.reason ?? "Notfall"}`,
+            ),
+          },
+        );
+        snapshot.push({
+          channelId: channel.id,
+          channelName: channel.name ?? channel.id,
+          important: readOnly,
+          permissions,
+          roleId: role.id,
+          roleName: role.name ?? role.id,
+        });
+        changed += 1;
+      } catch (error) {
+        failed.push({
+          channelId: channel.id,
+          channelName: channel.name ?? channel.id,
+          error: errorMessage(error),
+          roleId: role.id,
+          roleName: role.name ?? role.id,
+        });
+      }
+    }
+  }
+
+  return {
+    snapshot,
+    summary: {
+      channels: guild.channels.cache.size,
+      changed,
+      failed,
+      importantChannels: importantChannels.size,
+      targetRoles: targetRoles.length,
+    },
+  };
+}
+
+async function restoreDiscordLockdown(snapshot) {
+  if (!Array.isArray(snapshot) || snapshot.length === 0) {
+    throw new Error("Kein Lockdown-Snapshot zum Zuruecksetzen gefunden.");
+  }
+
+  const guild = await getGuild();
+  const me = guild.members.me ?? (await guild.members.fetchMe());
+
+  if (!me.permissions.has(PermissionFlagsBits.ManageChannels)) {
+    throw new Error("Bot braucht Manage Channels fuer Lockdown-Restore.");
+  }
+
+  await guild.channels.fetch();
+
+  const failed = [];
+  let restored = 0;
+
+  for (const entry of snapshot) {
+    const record = toRecord(entry);
+    const channelId = String(record.channelId ?? "");
+    const roleId = String(record.roleId ?? "");
+
+    if (!isDiscordSnowflake(channelId) || !isDiscordSnowflake(roleId)) {
+      continue;
+    }
+
+    try {
+      const channel =
+        guild.channels.cache.get(channelId) ??
+        (await guild.channels.fetch(channelId));
+
+      if (!canEditChannelOverwrites(channel)) {
+        continue;
+      }
+
+      await channel.permissionOverwrites.edit(
+        roleId,
+        normalizePermissionSnapshot(record.permissions),
+        { reason: "Schland Lockdown aufgehoben" },
+      );
+      restored += 1;
+    } catch (error) {
+      failed.push({
+        channelId,
+        error: errorMessage(error),
+        roleId,
+      });
+    }
+  }
+
+  return {
+    summary: {
+      failed,
+      restored,
+      snapshotEntries: snapshot.length,
+    },
+  };
+}
+
+function getLockdownTargetRoles(guild) {
+  const roles = [];
+
+  if (guild.roles.everyone) {
+    roles.push(guild.roles.everyone);
+  }
+
+  for (const role of guild.roles.cache.values()) {
+    if (role.id === guild.id || role.managed) {
+      continue;
+    }
+
+    if (role.permissions.has(PermissionFlagsBits.Administrator)) {
+      continue;
+    }
+
+    roles.push(role);
+  }
+
+  return roles;
+}
+
+function canEditChannelOverwrites(channel) {
+  return Boolean(
+    channel &&
+      channel.permissionOverwrites &&
+      typeof channel.permissionOverwrites.edit === "function" &&
+      channel.permissionOverwrites.cache,
+  );
+}
+
+function captureChannelRolePermissions(channel, roleId) {
+  const overwrite = channel.permissionOverwrites.cache.get(roleId);
+  const permissions = {};
+
+  for (const key of LOCKDOWN_PERMISSION_KEYS) {
+    const bit = PermissionFlagsBits[key];
+
+    if (!overwrite) {
+      permissions[key] = null;
+    } else if (overwrite.allow.has(bit)) {
+      permissions[key] = true;
+    } else if (overwrite.deny.has(bit)) {
+      permissions[key] = false;
+    } else {
+      permissions[key] = null;
+    }
+  }
+
+  return permissions;
+}
+
+function buildLockdownOverwrite(readOnly) {
+  const overwrite = {};
+
+  for (const key of LOCKDOWN_PERMISSION_KEYS) {
+    overwrite[key] = key === "ViewChannel" ? readOnly : false;
+  }
+
+  return overwrite;
+}
+
+function normalizePermissionSnapshot(value) {
+  const record = toRecord(value);
+  const permissions = {};
+
+  for (const key of LOCKDOWN_PERMISSION_KEYS) {
+    if (record[key] === true) {
+      permissions[key] = true;
+    } else if (record[key] === false) {
+      permissions[key] = false;
+    } else {
+      permissions[key] = null;
+    }
+  }
+
+  return permissions;
+}
+
 async function refreshPrivacy() {
   try {
     const result = await api("/privacy", { method: "GET" });
@@ -1023,6 +1487,7 @@ async function sendHeartbeat() {
         guildMemberEstimate: stats.guildMemberEstimate,
         guildName: stats.guildName ?? guild.name,
         humansOnServer: stats.humansOnServer,
+        lockdownQueueSize,
         messageBufferSize: messageCounts.size,
         moderationQueueSize,
         skippedBots: stats.skippedBots,
@@ -1127,6 +1592,10 @@ function loadConfig() {
     heartbeatMs: readMs(env.HEARTBEAT_MS, 10_000),
     inviteChannelId: env.DISCORD_INVITE_CHANNEL_ID.trim(),
     invitePollMs: readMs(env.INVITE_POLL_MS, 10_000),
+    lockdownPollMs: readMs(env.LOCKDOWN_POLL_MS, 5_000),
+    lockdownReadOnlyChannelIds: readList(env.LOCKDOWN_READONLY_CHANNEL_IDS),
+    lockdownRecipientDiscordIds: readList(env.LOCKDOWN_RECIPIENT_DISCORD_IDS),
+    lockdownRecipientUsernames: readList(env.LOCKDOWN_RECIPIENT_USERNAMES),
     moderationPollMs: readMs(env.MODERATION_POLL_MS, 5_000),
     privacyRefreshMs: readMs(env.PRIVACY_REFRESH_MS, 30_000),
     syncToken: env.DISCORD_BOT_SYNC_TOKEN.trim(),
@@ -1138,6 +1607,15 @@ function readMs(value, fallback) {
   const number = Number(value);
 
   return Number.isFinite(number) && number >= 1000 ? Math.trunc(number) : fallback;
+}
+
+function readList(value) {
+  return uniqueStrings(
+    String(value ?? "")
+      .split(/[\n,;]+/)
+      .map((item) => item.trim())
+      .filter(Boolean),
+  );
 }
 
 function isConfiguredGuild(guildId) {
@@ -1262,4 +1740,22 @@ function chunkArray(values, size) {
   }
 
   return chunks;
+}
+
+function isDiscordSnowflake(value) {
+  return /^[0-9]{15,25}$/.test(String(value ?? ""));
+}
+
+function uniqueStrings(values) {
+  return [...new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean))];
+}
+
+function normalizeLookupText(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function toRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value
+    : {};
 }

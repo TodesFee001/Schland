@@ -1,5 +1,6 @@
 import type { AuthStatus } from "@/lib/auth";
 import { hasSupabasePublicEnv } from "@/lib/env";
+import { mapLockdownStatusRow, type LockdownStatus } from "@/lib/lockdown";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type MemberStatusLabel = "Aktiv" | "Pruefung" | "Archiv";
@@ -76,6 +77,7 @@ export type WorkspaceFile = {
   categoryId: string;
   createdAt: string;
   description: string;
+  externalUrl: string;
   folder: string;
   folderId: string;
   id: string;
@@ -83,6 +85,7 @@ export type WorkspaceFile = {
   originalName: string;
   size: number;
   sizeLabel: string;
+  source: string;
   storagePath: string;
   tags: string[];
   type: string;
@@ -228,6 +231,7 @@ export type WorkspaceData = {
   files: WorkspaceFile[];
   folders: WorkspaceFolder[];
   logs: WorkspaceLogRow[];
+  lockdown: LockdownStatus;
   members: WorkspaceMember[];
   moderationEvents: WorkspaceModerationEvent[];
   permissions: WorkspacePermissionOption[];
@@ -244,8 +248,20 @@ const currentMonth = now.getMonth() + 1;
 const displayTimeZone = "Europe/Berlin";
 const memberCaseLoadLimit = 1000;
 
+const inactiveLockdownStatus: LockdownStatus = {
+  active: false,
+  activatedAt: "",
+  activatedByName: "",
+  botError: "",
+  botStatus: "idle",
+  canManage: false,
+  importantChannelIds: [],
+  reason: "",
+};
+
 export const demoWorkspaceData: WorkspaceData = {
   source: "demo",
+  lockdown: inactiveLockdownStatus,
   members: [
     {
       id: "MEM-1007",
@@ -386,12 +402,14 @@ export const demoWorkspaceData: WorkspaceData = {
       category: "Ermittlungen",
       createdAt: "Heute, 00:41",
       description: "Aufnahmebogen fuer die Mitgliederakte.",
+      externalUrl: "",
       folder: "Aktive Faelle",
       folderId: "folder-demo-2",
       name: "Aufnahmebogen.pdf",
       originalName: "Aufnahmebogen.pdf",
       size: 184320,
       sizeLabel: "180 KB",
+      source: "supabase",
       storagePath: "demo/aufnahmebogen.pdf",
       tags: ["akte", "aufnahme"],
       type: "application/pdf",
@@ -403,12 +421,14 @@ export const demoWorkspaceData: WorkspaceData = {
       category: "Mitteilungen",
       createdAt: "Gestern, 21:10",
       description: "Interne Rollenfreigabe.",
+      externalUrl: "",
       folder: "Interne Rundschreiben",
       folderId: "folder-demo-1",
       name: "Rollenfreigabe.png",
       originalName: "Rollenfreigabe.png",
       size: 96256,
       sizeLabel: "94 KB",
+      source: "supabase",
       storagePath: "demo/rollenfreigabe.png",
       tags: ["freigabe"],
       type: "image/png",
@@ -811,6 +831,7 @@ export async function getWorkspaceData(
       moderationEventsResult,
       profilesResult,
       logsResult,
+      lockdownResult,
       syncResult,
     ] = await Promise.all([
       supabase
@@ -892,6 +913,10 @@ export async function getWorkspaceData(
             file_type,
             file_size,
             storage_path,
+            external_url,
+            source,
+            source_id,
+            source_mime_type,
             category_id,
             folder_id,
             description,
@@ -992,6 +1017,7 @@ export async function getWorkspaceData(
         .select("id, username, action, reason, success, created_at, member_id")
         .order("created_at", { ascending: false })
         .limit(8),
+      supabase.rpc("get_lockdown_status"),
       supabase
         .from("sync_runs")
         .select("id, source, status, started_at, finished_at, error_message, metadata")
@@ -1009,6 +1035,7 @@ export async function getWorkspaceData(
     collectWarning(warnings, moderationEventsResult.error?.message);
     collectWarning(warnings, profilesResult.error?.message);
     collectWarning(warnings, logsResult.error?.message);
+    collectWarning(warnings, lockdownResult.error?.message);
     collectWarning(warnings, syncResult.error?.message);
 
     return {
@@ -1023,6 +1050,11 @@ export async function getWorkspaceData(
       moderationEvents: mapModerationEvents(moderationEventsResult.data ?? []),
       users: mapUsers(profilesResult.data ?? []),
       logs: mapLogs(logsResult.data ?? []),
+      lockdown: mapLockdownStatusRow(
+        Array.isArray(lockdownResult.data)
+          ? (lockdownResult.data[0] as Record<string, unknown> | null)
+          : null,
+      ),
       sync: mapSync(syncResult.data ?? []),
       warning: warnings[0],
     };
@@ -1185,12 +1217,14 @@ function mapFiles(rows: Record<string, unknown>[]): WorkspaceFile[] {
       category: String(category.name ?? "-"),
       createdAt: formatDate(String(row.created_at ?? "")),
       description: String(row.description ?? ""),
+      externalUrl: String(row.external_url ?? ""),
       folder: String(folder.name ?? "-"),
       folderId: String(row.folder_id ?? ""),
       name: String(row.filename ?? originalName),
       originalName,
       size,
       sizeLabel: formatFileSize(size),
+      source: String(row.source ?? "supabase"),
       storagePath: String(row.storage_path ?? ""),
       tags: Array.isArray(row.tags)
         ? row.tags.map(String).filter(Boolean)

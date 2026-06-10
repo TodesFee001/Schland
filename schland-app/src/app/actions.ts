@@ -834,6 +834,96 @@ export async function runModerationAction(formData: FormData) {
   redirect("/?section=moderation&setup=moderation-action-done");
 }
 
+export async function activateLockdownAction(formData: FormData) {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=settings&setup=missing-supabase");
+  }
+
+  const reason = getFormText(formData, "reason");
+  const recipientDiscordIds = getFormList(formData, "recipientDiscordIds")
+    .flatMap((value) => value.split(/[,\s]+/))
+    .map((value) => value.trim())
+    .filter((value) => /^[0-9]{15,25}$/.test(value))
+    .slice(0, 6);
+  const recipientUsernames = [
+    ...new Set([
+      "losoverdrive",
+      ...getFormList(formData, "recipientUsernames")
+        .flatMap((value) => value.split(/[,;\n]+/))
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ]),
+  ].slice(0, 8);
+  const importantChannelIds = getFormList(formData, "importantChannelIds")
+    .flatMap((value) => value.split(/[,\s]+/))
+    .map((value) => value.trim())
+    .filter((value) => /^[0-9]{15,25}$/.test(value))
+    .slice(0, 20);
+
+  if (reason.length < 8) {
+    redirect("/?section=settings&setup=lockdown-reason");
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect("/?section=settings&setup=lockdown-aal2");
+  }
+
+  const { error } = await supabase.rpc("activate_system_lockdown", {
+    p_important_channel_ids: importantChannelIds,
+    p_reason: reason,
+    p_recipient_discord_ids: recipientDiscordIds,
+    p_recipient_usernames: recipientUsernames,
+  });
+
+  if (error) {
+    console.error("activate_system_lockdown failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect("/?section=settings&setup=lockdown-failed");
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/?section=settings&setup=lockdown-activated");
+}
+
+export async function deactivateLockdownAction(formData: FormData) {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=settings&setup=missing-supabase");
+  }
+
+  const reason = getFormText(formData, "reason");
+
+  if (reason.length < 8) {
+    redirect("/?section=settings&setup=lockdown-reason");
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect("/?section=settings&setup=lockdown-aal2");
+  }
+
+  const { error } = await supabase.rpc("deactivate_system_lockdown", {
+    p_reason: reason,
+  });
+
+  if (error) {
+    console.error("deactivate_system_lockdown failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect("/?section=settings&setup=lockdown-failed");
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/?section=settings&setup=lockdown-deactivated");
+}
+
 export async function updateModerationEventAction(formData: FormData) {
   if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
     redirect("/?section=members&setup=moderation-event-failed");
@@ -1233,17 +1323,23 @@ export async function downloadFileAction(formData: FormData) {
   const admin = getSupabaseAdminClient();
   const { data: fileRow, error: fileError } = await admin
     .from("files")
-    .select("storage_path")
+    .select("storage_path,external_url")
     .eq("id", fileId)
     .single();
 
-  if (fileError || !fileRow?.storage_path) {
+  if (fileError || (!fileRow?.storage_path && !fileRow?.external_url)) {
     console.error("download file lookup failed", {
       code: fileError?.code,
       details: fileError?.details,
       message: fileError?.message,
     });
     redirect(`/?section=files&setup=${getFileDownloadErrorSetup(fileError)}`);
+  }
+
+  const externalUrl = String(fileRow.external_url ?? "").trim();
+
+  if (externalUrl) {
+    redirect(externalUrl);
   }
 
   const { data, error } = await admin.storage
@@ -1387,7 +1483,7 @@ export async function deleteFileAction(formData: FormData) {
   const admin = getSupabaseAdminClient();
   const file = await getFileActionRow(admin, fileId);
 
-  if (!file?.storage_path) {
+  if (!file?.storage_path && !file?.external_url) {
     redirect("/?section=files&setup=file-delete-missing");
   }
 
@@ -1395,15 +1491,17 @@ export async function deleteFileAction(formData: FormData) {
     redirect("/?section=files&setup=file-delete-permission");
   }
 
-  const { error: removeError } = await admin.storage
-    .from(FILE_BUCKET)
-    .remove([file.storage_path]);
+  if (file.storage_path && !file.external_url) {
+    const { error: removeError } = await admin.storage
+      .from(FILE_BUCKET)
+      .remove([file.storage_path]);
 
-  if (removeError) {
-    console.error("storage delete failed", {
-      message: removeError.message,
-    });
-    redirect("/?section=files&setup=file-delete-storage");
+    if (removeError) {
+      console.error("storage delete failed", {
+        message: removeError.message,
+      });
+      redirect("/?section=files&setup=file-delete-storage");
+    }
   }
 
   const { error } = await admin.from("files").delete().eq("id", fileId);
@@ -1450,6 +1548,13 @@ function getFormTags(formData: FormData, key: string) {
     .slice(0, 12);
 }
 
+function getFormList(formData: FormData, key: string) {
+  return formData
+    .getAll(key)
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+}
+
 type SupabaseServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
 type SupabaseAdminClient = ReturnType<typeof getSupabaseAdminClient>;
 
@@ -1492,13 +1597,14 @@ type FileActionRow = {
   folder_id: string | null;
   id: string;
   original_filename: string | null;
+  external_url: string | null;
   storage_path: string | null;
 };
 
 async function getFileActionRow(admin: SupabaseAdminClient, fileId: string) {
   const { data, error } = await admin
     .from("files")
-    .select("id,category_id,folder_id,original_filename,storage_path")
+    .select("id,category_id,folder_id,original_filename,storage_path,external_url")
     .eq("id", fileId)
     .maybeSingle();
 

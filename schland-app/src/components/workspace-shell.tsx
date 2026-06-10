@@ -8,6 +8,7 @@ import {
   Clock,
   Database,
   Download,
+  Flame,
   Eye,
   ExternalLink,
   FileText,
@@ -24,7 +25,9 @@ import {
   Settings,
   Shield,
   RefreshCw,
+  Siren,
   Trash2,
+  TriangleAlert,
   Upload,
   UserCog,
   Users,
@@ -35,8 +38,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import {
+  activateLockdownAction,
   createDiscordInviteRequestAction,
   createFolderAction,
+  deactivateLockdownAction,
   deleteDiscordInviteRequestAction,
   createMemberAction,
   deleteFileAction,
@@ -80,6 +85,7 @@ import type {
   WorkspaceSyncStatus,
   WorkspaceUserSummary,
 } from "@/lib/workspace-data";
+import type { LockdownStatus } from "@/lib/lockdown";
 
 type SectionId =
   | "dashboard"
@@ -557,6 +563,9 @@ export function WorkspaceShell({
       {patchNotesOpen ? (
         <PatchNotesLayer onClose={() => setPatchNotesOpen(false)} />
       ) : null}
+      {workspaceData.lockdown.active ? (
+        <LockdownOverlay lockdown={workspaceData.lockdown} />
+      ) : null}
     </main>
   );
 
@@ -645,6 +654,8 @@ export function WorkspaceShell({
           <SettingsSection
             authStatus={authStatus}
             environmentStatus={environmentStatus}
+            lockdown={workspaceData.lockdown}
+            mfaReady={mfaReady}
           />
         );
       default:
@@ -2392,6 +2403,11 @@ function FilesSection({
                     <td className="px-4 py-3">
                       <div className="font-mono text-xs">{file.type}</div>
                       <div className="text-xs text-neutral-500">{file.sizeLabel}</div>
+                      {file.source === "google_drive" ? (
+                        <div className="mt-1 inline-flex border border-[var(--line)] bg-white px-1.5 py-0.5 text-xs text-neutral-600">
+                          Google Drive
+                        </div>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3">{file.createdAt}</td>
                     <td className="px-4 py-3">
@@ -4190,15 +4206,234 @@ function PatchNotesLayer({ onClose }: { onClose: () => void }) {
   );
 }
 
+function LockdownOverlay({ lockdown }: { lockdown: LockdownStatus }) {
+  const [soundEnabled, setSoundEnabled] = useState(false);
+
+  useEffect(() => {
+    if (!soundEnabled) {
+      return;
+    }
+
+    const AudioContextCtor =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+
+    if (!AudioContextCtor) {
+      return;
+    }
+
+    const context = new AudioContextCtor();
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    const lfo = context.createOscillator();
+    const lfoGain = context.createGain();
+
+    oscillator.type = "sawtooth";
+    oscillator.frequency.value = 420;
+    lfo.frequency.value = 0.9;
+    lfoGain.gain.value = 220;
+    gain.gain.value = 0.035;
+
+    lfo.connect(lfoGain);
+    lfoGain.connect(oscillator.frequency);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start();
+    lfo.start();
+
+    return () => {
+      oscillator.stop();
+      lfo.stop();
+      context.close();
+    };
+  }, [soundEnabled]);
+
+  return (
+    <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden">
+      <div className="lockdown-scan absolute inset-0 bg-red-950/35" />
+      <div className="absolute inset-0 border-[18px] border-red-700/35 shadow-[inset_0_0_90px_rgba(220,38,38,0.45)]" />
+      <div className="absolute left-1/2 top-8 w-[min(760px,calc(100vw-2rem))] -translate-x-1/2 border-2 border-red-500 bg-black/75 p-5 text-center text-white shadow-[0_0_60px_rgba(248,113,113,0.45)] backdrop-blur">
+        <div className="mx-auto flex size-20 items-center justify-center rounded-full border-2 border-red-400 bg-red-700 lockdown-pulse">
+          <Siren className="size-10" aria-hidden="true" />
+        </div>
+        <p className="mt-4 font-mono text-xs font-black uppercase tracking-[0.5em] text-red-200">
+          Emergency Broadcast System
+        </p>
+        <h2 className="mt-2 text-4xl font-black uppercase tracking-[0.18em] text-red-100 md:text-6xl">
+          Lockdown
+        </h2>
+        <p className="mx-auto mt-3 max-w-2xl text-sm text-red-100">
+          Verwaltung gesperrt. Zugriff nur mit Notfallschluessel.
+          {lockdown.reason ? ` Grund: ${lockdown.reason}` : ""}
+        </p>
+        <div className="mt-4 grid gap-2 text-xs uppercase tracking-[0.25em] text-red-200 sm:grid-cols-3">
+          <span className="border border-red-700/70 bg-red-950/60 px-3 py-2">
+            Discord: {lockdown.botStatus || "pending"}
+          </span>
+          <span className="border border-red-700/70 bg-red-950/60 px-3 py-2">
+            Web: sealed
+          </span>
+          <span className="border border-red-700/70 bg-red-950/60 px-3 py-2">
+            Code: DM only
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setSoundEnabled((value) => !value)}
+          className="pointer-events-auto mt-4 inline-flex h-9 items-center gap-2 border border-red-300 bg-red-700 px-3 text-xs font-bold uppercase tracking-[0.18em] text-white"
+        >
+          <Flame className="size-4" aria-hidden="true" />
+          <span>{soundEnabled ? "Sound aus" : "Sound an"}</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SettingsSection({
   authStatus,
   environmentStatus,
+  lockdown,
+  mfaReady,
 }: {
   authStatus: AuthStatus;
   environmentStatus: EnvironmentStatus;
+  lockdown: LockdownStatus;
+  mfaReady: boolean;
 }) {
   return (
     <div className="grid gap-5 xl:grid-cols-2">
+      <section className="rounded-lg border-2 border-red-700 bg-[#210606] text-white shadow-[0_0_0_1px_rgba(185,28,28,0.25),0_18px_60px_rgba(127,29,29,0.28)] xl:col-span-2">
+        <SectionHeader
+          icon={Siren}
+          title="Lockdown"
+          action={
+            <span
+              className={[
+                "rounded-md px-2 py-1 text-xs font-bold uppercase",
+                lockdown.active
+                  ? "bg-red-500 text-white"
+                  : "bg-white/10 text-red-100",
+              ].join(" ")}
+            >
+              {lockdown.active ? "Aktiv" : "Bereit"}
+            </span>
+          }
+        />
+        <div className="grid gap-4 border-t border-red-900/70 p-4 lg:grid-cols-[1fr_420px]">
+          <div className="grid gap-3">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <article className="border border-red-900/70 bg-black/25 p-3">
+                <p className="text-xs uppercase text-red-200">Status</p>
+                <p className="mt-1 font-mono text-lg font-bold">
+                  {lockdown.active ? "LOCKDOWN" : "STANDBY"}
+                </p>
+              </article>
+              <article className="border border-red-900/70 bg-black/25 p-3">
+                <p className="text-xs uppercase text-red-200">Bot</p>
+                <p className="mt-1 font-mono text-lg font-bold">
+                  {lockdown.botStatus || "idle"}
+                </p>
+              </article>
+              <article className="border border-red-900/70 bg-black/25 p-3">
+                <p className="text-xs uppercase text-red-200">Ausgeloest</p>
+                <p className="mt-1 truncate font-mono text-lg font-bold">
+                  {lockdown.activatedByName || "-"}
+                </p>
+              </article>
+            </div>
+            <div className="border border-red-900/70 bg-black/25 p-3 text-sm text-red-50">
+              <p className="font-semibold">Wirkung</p>
+              <p className="mt-1 text-red-100">
+                Discord sperrt Nicht-Admins auf Kanalebene. In Schland ist der
+                Zugang nur mit dem erzeugten Notfallschluessel moeglich.
+              </p>
+              {lockdown.reason ? (
+                <p className="mt-2 text-red-100">Grund: {lockdown.reason}</p>
+              ) : null}
+              {lockdown.botError ? (
+                <p className="mt-2 text-red-200">Bot-Fehler: {lockdown.botError}</p>
+              ) : null}
+            </div>
+          </div>
+
+          {lockdown.active ? (
+            <form
+              action={deactivateLockdownAction}
+              className="grid gap-3 border border-red-900/70 bg-black/35 p-3"
+            >
+              <div className="flex items-center gap-2 text-red-100">
+                <Shield className="size-4" aria-hidden="true" />
+                <span className="text-sm font-bold uppercase">Lockdown beenden</span>
+              </div>
+              <input
+                name="reason"
+                required
+                minLength={8}
+                disabled={!mfaReady || !lockdown.canManage}
+                placeholder="Grund fuer Entsperrung"
+                className="h-10 rounded-md border border-red-900 bg-black/40 px-3 text-sm text-white outline-none placeholder:text-red-200 focus:border-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+              />
+              <button
+                type="submit"
+                disabled={!mfaReady || !lockdown.canManage}
+                className="flex h-11 items-center justify-center gap-2 rounded-md border border-red-300 bg-white px-4 text-sm font-black uppercase text-red-800 transition hover:translate-y-[-1px] hover:shadow-[0_0_25px_rgba(255,255,255,0.35)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <CheckCircle2 className="size-4" aria-hidden="true" />
+                <span>Entsperren</span>
+              </button>
+            </form>
+          ) : (
+            <form
+              action={activateLockdownAction}
+              className="grid gap-3 border border-red-900/70 bg-black/35 p-3"
+            >
+              <div className="flex items-center gap-2 text-red-100">
+                <TriangleAlert className="size-4" aria-hidden="true" />
+                <span className="text-sm font-black uppercase">Roter Knopf</span>
+              </div>
+              <input
+                name="reason"
+                required
+                minLength={8}
+                disabled={!mfaReady || !lockdown.canManage}
+                placeholder="Grund fuer Lockdown"
+                className="h-10 rounded-md border border-red-900 bg-black/40 px-3 text-sm text-white outline-none placeholder:text-red-200 focus:border-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+              />
+              <input
+                name="recipientDiscordIds"
+                disabled={!mfaReady || !lockdown.canManage}
+                placeholder="Discord-IDs fuer Code-DM, optional"
+                className="h-10 rounded-md border border-red-900 bg-black/40 px-3 text-sm text-white outline-none placeholder:text-red-200 focus:border-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+              />
+              <input
+                name="recipientUsernames"
+                defaultValue="losoverdrive"
+                disabled={!mfaReady || !lockdown.canManage}
+                placeholder="Discord-Namen fuer Code-DM"
+                className="h-10 rounded-md border border-red-900 bg-black/40 px-3 text-sm text-white outline-none placeholder:text-red-200 focus:border-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+              />
+              <input
+                name="importantChannelIds"
+                disabled={!mfaReady || !lockdown.canManage}
+                placeholder="Wichtige Channel-IDs, optional"
+                className="h-10 rounded-md border border-red-900 bg-black/40 px-3 text-sm text-white outline-none placeholder:text-red-200 focus:border-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+              />
+              <button
+                type="submit"
+                disabled={!mfaReady || !lockdown.canManage}
+                className="group relative flex h-12 items-center justify-center gap-2 overflow-hidden rounded-md border border-red-300 bg-red-700 px-4 text-sm font-black uppercase tracking-[0.18em] text-white transition hover:translate-y-[-1px] hover:bg-red-600 hover:shadow-[0_0_35px_rgba(248,113,113,0.6)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <span className="absolute inset-0 translate-x-[-110%] bg-gradient-to-r from-transparent via-white/30 to-transparent transition duration-700 group-hover:translate-x-[110%]" />
+                <Siren className="size-5" aria-hidden="true" />
+                <span>Lockdown aktivieren</span>
+              </button>
+            </form>
+          )}
+        </div>
+      </section>
+
       <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
         <SectionHeader icon={Settings} title="Systemstatus" />
         <div className="grid gap-3 border-t border-[var(--line)] p-4">
