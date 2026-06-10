@@ -11,6 +11,19 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "10.06.2026",
+    id: "lockdown-bot-heartbeat-guard",
+    items: [
+      "Lockdown-Aktivierung wird jetzt in Supabase blockiert, wenn der Discord-Bot laenger als 2 Minuten kein Live-Signal gesendet hat.",
+      "Offline-Bot-Lockdowns werden nicht mehr angelegt, damit kein Notfallschluessel ohne Discord-DM-Zustellung entsteht.",
+      "Bot-Start ist robuster: Heartbeat und Lockdown-Restore laufen weiter, auch wenn ein Startup-Sync fehlschlaegt.",
+      "Die Oberflaeche zeigt fuer diesen Fall eine eigene Bot-offline-Meldung statt einer allgemeinen Fehlermeldung.",
+    ],
+    title: "Lockdown gegen Bot-Ausfall gesichert",
+    type: "fix",
+    version: "0.9.15",
+  },
+  {
+    date: "10.06.2026",
     id: "lockdown-role-quarantine",
     items: [
       "Discord-Lockdown nutzt fuer neue Aktivierungen einen schnellen Rollen-Quarantaene-Modus statt tausender Channel/Rollen-Overwrites.",

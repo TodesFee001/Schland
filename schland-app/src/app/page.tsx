@@ -99,6 +99,13 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "lockdown-bot-offline") {
+    return {
+      tone: "error" as const,
+      text: "Lockdown wurde blockiert, weil der Discord-Bot kein frisches Live-Signal sendet.",
+    };
+  }
+
   if (setup === "member-created") {
     return {
       tone: "success" as const,

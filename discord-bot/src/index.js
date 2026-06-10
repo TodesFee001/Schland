@@ -84,15 +84,11 @@ const LOCKDOWN_CHANNEL_CONCURRENCY = 3;
 client.once(Events.ClientReady, async () => {
   console.log(`Schland bot online as ${client.user.tag}`);
 
-  await refreshPrivacy();
-  await fullSyncGuild("startup");
-  await primeVoiceSessions();
-  await pollInvites();
-  await pollLockdownCommands();
-  await pollModerationActions();
-  await pollAuditLogs("startup");
-  await sendHeartbeat();
+  startBotTimers();
+  await runStartupTasks();
+});
 
+function startBotTimers() {
   timers.push(setInterval(() => void flushMessages(), config.activityFlushMs));
   timers.push(setInterval(() => void flushVoiceSessions(), config.voiceFlushMs));
   timers.push(setInterval(() => void sendHeartbeat(), config.heartbeatMs));
@@ -102,7 +98,28 @@ client.once(Events.ClientReady, async () => {
   timers.push(setInterval(() => void refreshPrivacy(), config.privacyRefreshMs));
   timers.push(setInterval(() => void fullSyncGuild("interval"), config.fullSyncIntervalMs));
   timers.push(setInterval(() => void pollAuditLogs("interval"), config.auditPollMs));
-});
+}
+
+async function runStartupTasks() {
+  const tasks = [
+    ["refresh privacy", () => refreshPrivacy()],
+    ["send heartbeat", () => sendHeartbeat()],
+    ["full sync", () => fullSyncGuild("startup")],
+    ["prime voice sessions", () => primeVoiceSessions()],
+    ["poll invites", () => pollInvites()],
+    ["poll lockdown commands", () => pollLockdownCommands()],
+    ["poll moderation actions", () => pollModerationActions()],
+    ["poll audit logs", () => pollAuditLogs("startup")],
+  ];
+
+  for (const [label, task] of tasks) {
+    try {
+      await task();
+    } catch (error) {
+      console.error(`Startup task failed: ${label}`, errorMessage(error));
+    }
+  }
+}
 
 client.on(Events.GuildMemberAdd, (member) => {
   if (!isConfiguredGuild(member.guild.id) || member.user.bot) {

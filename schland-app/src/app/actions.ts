@@ -883,6 +883,11 @@ export async function activateLockdownAction(formData: FormData) {
       details: error.details,
       message: error.message,
     });
+
+    if (error.message.toLowerCase().includes("lockdown bot offline")) {
+      redirect("/?section=settings&setup=lockdown-bot-offline");
+    }
+
     redirect("/?section=settings&setup=lockdown-failed");
   }
 
