@@ -1078,6 +1078,7 @@ async function restoreDiscordOverwritesFromAudit(command) {
   const plans = buildOverwriteRestorePlansFromAudit(entries);
   const failed = [];
   const skipped = [];
+  let filledFromCurrent = 0;
   let restored = 0;
   let deleted = 0;
 
@@ -1111,13 +1112,28 @@ async function restoreDiscordOverwritesFromAudit(command) {
           },
         );
         deleted += 1;
-      } else if (plan.allow !== null && plan.deny !== null) {
+      } else {
+        const resolvedPlan = resolveIncompleteAuditRestorePlan(plan, channel);
+
+        if (resolvedPlan.filled) {
+          filledFromCurrent += 1;
+        }
+
+        if (resolvedPlan.allow === null || resolvedPlan.deny === null) {
+          skipped.push({
+            channelId: plan.channelId,
+            reason: "incomplete_audit_state",
+            overwriteId: plan.overwriteId,
+          });
+          continue;
+        }
+
         await discordApi(
           `/channels/${plan.channelId}/permissions/${plan.overwriteId}`,
           {
             body: JSON.stringify({
-              allow: plan.allow,
-              deny: plan.deny,
+              allow: resolvedPlan.allow,
+              deny: resolvedPlan.deny,
               type: plan.overwriteType,
             }),
             headers: {
@@ -1129,13 +1145,6 @@ async function restoreDiscordOverwritesFromAudit(command) {
           },
         );
         restored += 1;
-      } else {
-        skipped.push({
-          channelId: plan.channelId,
-          reason: "incomplete_audit_state",
-          overwriteId: plan.overwriteId,
-        });
-        continue;
       }
 
       await delay(LOCKDOWN_AUDIT_RESTORE_WRITE_DELAY_MS);
@@ -1159,6 +1168,7 @@ async function restoreDiscordOverwritesFromAudit(command) {
       deleted,
       failed,
       fetchedAuditEntries: entries.length,
+      filledFromCurrent,
       mode: "audit_overwrite_restore",
       plans: plans.length,
       restored,
@@ -1287,6 +1297,25 @@ function buildOverwriteRestorePlansFromAudit(entries) {
   }
 
   return [...plans.values()];
+}
+
+function resolveIncompleteAuditRestorePlan(plan, channel) {
+  const overwrite = channel.permissionOverwrites.cache.get(plan.overwriteId);
+  let allow = plan.allow;
+  let deny = plan.deny;
+  let filled = false;
+
+  if (allow === null) {
+    allow = overwrite ? String(overwrite.allow.bitfield) : "0";
+    filled = true;
+  }
+
+  if (deny === null) {
+    deny = overwrite ? String(overwrite.deny.bitfield) : "0";
+    filled = true;
+  }
+
+  return { allow, deny, filled };
 }
 
 function getAuditPermissionChangeValue(changes, key, side) {

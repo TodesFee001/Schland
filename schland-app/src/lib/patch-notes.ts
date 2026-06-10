@@ -19,6 +19,7 @@ export const patchNotes: PatchNote[] = [
       "Discord-429-Antworten werden automatisch mit Backoff erneut versucht.",
       "Bereits geloeschte Overwrites werden beim Wiederholungslauf als erledigt behandelt.",
       "Rohes Discord-Audit-Log wird jetzt mit old_value/new_value gelesen, damit Update/Delete-Overwrites nicht uebersprungen werden.",
+      "Unvollstaendige Audit-Bitsets werden aus aktuellem Overwrite oder 0 ergaenzt, damit @everyone-Restfaelle wiederhergestellt werden koennen.",
       "Lockdown-Bot-API reicht Reparaturmodus und Zeitfenster an den Railway-Bot durch.",
     ],
     title: "Discord-Rechte per Audit-Log reparieren",
