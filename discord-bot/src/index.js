@@ -43,15 +43,29 @@ const LOCKDOWN_PERMISSION_KEYS = [
   "ViewChannel",
   "SendMessages",
   "SendMessagesInThreads",
+  "SendTTSMessages",
+  "EmbedLinks",
   "CreatePublicThreads",
   "CreatePrivateThreads",
+  "ManageThreads",
   "AddReactions",
   "AttachFiles",
+  "MentionEveryone",
+  "UseExternalEmojis",
+  "UseExternalStickers",
   "Connect",
   "Speak",
   "Stream",
   "UseVAD",
+  "SendVoiceMessages",
+  "UseSoundboard",
   "UseApplicationCommands",
+  "CreateEvents",
+  "ManageEvents",
+  "CreateInstantInvite",
+  "ManageChannels",
+  "ManageMessages",
+  "ManageWebhooks",
 ].filter((key) => PermissionFlagsBits[key] !== undefined);
 const DISCORD_EPOCH_MS = 1_420_070_400_000n;
 const LOCKDOWN_AUDIT_RESTORE_WRITE_DELAY_MS = 1_500;
@@ -62,6 +76,10 @@ const LOCKDOWN_AUDIT_OVERWRITE_ACTIONS = [
   AuditLogEvent.ChannelOverwriteUpdate,
   AuditLogEvent.ChannelOverwriteDelete,
 ];
+const LOCKDOWN_ROLE_QUARANTINE_MODE = "member_role_quarantine";
+const LOCKDOWN_LEGACY_OVERWRITE_MODE = "legacy_overwrites";
+const LOCKDOWN_MEMBER_CONCURRENCY = 3;
+const LOCKDOWN_CHANNEL_CONCURRENCY = 3;
 
 client.once(Events.ClientReady, async () => {
   console.log(`Schland bot online as ${client.user.tag}`);
@@ -708,11 +726,11 @@ async function executeLockdownCommand(command) {
     importantChannelIds.push(config.inviteChannelId);
   }
 
-  const preLockdownSnapshot =
-    Array.isArray(command.preLockdownSnapshot) &&
-    command.preLockdownSnapshot.length > 0
-      ? command.preLockdownSnapshot
-      : await captureDiscordLockdownSnapshot(importantChannelIds);
+  const preLockdownSnapshot = hasLockdownSnapshotPayload(command.preLockdownSnapshot)
+    ? command.preLockdownSnapshot
+    : config.lockdownStrategy === LOCKDOWN_LEGACY_OVERWRITE_MODE
+      ? await captureDiscordLockdownSnapshot(importantChannelIds)
+      : null;
   const recipientStatus = await sendLockdownEmergencyMessages(
     command,
     importantChannelIds,
@@ -900,6 +918,26 @@ async function captureDiscordLockdownSnapshot(importantChannelIds) {
 async function applyDiscordLockdown(
   command,
   importantChannelIds,
+  preLockdownSnapshot = null,
+) {
+  if (shouldUseRoleQuarantineLockdown(preLockdownSnapshot)) {
+    return applyDiscordRoleQuarantineLockdown(
+      command,
+      importantChannelIds,
+      preLockdownSnapshot,
+    );
+  }
+
+  return applyDiscordLegacyLockdown(
+    command,
+    importantChannelIds,
+    Array.isArray(preLockdownSnapshot) ? preLockdownSnapshot : [],
+  );
+}
+
+async function applyDiscordLegacyLockdown(
+  command,
+  importantChannelIds,
   preLockdownSnapshot = [],
 ) {
   const guild = await getGuild();
@@ -976,11 +1014,194 @@ async function applyDiscordLockdown(
   };
 }
 
+async function applyDiscordRoleQuarantineLockdown(
+  command,
+  importantChannelIds,
+  preLockdownSnapshot = null,
+) {
+  const guild = await getGuild();
+  const me = guild.members.me ?? (await guild.members.fetchMe());
+
+  assertCanRunRoleQuarantineLockdown(me, "Lockdown");
+
+  await guild.roles.fetch();
+  await guild.channels.fetch();
+  await guild.members.fetch();
+
+  const importantChannels = new Set(importantChannelIds.filter(Boolean));
+  const lockdownRole = await ensureLockdownRole(
+    guild,
+    me,
+    getSnapshotLockdownRoleId(preLockdownSnapshot),
+  );
+  const snapshot = isRoleQuarantineSnapshot(preLockdownSnapshot)
+    ? normalizeRoleQuarantineSnapshot(preLockdownSnapshot, lockdownRole)
+    : captureRoleQuarantineSnapshot(guild, me, lockdownRole, importantChannels);
+  const reason = trimReason(`Schland Lockdown: ${command.reason ?? "Notfall"}`);
+  const failed = [];
+  const memberOverwriteFailures = [];
+  const memberFailures = [];
+  let changedChannelOverwrites = 0;
+  let changedMemberOverwrites = 0;
+  let lockedMembers = 0;
+  let removedRoleAssignments = 0;
+  let skippedMembers = 0;
+
+  await processWithConcurrency(
+    snapshot.channelOverwrites,
+    LOCKDOWN_CHANNEL_CONCURRENCY,
+    async (entry) => {
+      const record = toRecord(entry);
+      const channelId = String(record.channelId ?? "");
+      const roleId = String(record.roleId ?? lockdownRole.id);
+
+      if (!isDiscordSnowflake(channelId) || !isDiscordSnowflake(roleId)) {
+        return;
+      }
+
+      try {
+        const channel =
+          guild.channels.cache.get(channelId) ??
+          (await guild.channels.fetch(channelId));
+
+        if (!canEditChannelOverwrites(channel)) {
+          return;
+        }
+
+        await channel.permissionOverwrites.edit(
+          roleId,
+          buildLockdownOverwrite(record.important === true),
+          { reason },
+        );
+        changedChannelOverwrites += 1;
+      } catch (error) {
+        failed.push({
+          channelId,
+          channelName: String(record.channelName ?? channelId),
+          error: errorMessage(error),
+          roleId,
+        });
+      }
+    },
+  );
+
+  await processWithConcurrency(
+    snapshot.memberOverwrites,
+    LOCKDOWN_CHANNEL_CONCURRENCY,
+    async (entry) => {
+      const record = toRecord(entry);
+      const channelId = String(record.channelId ?? "");
+      const memberId = String(record.memberId ?? "");
+
+      if (!isDiscordSnowflake(channelId) || !isDiscordSnowflake(memberId)) {
+        return;
+      }
+
+      try {
+        const channel =
+          guild.channels.cache.get(channelId) ??
+          (await guild.channels.fetch(channelId));
+
+        if (!canEditChannelOverwrites(channel)) {
+          return;
+        }
+
+        await channel.permissionOverwrites.edit(
+          memberId,
+          buildLockdownOverwrite(record.important === true),
+          { reason },
+        );
+        changedMemberOverwrites += 1;
+      } catch (error) {
+        memberOverwriteFailures.push({
+          channelId,
+          channelName: String(record.channelName ?? channelId),
+          error: errorMessage(error),
+          memberId,
+        });
+      }
+    },
+  );
+
+  await processWithConcurrency(
+    snapshot.memberRoles,
+    LOCKDOWN_MEMBER_CONCURRENCY,
+    async (entry) => {
+      const record = toRecord(entry);
+      const memberId = String(record.memberId ?? "");
+
+      if (!isDiscordSnowflake(memberId)) {
+        return;
+      }
+
+      try {
+        const member =
+          guild.members.cache.get(memberId) ??
+          (await guild.members.fetch(memberId).catch(() => null));
+
+        if (!member || member.user.bot || isLockdownExemptMember(member, guild)) {
+          skippedMembers += 1;
+          return;
+        }
+
+        if (!member.roles.cache.has(lockdownRole.id)) {
+          await member.roles.add(lockdownRole.id, reason);
+        }
+
+        lockedMembers += 1;
+
+        const removableRoleIds = getManageableSnapshotRoleIds(
+          record.removeRoleIds,
+          guild,
+          me,
+        );
+
+        if (removableRoleIds.length > 0) {
+          await member.roles.remove(removableRoleIds, reason);
+          removedRoleAssignments += removableRoleIds.length;
+        }
+      } catch (error) {
+        memberFailures.push({
+          error: errorMessage(error),
+          memberId,
+          username: String(record.username ?? memberId),
+        });
+      }
+    },
+  );
+
+  return {
+    snapshot,
+    summary: {
+      changedChannelOverwrites,
+      changedMemberOverwrites,
+      channels: snapshot.channelOverwrites.length,
+      failed,
+      importantChannels: importantChannels.size,
+      lockedMembers,
+      memberFailures,
+      memberOverwriteFailures,
+      mode: LOCKDOWN_ROLE_QUARANTINE_MODE,
+      removedRoleAssignments,
+      skippedMembers,
+      targetMembers: snapshot.memberRoles.length,
+    },
+  };
+}
+
 async function restoreDiscordLockdown(snapshot) {
+  if (isRoleQuarantineSnapshot(snapshot)) {
+    return restoreDiscordRoleQuarantineLockdown(snapshot);
+  }
+
   if (!Array.isArray(snapshot) || snapshot.length === 0) {
     return cleanupDiscordLockdownWithoutSnapshot();
   }
 
+  return restoreDiscordLegacyLockdownSnapshot(snapshot);
+}
+
+async function restoreDiscordLegacyLockdownSnapshot(snapshot) {
   const guild = await getGuild();
   const me = guild.members.me ?? (await guild.members.fetchMe());
 
@@ -991,37 +1212,78 @@ async function restoreDiscordLockdown(snapshot) {
   await guild.channels.fetch();
 
   const failed = [];
+  const skipped = [];
+  const groupedSnapshot = groupLegacyLockdownSnapshotByChannel(snapshot);
   let restored = 0;
+  let restoredChannels = 0;
+  let removedOverwrites = 0;
 
-  for (const entry of snapshot) {
-    const record = toRecord(entry);
-    const channelId = String(record.channelId ?? "");
-    const roleId = String(record.roleId ?? "");
-
-    if (!isDiscordSnowflake(channelId) || !isDiscordSnowflake(roleId)) {
-      continue;
-    }
-
+  for (const [channelId, channelSnapshot] of groupedSnapshot.entries()) {
     try {
       const channel =
         guild.channels.cache.get(channelId) ??
         (await guild.channels.fetch(channelId));
 
       if (!canEditChannelOverwrites(channel)) {
+        skipped.push({ channelId, reason: "channel_not_editable" });
         continue;
       }
 
-      await channel.permissionOverwrites.edit(
-        roleId,
-        normalizePermissionSnapshot(record.permissions),
-        { reason: "Schland Lockdown aufgehoben" },
+      const nextOverwrites = [];
+
+      for (const overwrite of channel.permissionOverwrites.cache.values()) {
+        if (channelSnapshot.roleIds.has(overwrite.id)) {
+          continue;
+        }
+
+        nextOverwrites.push({
+          allow: overwrite.allow.bitfield.toString(),
+          deny: overwrite.deny.bitfield.toString(),
+          id: overwrite.id,
+          type: overwrite.type,
+        });
+      }
+
+      for (const entry of channelSnapshot.entries.values()) {
+        const record = toRecord(entry);
+        const roleId = String(record.roleId ?? "");
+        const bits = permissionSnapshotToOverwriteBits(record.permissions);
+
+        if (!isDiscordSnowflake(roleId)) {
+          continue;
+        }
+
+        if (!bits.hasAny) {
+          removedOverwrites += 1;
+          continue;
+        }
+
+        nextOverwrites.push({
+          allow: bits.allow,
+          deny: bits.deny,
+          id: roleId,
+          type: 0,
+        });
+        restored += 1;
+      }
+
+      await discordApi(
+        `/channels/${channelId}`,
+        {
+          body: JSON.stringify({ permission_overwrites: nextOverwrites }),
+          headers: {
+            "X-Audit-Log-Reason": encodeURIComponent(
+              "Schland Lockdown aufgehoben",
+            ),
+          },
+          method: "PATCH",
+        },
       );
-      restored += 1;
+      restoredChannels += 1;
     } catch (error) {
       failed.push({
         channelId,
         error: errorMessage(error),
-        roleId,
       });
     }
   }
@@ -1029,8 +1291,181 @@ async function restoreDiscordLockdown(snapshot) {
   return {
     summary: {
       failed,
+      mode: "legacy_snapshot_channel_restore",
+      removedOverwrites,
       restored,
+      restoredChannels,
+      skipped,
       snapshotEntries: snapshot.length,
+    },
+  };
+}
+
+async function restoreDiscordRoleQuarantineLockdown(snapshot) {
+  const guild = await getGuild();
+  const me = guild.members.me ?? (await guild.members.fetchMe());
+
+  assertCanRunRoleQuarantineLockdown(me, "Lockdown-Restore");
+
+  await guild.roles.fetch();
+  await guild.channels.fetch();
+  await guild.members.fetch();
+
+  const normalizedSnapshot = normalizeRoleQuarantineSnapshot(snapshot);
+  const lockdownRoleId = getSnapshotLockdownRoleId(normalizedSnapshot);
+  const failed = [];
+  const memberOverwriteFailures = [];
+  const memberFailures = [];
+  let restoredChannelOverwrites = 0;
+  let restoredMemberOverwrites = 0;
+  let restoredMembers = 0;
+  let restoredRoleAssignments = 0;
+  let removedLockdownRoles = 0;
+  let skippedMembers = 0;
+
+  await processWithConcurrency(
+    normalizedSnapshot.memberRoles,
+    LOCKDOWN_MEMBER_CONCURRENCY,
+    async (entry) => {
+      const record = toRecord(entry);
+      const memberId = String(record.memberId ?? "");
+
+      if (!isDiscordSnowflake(memberId)) {
+        return;
+      }
+
+      try {
+        const member =
+          guild.members.cache.get(memberId) ??
+          (await guild.members.fetch(memberId).catch(() => null));
+
+        if (!member || member.user.bot || isLockdownExemptMember(member, guild)) {
+          skippedMembers += 1;
+          return;
+        }
+
+        const restoreRoleIds = getManageableSnapshotRoleIds(
+          record.removeRoleIds,
+          guild,
+          me,
+        ).filter((roleId) => !member.roles.cache.has(roleId));
+
+        if (restoreRoleIds.length > 0) {
+          await member.roles.add(restoreRoleIds, "Schland Lockdown aufgehoben");
+          restoredRoleAssignments += restoreRoleIds.length;
+        }
+
+        if (
+          lockdownRoleId &&
+          member.roles.cache.has(lockdownRoleId) &&
+          canManageRole(guild.roles.cache.get(lockdownRoleId), me, guild)
+        ) {
+          await member.roles.remove(lockdownRoleId, "Schland Lockdown aufgehoben");
+          removedLockdownRoles += 1;
+        }
+
+        restoredMembers += 1;
+      } catch (error) {
+        memberFailures.push({
+          error: errorMessage(error),
+          memberId,
+          username: String(record.username ?? memberId),
+        });
+      }
+    },
+  );
+
+  await processWithConcurrency(
+    normalizedSnapshot.channelOverwrites,
+    LOCKDOWN_CHANNEL_CONCURRENCY,
+    async (entry) => {
+      const record = toRecord(entry);
+      const channelId = String(record.channelId ?? "");
+      const roleId = String(record.roleId ?? lockdownRoleId ?? "");
+
+      if (!isDiscordSnowflake(channelId) || !isDiscordSnowflake(roleId)) {
+        return;
+      }
+
+      try {
+        const channel =
+          guild.channels.cache.get(channelId) ??
+          (await guild.channels.fetch(channelId));
+
+        if (!canEditChannelOverwrites(channel)) {
+          return;
+        }
+
+        await channel.permissionOverwrites.edit(
+          roleId,
+          normalizePermissionSnapshot(record.permissions),
+          { reason: "Schland Lockdown aufgehoben" },
+        );
+        restoredChannelOverwrites += 1;
+      } catch (error) {
+        failed.push({
+          channelId,
+          error: errorMessage(error),
+          roleId,
+        });
+      }
+    },
+  );
+
+  await processWithConcurrency(
+    normalizedSnapshot.memberOverwrites,
+    LOCKDOWN_CHANNEL_CONCURRENCY,
+    async (entry) => {
+      const record = toRecord(entry);
+      const channelId = String(record.channelId ?? "");
+      const memberId = String(record.memberId ?? "");
+
+      if (!isDiscordSnowflake(channelId) || !isDiscordSnowflake(memberId)) {
+        return;
+      }
+
+      try {
+        const channel =
+          guild.channels.cache.get(channelId) ??
+          (await guild.channels.fetch(channelId));
+
+        if (!canEditChannelOverwrites(channel)) {
+          return;
+        }
+
+        await channel.permissionOverwrites.edit(
+          memberId,
+          normalizePermissionSnapshot(record.permissions),
+          { reason: "Schland Lockdown aufgehoben" },
+        );
+        restoredMemberOverwrites += 1;
+      } catch (error) {
+        memberOverwriteFailures.push({
+          channelId,
+          error: errorMessage(error),
+          memberId,
+        });
+      }
+    },
+  );
+
+  return {
+    snapshot: normalizedSnapshot,
+    summary: {
+      failed,
+      memberFailures,
+      memberOverwriteFailures,
+      mode: LOCKDOWN_ROLE_QUARANTINE_MODE,
+      removedLockdownRoles,
+      restoredChannelOverwrites,
+      restoredMemberOverwrites,
+      restoredMembers,
+      restoredRoleAssignments,
+      skippedMembers,
+      snapshotEntries:
+        normalizedSnapshot.channelOverwrites.length +
+        normalizedSnapshot.memberOverwrites.length +
+        normalizedSnapshot.memberRoles.length,
     },
   };
 }
@@ -1050,6 +1485,7 @@ async function cleanupDiscordLockdownWithoutSnapshot() {
   const targetRoleIds = new Set(targetRoles.map((role) => role.id));
   const failed = [];
   let repaired = 0;
+  let removedQuarantineRoles = 0;
   let inspected = 0;
 
   for (const channel of guild.channels.cache.values()) {
@@ -1088,11 +1524,42 @@ async function cleanupDiscordLockdownWithoutSnapshot() {
     }
   }
 
+  const lockdownRole = getLockdownRoleFromGuild(guild);
+
+  if (
+    lockdownRole &&
+    me.permissions.has(PermissionFlagsBits.ManageRoles) &&
+    canManageRole(lockdownRole, me, guild)
+  ) {
+    await guild.members.fetch();
+
+    for (const member of getLockdownTargetMembers(guild)) {
+      if (!member.roles.cache.has(lockdownRole.id)) {
+        continue;
+      }
+
+      try {
+        await member.roles.remove(
+          lockdownRole.id,
+          "Schland Lockdown Notfall-Reparatur",
+        );
+        removedQuarantineRoles += 1;
+      } catch (error) {
+        failed.push({
+          error: errorMessage(error),
+          memberId: member.id,
+          roleId: lockdownRole.id,
+        });
+      }
+    }
+  }
+
   return {
     summary: {
       failed,
       inspected,
       repaired,
+      removedQuarantineRoles,
       snapshotEntries: 0,
       mode: "fallback_cleanup",
     },
@@ -1522,6 +1989,328 @@ function getLockdownTargetRoles(guild) {
   }
 
   return roles;
+}
+
+function shouldUseRoleQuarantineLockdown(preLockdownSnapshot) {
+  if (isRoleQuarantineSnapshot(preLockdownSnapshot)) {
+    return true;
+  }
+
+  if (Array.isArray(preLockdownSnapshot) && preLockdownSnapshot.length > 0) {
+    return false;
+  }
+
+  return config.lockdownStrategy === LOCKDOWN_ROLE_QUARANTINE_MODE;
+}
+
+function hasLockdownSnapshotPayload(value) {
+  return (
+    (Array.isArray(value) && value.length > 0) ||
+    isRoleQuarantineSnapshot(value)
+  );
+}
+
+function isRoleQuarantineSnapshot(value) {
+  return toRecord(value).mode === LOCKDOWN_ROLE_QUARANTINE_MODE;
+}
+
+function normalizeRoleQuarantineSnapshot(value, lockdownRole = null) {
+  const record = toRecord(value);
+  const lockdownRoleRecord = toRecord(record.lockdownRole);
+  const lockdownRoleId =
+    String(lockdownRoleRecord.id ?? lockdownRole?.id ?? "") || null;
+
+  return {
+    capturedAt: String(record.capturedAt ?? new Date().toISOString()),
+    channelOverwrites: Array.isArray(record.channelOverwrites)
+      ? record.channelOverwrites
+      : [],
+    lockdownRole: {
+      id: isDiscordSnowflake(lockdownRoleId) ? lockdownRoleId : lockdownRole?.id ?? null,
+      name: String(
+        lockdownRoleRecord.name ?? lockdownRole?.name ?? config.lockdownRoleName,
+      ),
+    },
+    memberOverwrites: Array.isArray(record.memberOverwrites)
+      ? record.memberOverwrites
+      : [],
+    memberRoles: Array.isArray(record.memberRoles) ? record.memberRoles : [],
+    mode: LOCKDOWN_ROLE_QUARANTINE_MODE,
+    version: 2,
+  };
+}
+
+function getSnapshotLockdownRoleId(value) {
+  const record = toRecord(value);
+  const lockdownRoleId = String(toRecord(record.lockdownRole).id ?? "");
+
+  if (isDiscordSnowflake(lockdownRoleId)) {
+    return lockdownRoleId;
+  }
+
+  const channelOverwrites = Array.isArray(record.channelOverwrites)
+    ? record.channelOverwrites
+    : [];
+  const firstRoleId = String(toRecord(channelOverwrites[0]).roleId ?? "");
+
+  return isDiscordSnowflake(firstRoleId) ? firstRoleId : null;
+}
+
+async function ensureLockdownRole(guild, me, preferredRoleId = null) {
+  let role =
+    isDiscordSnowflake(preferredRoleId)
+      ? guild.roles.cache.get(preferredRoleId) ??
+        (await guild.roles.fetch(preferredRoleId).catch(() => null))
+      : null;
+
+  if (!role || role.managed) {
+    role = getLockdownRoleFromGuild(guild);
+  }
+
+  if (!role) {
+    role = await guild.roles.create({
+      color: 0xb91c1c,
+      hoist: false,
+      mentionable: false,
+      name: config.lockdownRoleName,
+      permissions: [],
+      reason: "Schland Lockdown-Rolle vorbereiten",
+    });
+  }
+
+  if (!canManageRole(role, me, guild)) {
+    throw new Error(
+      `Bot kann Lockdown-Rolle ${role.name ?? role.id} nicht verwalten. Rolle muss unter der Bot-Rolle liegen.`,
+    );
+  }
+
+  if (role.permissions.bitfield !== 0n || role.hoist || role.mentionable) {
+    role = await role.edit(
+      {
+        hoist: false,
+        mentionable: false,
+        permissions: [],
+      },
+      "Schland Lockdown-Rolle haerten",
+    );
+  }
+
+  return role;
+}
+
+function getLockdownRoleFromGuild(guild) {
+  const lookupName = normalizeLookupText(config.lockdownRoleName);
+
+  return (
+    [...guild.roles.cache.values()]
+      .filter((role) => !role.managed)
+      .sort((left, right) => right.position - left.position)
+      .find((role) => normalizeLookupText(role.name) === lookupName) ?? null
+  );
+}
+
+function captureRoleQuarantineSnapshot(
+  guild,
+  me,
+  lockdownRole,
+  importantChannels,
+) {
+  const targetMembers = getLockdownTargetMembers(guild);
+  const targetMemberIds = new Set(targetMembers.map((member) => member.id));
+  const channelOverwrites = [];
+  const memberOverwrites = [];
+
+  for (const channel of guild.channels.cache.values()) {
+    if (!canEditChannelOverwrites(channel)) {
+      continue;
+    }
+
+    const important = importantChannels.has(channel.id);
+
+    channelOverwrites.push({
+      channelId: channel.id,
+      channelName: channel.name ?? channel.id,
+      important,
+      permissions: captureChannelRolePermissions(channel, lockdownRole.id),
+      roleId: lockdownRole.id,
+      roleName: lockdownRole.name,
+    });
+
+    for (const overwrite of channel.permissionOverwrites.cache.values()) {
+      if (overwrite.type !== 1 || !targetMemberIds.has(overwrite.id)) {
+        continue;
+      }
+
+      memberOverwrites.push({
+        channelId: channel.id,
+        channelName: channel.name ?? channel.id,
+        important,
+        memberId: overwrite.id,
+        permissions: captureChannelRolePermissions(channel, overwrite.id),
+      });
+    }
+  }
+
+  return {
+    capturedAt: new Date().toISOString(),
+    channelOverwrites: channelOverwrites.sort(compareSnapshotEntries),
+    lockdownRole: {
+      id: lockdownRole.id,
+      name: lockdownRole.name,
+    },
+    memberOverwrites: memberOverwrites.sort(compareSnapshotEntries),
+    memberRoles: targetMembers.map((member) =>
+      captureMemberRoleSnapshot(member, guild, me, lockdownRole),
+    ),
+    mode: LOCKDOWN_ROLE_QUARANTINE_MODE,
+    version: 2,
+  };
+}
+
+function captureMemberRoleSnapshot(member, guild, me, lockdownRole) {
+  const allRoleIds = [];
+  const keptRoleIds = [];
+  const removeRoleIds = [];
+  const skippedRoleIds = [];
+
+  for (const role of member.roles.cache.values()) {
+    if (role.id === guild.id || role.id === lockdownRole.id) {
+      continue;
+    }
+
+    allRoleIds.push(role.id);
+
+    if (
+      role.managed ||
+      role.permissions.has(PermissionFlagsBits.Administrator) ||
+      !canManageRole(role, me, guild)
+    ) {
+      keptRoleIds.push(role.id);
+      skippedRoleIds.push(role.id);
+      continue;
+    }
+
+    removeRoleIds.push(role.id);
+  }
+
+  return {
+    displayName: member.displayName,
+    keptRoleIds: keptRoleIds.sort(),
+    memberId: member.id,
+    removeRoleIds: removeRoleIds.sort(),
+    roleIds: allRoleIds.sort(),
+    skippedRoleIds: skippedRoleIds.sort(),
+    username: formatUser(member.user),
+  };
+}
+
+function getLockdownTargetMembers(guild) {
+  return [...guild.members.cache.values()]
+    .filter(
+      (member) =>
+        !member.user.bot &&
+        !isLockdownExemptMember(member, guild),
+    )
+    .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function isLockdownExemptMember(member, guild) {
+  return (
+    member.id === guild.ownerId ||
+    member.permissions.has(PermissionFlagsBits.Administrator)
+  );
+}
+
+function assertCanRunRoleQuarantineLockdown(me, label) {
+  if (!me.permissions.has(PermissionFlagsBits.ManageChannels)) {
+    throw new Error(`Bot braucht Manage Channels fuer ${label}.`);
+  }
+
+  if (!me.permissions.has(PermissionFlagsBits.ManageRoles)) {
+    throw new Error(`Bot braucht Manage Roles fuer ${label}.`);
+  }
+}
+
+function canManageRole(role, me, guild) {
+  if (!role || role.id === guild.id || role.managed) {
+    return false;
+  }
+
+  const highestRole = me.roles?.highest;
+
+  return highestRole ? role.comparePositionTo(highestRole) < 0 : false;
+}
+
+function getManageableSnapshotRoleIds(roleIds, guild, me) {
+  if (!Array.isArray(roleIds)) {
+    return [];
+  }
+
+  return uniqueStrings(roleIds)
+    .filter(isDiscordSnowflake)
+    .filter((roleId) => canManageRole(guild.roles.cache.get(roleId), me, guild));
+}
+
+function compareSnapshotEntries(left, right) {
+  const leftRecord = toRecord(left);
+  const rightRecord = toRecord(right);
+  const leftKey = `${leftRecord.channelId ?? ""}:${leftRecord.roleId ?? leftRecord.memberId ?? ""}`;
+  const rightKey = `${rightRecord.channelId ?? ""}:${rightRecord.roleId ?? rightRecord.memberId ?? ""}`;
+
+  return leftKey.localeCompare(rightKey);
+}
+
+function groupLegacyLockdownSnapshotByChannel(snapshot) {
+  const groups = new Map();
+
+  for (const entry of snapshot) {
+    const record = toRecord(entry);
+    const channelId = String(record.channelId ?? "");
+    const roleId = String(record.roleId ?? "");
+
+    if (!isDiscordSnowflake(channelId) || !isDiscordSnowflake(roleId)) {
+      continue;
+    }
+
+    if (!groups.has(channelId)) {
+      groups.set(channelId, {
+        entries: new Map(),
+        roleIds: new Set(),
+      });
+    }
+
+    const group = groups.get(channelId);
+    group.entries.set(roleId, entry);
+    group.roleIds.add(roleId);
+  }
+
+  return groups;
+}
+
+function permissionSnapshotToOverwriteBits(value) {
+  const permissions = normalizePermissionSnapshot(value);
+  let allow = 0n;
+  let deny = 0n;
+
+  for (const key of LOCKDOWN_PERMISSION_KEYS) {
+    const bit = PermissionFlagsBits[key];
+
+    if (bit === undefined) {
+      continue;
+    }
+
+    if (permissions[key] === true) {
+      allow |= BigInt(bit);
+    } else if (permissions[key] === false) {
+      deny |= BigInt(bit);
+    }
+  }
+
+  return {
+    allow: allow.toString(),
+    deny: deny.toString(),
+    hasAny: allow !== 0n || deny !== 0n,
+  };
 }
 
 function canEditChannelOverwrites(channel) {
@@ -2190,6 +2979,8 @@ function loadConfig() {
     lockdownReadOnlyChannelIds: readList(env.LOCKDOWN_READONLY_CHANNEL_IDS),
     lockdownRecipientDiscordIds: readList(env.LOCKDOWN_RECIPIENT_DISCORD_IDS),
     lockdownRecipientUsernames: readList(env.LOCKDOWN_RECIPIENT_USERNAMES),
+    lockdownRoleName: env.LOCKDOWN_ROLE_NAME?.trim() || "SCHLAND_LOCKDOWN",
+    lockdownStrategy: readLockdownStrategy(env.LOCKDOWN_STRATEGY),
     moderationPollMs: readMs(env.MODERATION_POLL_MS, 5_000),
     privacyRefreshMs: readMs(env.PRIVACY_REFRESH_MS, 30_000),
     syncToken: env.DISCORD_BOT_SYNC_TOKEN.trim(),
@@ -2201,6 +2992,14 @@ function readMs(value, fallback) {
   const number = Number(value);
 
   return Number.isFinite(number) && number >= 1000 ? Math.trunc(number) : fallback;
+}
+
+function readLockdownStrategy(value) {
+  const strategy = normalizeLookupText(value);
+
+  return strategy === LOCKDOWN_LEGACY_OVERWRITE_MODE
+    ? LOCKDOWN_LEGACY_OVERWRITE_MODE
+    : LOCKDOWN_ROLE_QUARANTINE_MODE;
 }
 
 function readList(value) {
@@ -2344,6 +3143,22 @@ function chunkArray(values, size) {
   }
 
   return chunks;
+}
+
+async function processWithConcurrency(values, limit, worker) {
+  const items = Array.isArray(values) ? values : [];
+  const workerCount = Math.max(1, Math.min(Number(limit) || 1, items.length || 1));
+  let index = 0;
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (index < items.length) {
+        const item = items[index];
+        index += 1;
+        await worker(item);
+      }
+    }),
+  );
 }
 
 function isDiscordSnowflake(value) {

@@ -11,6 +11,22 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "10.06.2026",
+    id: "lockdown-role-quarantine",
+    items: [
+      "Discord-Lockdown nutzt fuer neue Aktivierungen einen schnellen Rollen-Quarantaene-Modus statt tausender Channel/Rollen-Overwrites.",
+      "Nicht-Admin-Mitglieder bekommen temporaer eine Lockdown-Rolle, normale verwaltbare Rollen werden im Snapshot geparkt und beim Entsperren wiederhergestellt.",
+      "Wichtige Channels bleiben nur lesbar, alle anderen Channels werden fuer die Lockdown-Rolle dicht gemacht.",
+      "Bestehende mitgliederspezifische Channel-Overwrites werden mitgesichert und waehrend des Lockdowns ebenfalls hart eingeschraenkt.",
+      "Lockdown sperrt jetzt auch typische Kanal-, Thread-, Webhook-, Invite- und Message-Management-Rechte.",
+      "Alte grosse Lockdown-Snapshots werden beim Restore kanalweise wiederhergestellt, damit der Rueckbau nicht mehr tausende Einzelaktionen braucht.",
+      "Alte Lockdown-Snapshots bleiben kompatibel, damit vorhandene Restore-Laeufe weiter funktionieren.",
+    ],
+    title: "Lockdown schneller und haerter",
+    type: "fix",
+    version: "0.9.14",
+  },
+  {
+    date: "10.06.2026",
     id: "lockdown-dm-before-channel-lock",
     items: [
       "Lockdown-Notfallschluessel wird jetzt direkt nach Snapshot-Sicherung per DM verschickt.",

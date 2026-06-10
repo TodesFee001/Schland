@@ -63,7 +63,7 @@ export async function GET(request: Request) {
   );
   const restoreSnapshot = needsRestoreSnapshot
     ? await getLatestLockdownSnapshot()
-    : [];
+    : null;
 
   return NextResponse.json({
     commands: rows.map((row) => mapCommand(row, restoreSnapshot)),
@@ -214,7 +214,7 @@ async function getLatestLockdownSnapshot() {
 
   const snapshot = asRecord(asRecord(data).metadata).snapshot;
 
-  return Array.isArray(snapshot) ? snapshot : [];
+  return isLockdownSnapshotPayload(snapshot) ? snapshot : [];
 }
 
 async function updateLockdownBotState(
@@ -253,7 +253,7 @@ async function updateLockdownBotState(
   }
 }
 
-function mapCommand(row: unknown, restoreSnapshot: unknown[]) {
+function mapCommand(row: unknown, restoreSnapshot: unknown) {
   const command = asRecord(row);
   const action = asText(command.action) ?? "activate";
   const metadata = asRecord(command.metadata);
@@ -269,7 +269,9 @@ function mapCommand(row: unknown, restoreSnapshot: unknown[]) {
     reason: asText(command.reason) ?? "Schland Lockdown",
     recipientDiscordIds: asTextArray(command.recipient_discord_ids),
     recipientUsernames: asTextArray(command.recipient_usernames),
-    preLockdownSnapshot: Array.isArray(commandSnapshot) ? commandSnapshot : [],
+    preLockdownSnapshot: isLockdownSnapshotPayload(commandSnapshot)
+      ? commandSnapshot
+      : [],
     repairMode: asText(metadata.repairMode),
     restoreSnapshot: action === "deactivate" ? restoreSnapshot : [],
     restoreFrom: asText(metadata.restoreFrom),
@@ -277,6 +279,13 @@ function mapCommand(row: unknown, restoreSnapshot: unknown[]) {
     status: String(command.status ?? "pending"),
     triggeredByName: asText(command.triggered_by_name) ?? "Schland Verwaltung",
   };
+}
+
+function isLockdownSnapshotPayload(value: unknown) {
+  return (
+    Array.isArray(value) ||
+    (typeof value === "object" && value !== null)
+  );
 }
 
 function asTextArray(value: unknown) {
