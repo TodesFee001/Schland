@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "10.06.2026",
+    id: "discord-member-fetch-backoff",
+    items: [
+      "Discord-Bot cached den kompletten Member-Fetch, damit Lockdown nicht mehrfach Gateway Opcode 8 ausloest.",
+      "Opcode-8-Rate-Limits werden mit Discord-Retry-Zeit abgewartet, statt als Lockdown-Fehler im Protokoll zu landen.",
+      "Beim Bot-Start wird die Lockdown-Queue vor dem grossen Vollabgleich verarbeitet.",
+    ],
+    title: "Discord Member-Fetch gedrosselt",
+    type: "fix",
+    version: "0.9.18",
+  },
+  {
+    date: "10.06.2026",
     id: "lockdown-dm-delivery-guard",
     items: [
       "Lockdown bricht vor jeder Discord-Rechteaenderung ab, wenn kein Notfallschluessel per DM zugestellt wurde.",

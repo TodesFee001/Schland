@@ -50,6 +50,8 @@ const LOCKDOWN_ROLE_QUARANTINE_MODE = "member_role_quarantine";
 const LOCKDOWN_LEGACY_OVERWRITE_MODE = "legacy_overwrites";
 const LOCKDOWN_MEMBER_CONCURRENCY = 3;
 const LOCKDOWN_CHANNEL_CONCURRENCY = 3;
+const GUILD_MEMBER_CACHE_MAX_AGE_MS = 5 * 60_000;
+const GUILD_MEMBER_FETCH_MAX_RETRIES = 3;
 
 const config = loadConfig();
 const client = new Client({
@@ -78,6 +80,8 @@ let messageFlushRunning = false;
 let moderationPollRunning = false;
 let voiceFlushRunning = false;
 let lastFullSyncStats = null;
+let guildMembersFetchPromise = null;
+let lastGuildMembersFetchAt = 0;
 let lockdownQueueSize = 0;
 let moderationQueueSize = 0;
 
@@ -104,11 +108,11 @@ async function runStartupTasks() {
   const tasks = [
     ["refresh privacy", () => refreshPrivacy()],
     ["send heartbeat", () => sendHeartbeat()],
-    ["full sync", () => fullSyncGuild("startup")],
-    ["prime voice sessions", () => primeVoiceSessions()],
-    ["poll invites", () => pollInvites()],
     ["poll lockdown commands", () => pollLockdownCommands()],
     ["poll moderation actions", () => pollModerationActions()],
+    ["poll invites", () => pollInvites()],
+    ["prime voice sessions", () => primeVoiceSessions()],
+    ["full sync", () => fullSyncGuild("startup")],
     ["poll audit logs", () => pollAuditLogs("startup")],
   ];
 
@@ -256,7 +260,7 @@ async function fullSyncGuild(trigger) {
   try {
     const guild = await getGuild();
     await guild.roles.fetch();
-    const members = await guild.members.fetch();
+    const members = await getGuildMembers(guild, { label: `full-sync:${trigger}` });
     const humans = [...members.values()].filter((member) => !member.user.bot);
     let synced = 0;
 
@@ -851,7 +855,7 @@ async function resolveLockdownRecipients(command) {
 
   if (names.length > 0) {
     const guild = await getGuild();
-    await guild.members.fetch();
+    await getGuildMembers(guild, { label: "lockdown-recipients" });
 
     for (const member of guild.members.cache.values()) {
       if (member.user.bot) {
@@ -1062,7 +1066,7 @@ async function applyDiscordRoleQuarantineLockdown(
 
   await guild.roles.fetch();
   await guild.channels.fetch();
-  await guild.members.fetch();
+  await getGuildMembers(guild, { label: "lockdown-activate" });
 
   const importantChannels = new Set(importantChannelIds.filter(Boolean));
   const lockdownRole = await ensureLockdownRole(
@@ -1355,7 +1359,7 @@ async function restoreDiscordRoleQuarantineLockdown(snapshot) {
 
   await guild.roles.fetch();
   await guild.channels.fetch();
-  await guild.members.fetch();
+  await getGuildMembers(guild, { label: "lockdown-restore" });
 
   const normalizedSnapshot = normalizeRoleQuarantineSnapshot(snapshot);
   const lockdownRoleId = getSnapshotLockdownRoleId(normalizedSnapshot);
@@ -1577,7 +1581,7 @@ async function cleanupDiscordLockdownWithoutSnapshot() {
     me.permissions.has(PermissionFlagsBits.ManageRoles) &&
     canManageRole(lockdownRole, me, guild)
   ) {
-    await guild.members.fetch();
+    await getGuildMembers(guild, { label: "lockdown-fallback-cleanup" });
 
     for (const member of getLockdownTargetMembers(guild)) {
       if (!member.roles.cache.has(lockdownRole.id)) {
@@ -1617,7 +1621,7 @@ async function captureDiscordServerSnapshot() {
 
   await guild.roles.fetch();
   await guild.channels.fetch();
-  await guild.members.fetch();
+  await getGuildMembers(guild, { label: "server-snapshot" });
 
   const roles = [...guild.roles.cache.values()]
     .sort((left, right) => right.position - left.position)
@@ -2872,6 +2876,74 @@ function memberToPayload(member) {
 
 async function getGuild() {
   return client.guilds.cache.get(config.guildId) ?? client.guilds.fetch(config.guildId);
+}
+
+async function getGuildMembers(guild, options = {}) {
+  const label = options.label ?? "guild-members";
+  const now = Date.now();
+  const expectedMembers = Number(guild.memberCount ?? 0);
+  const cacheLooksComplete =
+    expectedMembers > 0 && guild.members.cache.size >= expectedMembers;
+
+  if (
+    !options.force &&
+    cacheLooksComplete &&
+    now - lastGuildMembersFetchAt <= GUILD_MEMBER_CACHE_MAX_AGE_MS
+  ) {
+    return guild.members.cache;
+  }
+
+  if (guildMembersFetchPromise) {
+    return guildMembersFetchPromise;
+  }
+
+  guildMembersFetchPromise = fetchGuildMembersWithBackoff(guild, label);
+
+  try {
+    return await guildMembersFetchPromise;
+  } finally {
+    guildMembersFetchPromise = null;
+  }
+}
+
+async function fetchGuildMembersWithBackoff(guild, label) {
+  for (let attempt = 0; attempt <= GUILD_MEMBER_FETCH_MAX_RETRIES; attempt += 1) {
+    try {
+      const members = await guild.members.fetch();
+      lastGuildMembersFetchAt = Date.now();
+      return members;
+    } catch (error) {
+      const retryAfterMs = getGatewayMemberFetchRetryAfterMs(error);
+
+      if (retryAfterMs === null || attempt >= GUILD_MEMBER_FETCH_MAX_RETRIES) {
+        throw error;
+      }
+
+      console.warn(
+        `Guild member fetch rate limited (${label}); retry in ${retryAfterMs}ms`,
+      );
+      await delay(retryAfterMs);
+    }
+  }
+
+  return guild.members.cache;
+}
+
+function getGatewayMemberFetchRetryAfterMs(error) {
+  const message = errorMessage(error);
+  const match = message.match(/opcode 8[\s\S]*?retry after\s+([0-9.]+)\s+seconds/i);
+
+  if (!match) {
+    return null;
+  }
+
+  const seconds = Number(match[1]);
+
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return 30_000;
+  }
+
+  return Math.min(Math.ceil(seconds * 1000) + 750, 90_000);
 }
 
 async function sendHeartbeat() {
