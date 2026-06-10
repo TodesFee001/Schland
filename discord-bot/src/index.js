@@ -993,7 +993,9 @@ async function cleanupDiscordLockdownWithoutSnapshot() {
       continue;
     }
 
-    for (const overwrite of channel.permissionOverwrites.cache.values()) {
+    const overwrites = [...channel.permissionOverwrites.cache.values()];
+
+    for (const overwrite of overwrites) {
       if (overwrite.type !== 0 || !targetRoleIds.has(overwrite.id)) {
         continue;
       }

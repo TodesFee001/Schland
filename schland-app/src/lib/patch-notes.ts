@@ -17,6 +17,7 @@ export const patchNotes: PatchNote[] = [
       "Ohne Snapshot entfernt der Bot gezielt erkannte Lockdown-Sperren von Nicht-Admin-Rollen.",
       "Lockdown-Aktivierung speichert Rechte jetzt vor der Notfall-DM-Aufloesung, damit Discord-Rate-Limits keinen fehlenden Snapshot mehr verursachen.",
       "Fehler beim Senden oder Aufloesen der Notfall-DMs werden protokolliert, blockieren aber nicht mehr den Rechte-Snapshot.",
+      "Notfall-Reparatur arbeitet mit einer stabilen Overwrite-Liste, damit Discord-Cache-Aenderungen den Restore nicht festhaengen.",
     ],
     title: "Lockdown-Restore abgesichert",
     type: "fix",
