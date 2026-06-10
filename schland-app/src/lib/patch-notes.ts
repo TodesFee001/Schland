@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "10.06.2026",
+    id: "discord-server-snapshot",
+    items: [
+      "Discord-Bot kann einen aktuellen Server-Snapshot ohne Rechteaenderung erfassen.",
+      "Snapshot enthaelt Rollen, Channel, Channel-Overwrites und Member-Rollenzuordnung.",
+      "Snapshot wird als Bot-Befehl mit Summary und Rohdaten in Supabase gespeichert.",
+    ],
+    title: "Discord-Server-Snapshot",
+    type: "system",
+    version: "0.9.12",
+  },
+  {
+    date: "10.06.2026",
     id: "discord-audit-lockdown-permission-restore",
     items: [
       "Discord-Bot kann Channel-Overwrite-Audit-Logs fuer ein Zeitfenster auslesen.",

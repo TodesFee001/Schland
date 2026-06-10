@@ -676,14 +676,16 @@ async function processLockdownCommand(command) {
 async function executeLockdownCommand(command) {
   if (command.action === "deactivate") {
     const restoreResult =
-      command.repairMode === "audit_overwrite_restore"
+      command.repairMode === "capture_server_snapshot"
+        ? await captureDiscordServerSnapshot()
+        : command.repairMode === "audit_overwrite_restore"
         ? await restoreDiscordOverwritesFromAudit(command)
         : await restoreDiscordLockdown(command.restoreSnapshot);
 
     return {
       channelSummary: restoreResult.summary,
       recipientStatus: [],
-      snapshot: command.restoreSnapshot ?? [],
+      snapshot: restoreResult.snapshot ?? command.restoreSnapshot ?? [],
     };
   }
 
@@ -1043,6 +1045,96 @@ async function cleanupDiscordLockdownWithoutSnapshot() {
       repaired,
       snapshotEntries: 0,
       mode: "fallback_cleanup",
+    },
+  };
+}
+
+async function captureDiscordServerSnapshot() {
+  const guild = await getGuild();
+
+  await guild.roles.fetch();
+  await guild.channels.fetch();
+  await guild.members.fetch();
+
+  const roles = [...guild.roles.cache.values()]
+    .sort((left, right) => right.position - left.position)
+    .map((role) => ({
+      color: role.color,
+      hoist: role.hoist,
+      id: role.id,
+      managed: role.managed,
+      mentionable: role.mentionable,
+      name: role.name,
+      permissions: role.permissions.bitfield.toString(),
+      position: role.position,
+    }));
+
+  const channels = [...guild.channels.cache.values()]
+    .sort((left, right) => {
+      const leftPosition = Number(left.rawPosition ?? left.position ?? 0);
+      const rightPosition = Number(right.rawPosition ?? right.position ?? 0);
+
+      return leftPosition - rightPosition;
+    })
+    .map((channel) => {
+      const overwrites = canEditChannelOverwrites(channel)
+        ? [...channel.permissionOverwrites.cache.values()].map((overwrite) => ({
+            allow: overwrite.allow.bitfield.toString(),
+            deny: overwrite.deny.bitfield.toString(),
+            id: overwrite.id,
+            type: overwrite.type,
+          }))
+        : [];
+
+      return {
+        id: channel.id,
+        name: channel.name ?? channel.id,
+        parentId: channel.parentId ?? null,
+        position: Number(channel.rawPosition ?? channel.position ?? 0),
+        type: channel.type,
+        overwrites,
+      };
+    });
+
+  const members = [...guild.members.cache.values()]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map((member) => ({
+      displayName: member.displayName,
+      id: member.id,
+      isBot: member.user.bot,
+      joinedAt: member.joinedAt?.toISOString() ?? null,
+      roles: member.roles.cache
+        .filter((role) => role.id !== guild.id)
+        .map((role) => role.id)
+        .sort(),
+      username: formatUser(member.user),
+    }));
+  const overwriteCount = channels.reduce(
+    (sum, channel) => sum + channel.overwrites.length,
+    0,
+  );
+  const snapshot = {
+    capturedAt: new Date().toISOString(),
+    channels,
+    guild: {
+      id: guild.id,
+      memberCount: guild.memberCount ?? members.length,
+      name: guild.name,
+    },
+    members,
+    roles,
+    version: 1,
+  };
+
+  return {
+    snapshot,
+    summary: {
+      channels: channels.length,
+      members: members.length,
+      mode: "capture_server_snapshot",
+      overwrites: overwriteCount,
+      roles: roles.length,
+      snapshotVersion: snapshot.version,
     },
   };
 }
