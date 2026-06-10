@@ -11,6 +11,19 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "10.06.2026",
+    id: "discord-bot-boot-check",
+    items: [
+      "Discord-Bot startet wieder: Lockdown-Konstanten werden vor der Konfiguration initialisiert.",
+      "Bot-Check fuehrt jetzt einen echten Boot-Smoke-Test aus, damit Runtime-Startfehler vor Railway auffallen.",
+      "Der Boot-Test laeuft ohne Discord-Login, prueft aber die komplette Modulinitialisierung.",
+      "Schneller Legacy-Restore erhaelt vorhandene Rechte-Bits, die im alten Snapshot nicht enthalten waren.",
+    ],
+    title: "Bot-Startfehler behoben",
+    type: "fix",
+    version: "0.9.16",
+  },
+  {
+    date: "10.06.2026",
     id: "lockdown-bot-heartbeat-guard",
     items: [
       "Lockdown-Aktivierung wird jetzt in Supabase blockiert, wenn der Discord-Bot laenger als 2 Minuten kein Live-Signal gesendet hat.",

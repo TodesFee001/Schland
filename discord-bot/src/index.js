@@ -9,36 +9,6 @@ import {
   PermissionFlagsBits,
 } from "discord.js";
 
-const config = loadConfig();
-const client = new Client({
-  intents: [
-    GatewayIntentBits.DirectMessages,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildModeration,
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildVoiceStates,
-  ],
-});
-
-const disabledAnalyticsIds = new Set();
-const messageCounts = new Map();
-const seenAuditLogIds = new Set();
-const voiceSessions = new Map();
-const timers = [];
-
-let invitePollRunning = false;
-let auditPollRunning = false;
-let fullSyncRunning = false;
-let heartbeatRunning = false;
-let lockdownPollRunning = false;
-let messageFlushRunning = false;
-let moderationPollRunning = false;
-let voiceFlushRunning = false;
-let lastFullSyncStats = null;
-let lockdownQueueSize = 0;
-let moderationQueueSize = 0;
-
 const LOCKDOWN_PERMISSION_KEYS = [
   "ViewChannel",
   "SendMessages",
@@ -80,6 +50,36 @@ const LOCKDOWN_ROLE_QUARANTINE_MODE = "member_role_quarantine";
 const LOCKDOWN_LEGACY_OVERWRITE_MODE = "legacy_overwrites";
 const LOCKDOWN_MEMBER_CONCURRENCY = 3;
 const LOCKDOWN_CHANNEL_CONCURRENCY = 3;
+
+const config = loadConfig();
+const client = new Client({
+  intents: [
+    GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildModeration,
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildVoiceStates,
+  ],
+});
+
+const disabledAnalyticsIds = new Set();
+const messageCounts = new Map();
+const seenAuditLogIds = new Set();
+const voiceSessions = new Map();
+const timers = [];
+
+let invitePollRunning = false;
+let auditPollRunning = false;
+let fullSyncRunning = false;
+let heartbeatRunning = false;
+let lockdownPollRunning = false;
+let messageFlushRunning = false;
+let moderationPollRunning = false;
+let voiceFlushRunning = false;
+let lastFullSyncStats = null;
+let lockdownQueueSize = 0;
+let moderationQueueSize = 0;
 
 client.once(Events.ClientReady, async () => {
   console.log(`Schland bot online as ${client.user.tag}`);
@@ -240,7 +240,11 @@ client.on(Events.Error, (error) => {
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 process.on("SIGINT", () => void shutdown("SIGINT"));
 
-await client.login(config.discordBotToken);
+if (process.env.SCHLAND_BOT_BOOT_CHECK === "1") {
+  console.log("Schland bot boot check ok");
+} else {
+  await client.login(config.discordBotToken);
+}
 
 async function fullSyncGuild(trigger) {
   if (fullSyncRunning) {
@@ -1246,9 +1250,15 @@ async function restoreDiscordLegacyLockdownSnapshot(snapshot) {
         continue;
       }
 
+      const currentOverwrites = new Map(
+        [...channel.permissionOverwrites.cache.values()].map((overwrite) => [
+          overwrite.id,
+          overwrite,
+        ]),
+      );
       const nextOverwrites = [];
 
-      for (const overwrite of channel.permissionOverwrites.cache.values()) {
+      for (const overwrite of currentOverwrites.values()) {
         if (channelSnapshot.roleIds.has(overwrite.id)) {
           continue;
         }
@@ -1264,11 +1274,15 @@ async function restoreDiscordLegacyLockdownSnapshot(snapshot) {
       for (const entry of channelSnapshot.entries.values()) {
         const record = toRecord(entry);
         const roleId = String(record.roleId ?? "");
-        const bits = permissionSnapshotToOverwriteBits(record.permissions);
 
         if (!isDiscordSnowflake(roleId)) {
           continue;
         }
+
+        const bits = permissionSnapshotToOverwriteBits(
+          record.permissions,
+          currentOverwrites.get(roleId),
+        );
 
         if (!bits.hasAny) {
           removedOverwrites += 1;
@@ -2304,22 +2318,26 @@ function groupLegacyLockdownSnapshotByChannel(snapshot) {
   return groups;
 }
 
-function permissionSnapshotToOverwriteBits(value) {
-  const permissions = normalizePermissionSnapshot(value);
-  let allow = 0n;
-  let deny = 0n;
+function permissionSnapshotToOverwriteBits(value, currentOverwrite = null) {
+  const record = toRecord(value);
+  let allow = currentOverwrite ? BigInt(currentOverwrite.allow.bitfield) : 0n;
+  let deny = currentOverwrite ? BigInt(currentOverwrite.deny.bitfield) : 0n;
 
   for (const key of LOCKDOWN_PERMISSION_KEYS) {
     const bit = PermissionFlagsBits[key];
 
-    if (bit === undefined) {
+    if (bit === undefined || !Object.hasOwn(record, key)) {
       continue;
     }
 
-    if (permissions[key] === true) {
-      allow |= BigInt(bit);
-    } else if (permissions[key] === false) {
-      deny |= BigInt(bit);
+    const bitValue = BigInt(bit);
+    allow &= ~bitValue;
+    deny &= ~bitValue;
+
+    if (record[key] === true) {
+      allow |= bitValue;
+    } else if (record[key] === false) {
+      deny |= bitValue;
     }
   }
 
