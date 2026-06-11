@@ -11,6 +11,19 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "11.06.2026",
+    id: "discord-member-intake-questionnaire",
+    items: [
+      "Discord-Bot verschickt Mitgliedern einen Aktenbogen per DM mit Discord-Formular.",
+      "Neue Mitglieder werden erst nach 3 Stunden automatisch angeschrieben.",
+      "Eingereichte Antworten werden in die Mitgliederakte uebernommen und im Aktenkopf zur Pruefung angezeigt.",
+      "Die angegebenen Ausnahme-Discord-IDs werden bei der einmaligen Anfrage an bestehende Mitglieder uebersprungen.",
+    ],
+    title: "Discord-Aktenbogen",
+    type: "feature",
+    version: "0.10.2",
+  },
+  {
+    date: "11.06.2026",
     id: "member-record-profile-images",
     items: [
       "Mitgliederakten koennen jetzt direkt im Aktenkopf ein Profilbild anzeigen.",

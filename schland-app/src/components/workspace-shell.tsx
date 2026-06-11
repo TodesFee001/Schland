@@ -1478,6 +1478,7 @@ function MembersSection({
                     </dl>
                   </div>
                 </div>
+                <MemberIntakePanel intake={selectedMember.intake} />
                 <form
                   action={uploadMemberProfileImageAction}
                   className="mt-3 grid gap-2 border-t border-[var(--line)] pt-3 lg:grid-cols-[1fr_1fr_auto]"
@@ -5073,6 +5074,45 @@ function MemberProfileImage({
           <span>Noch kein Profilbild</span>
         )}
       </div>
+    </div>
+  );
+}
+
+function MemberIntakePanel({ intake }: { intake: WorkspaceMember["intake"] }) {
+  const hasAnswers =
+    intake.status === "submitted" &&
+    Object.values(intake.answers).some((value) => value.trim().length > 0);
+
+  return (
+    <div className="mt-3 border-t border-[var(--line)] pt-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">Discord-Aktenbogen</h3>
+        <span className="border border-[var(--line)] bg-white px-2 py-1 text-xs font-medium">
+          {intake.statusLabel}
+        </span>
+      </div>
+
+      {hasAnswers ? (
+        <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+          <DetailRow label="Name" value={intake.answers.name || "-"} />
+          <DetailRow label="Alter" value={intake.answers.age || "-"} />
+          <DetailRow label="Wohnort" value={intake.answers.residence || "-"} />
+          <DetailRow label="Beruf" value={intake.answers.profession || "-"} />
+          <div className="sm:col-span-2">
+            <DetailRow
+              label="Weitere Angaben"
+              value={intake.answers.otherInfo || "-"}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <DetailRow label="Eingereicht" value={intake.answeredAt} />
+          </div>
+        </dl>
+      ) : (
+        <p className="mt-2 text-sm text-neutral-600">
+          Letzter Stand: {intake.requestedAt}
+        </p>
+      )}
     </div>
   );
 }

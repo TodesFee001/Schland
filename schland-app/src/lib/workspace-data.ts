@@ -19,6 +19,7 @@ export type WorkspaceMember = {
   displayName: string;
   ea: string;
   instagram: string;
+  intake: WorkspaceMemberIntake;
   invitedBy: string;
   lastActivity: string;
   linkedFiles: WorkspaceMemberFile[];
@@ -46,6 +47,21 @@ export type WorkspaceMemberFile = {
   relationType: string;
   sizeLabel: string;
   type: string;
+};
+
+export type WorkspaceMemberIntake = {
+  answeredAt: string;
+  answers: {
+    age: string;
+    name: string;
+    otherInfo: string;
+    profession: string;
+    residence: string;
+  };
+  raw: string;
+  requestedAt: string;
+  status: string;
+  statusLabel: string;
 };
 
 export type WorkspaceFolder = {
@@ -219,6 +235,7 @@ export type WorkspaceSyncStatus = {
   memberSkippedBots: number;
   memberUpserted: number;
   moderationQueueSize: number;
+  questionnaireQueueSize: number;
   rows: {
     active: boolean;
     label: string;
@@ -260,6 +277,23 @@ const inactiveLockdownStatus: LockdownStatus = {
   reason: "",
 };
 
+function emptyMemberIntake(): WorkspaceMemberIntake {
+  return {
+    answeredAt: "-",
+    answers: {
+      age: "",
+      name: "",
+      otherInfo: "",
+      profession: "",
+      residence: "",
+    },
+    raw: "",
+    requestedAt: "-",
+    status: "none",
+    statusLabel: "Nicht angefragt",
+  };
+}
+
 export const demoWorkspaceData: WorkspaceData = {
   source: "demo",
   lockdown: inactiveLockdownStatus,
@@ -282,6 +316,7 @@ export const demoWorkspaceData: WorkspaceData = {
       discordOnServer: true,
       displayName: "Elias",
       instagram: "",
+      intake: emptyMemberIntake(),
       snapchat: "",
       tiktok: "",
       stream: "",
@@ -332,6 +367,7 @@ export const demoWorkspaceData: WorkspaceData = {
       discordOnServer: true,
       displayName: "Mara",
       instagram: "",
+      intake: emptyMemberIntake(),
       snapchat: "",
       tiktok: "",
       stream: "",
@@ -374,6 +410,7 @@ export const demoWorkspaceData: WorkspaceData = {
       discordOnServer: true,
       displayName: "Noah",
       instagram: "",
+      intake: emptyMemberIntake(),
       snapchat: "",
       tiktok: "",
       stream: "",
@@ -796,6 +833,7 @@ export const demoWorkspaceData: WorkspaceData = {
     memberSkippedBots: 0,
     memberUpserted: 0,
     moderationQueueSize: 0,
+    questionnaireQueueSize: 0,
     rows: [
       ["Rollen-Sync", "Schema vorbereitet", true],
       ["Neue Mitglieder", "Auto-Aktenabgleich aktiv", true],
@@ -803,6 +841,7 @@ export const demoWorkspaceData: WorkspaceData = {
       ["Voice-Sessions", "Tabellen vorbereitet", true],
       ["Datenschutz Opt-out", "Datenbankregel vorbereitet", true],
       ["DB-Einladungen", "Live-Erstellung vorbereitet", true],
+      ["Aktenbogen-DMs", "DM-Abfrage vorbereitet", true],
       ["Moderationsregister", "Datenbankregister vorbereitet", true],
       ["Bot-Implementierung", "Cron-Sync vorbereitet", true],
     ].map(([label, status, active]) => ({
@@ -834,6 +873,7 @@ export async function getWorkspaceData(
       discordInvitesResult,
       moderationEventsResult,
       profilesResult,
+      intakeLogsResult,
       logsResult,
       lockdownResult,
       syncResult,
@@ -1019,6 +1059,12 @@ export async function getWorkspaceData(
         .order("display_name", { ascending: true }),
       supabase
         .from("member_case_logs")
+        .select("id, member_id, reason, success, created_at, old_value, new_value")
+        .eq("field_name", "discord_intake_questionnaire")
+        .order("created_at", { ascending: false })
+        .limit(memberCaseLoadLimit),
+      supabase
+        .from("member_case_logs")
         .select("id, username, action, reason, success, created_at, member_id")
         .order("created_at", { ascending: false })
         .limit(8),
@@ -1039,13 +1085,17 @@ export async function getWorkspaceData(
     collectWarning(warnings, discordInvitesResult.error?.message);
     collectWarning(warnings, moderationEventsResult.error?.message);
     collectWarning(warnings, profilesResult.error?.message);
+    collectWarning(warnings, intakeLogsResult.error?.message);
     collectWarning(warnings, logsResult.error?.message);
     collectWarning(warnings, lockdownResult.error?.message);
     collectWarning(warnings, syncResult.error?.message);
 
     return {
       source: "supabase",
-      members: mapMembers(membersResult.data ?? []),
+      members: mapMembers(
+        membersResult.data ?? [],
+        intakeLogsResult.data ?? [],
+      ),
       categories: mapCategories(categoriesResult.data ?? []),
       folders: mapFolders(foldersResult.data ?? []),
       files: mapFiles(filesResult.data ?? []),
@@ -1077,7 +1127,12 @@ function collectWarning(warnings: string[], message?: string) {
   }
 }
 
-function mapMembers(rows: Record<string, unknown>[]): WorkspaceMember[] {
+function mapMembers(
+  rows: Record<string, unknown>[],
+  intakeLogs: Record<string, unknown>[] = [],
+): WorkspaceMember[] {
+  const intakeByMemberId = mapMemberIntakeLogs(intakeLogs);
+
   return rows.map((row) => {
     const discordAnalyticsEnabled = row.discord_analytics_enabled !== false;
     const messageRows = asArray(row.message_activity_monthly);
@@ -1116,6 +1171,7 @@ function mapMembers(rows: Record<string, unknown>[]): WorkspaceMember[] {
       discordOnServer: Boolean(row.discord_on_server),
       displayName: String(row.discord_display_name ?? row.discord_username ?? "-"),
       instagram: String(row.instagram ?? ""),
+      intake: intakeByMemberId.get(String(row.id ?? "")) ?? emptyMemberIntake(),
       snapchat: String(row.snapchat ?? ""),
       tiktok: String(row.tiktok ?? ""),
       stream: String(row.stream ?? ""),
@@ -1155,6 +1211,46 @@ function mapMembers(rows: Record<string, unknown>[]): WorkspaceMember[] {
         .filter((file) => file.fileId && file.name),
     };
   });
+}
+
+function mapMemberIntakeLogs(
+  rows: Record<string, unknown>[],
+): Map<string, WorkspaceMemberIntake> {
+  const byMemberId = new Map<string, WorkspaceMemberIntake>();
+
+  for (const row of rows) {
+    const memberId = String(row.member_id ?? "");
+
+    if (!memberId || byMemberId.has(memberId)) {
+      continue;
+    }
+
+    byMemberId.set(memberId, mapMemberIntake(row));
+  }
+
+  return byMemberId;
+}
+
+function mapMemberIntake(row: Record<string, unknown>): WorkspaceMemberIntake {
+  const payload = parseJsonObject(row.new_value);
+  const answers = asObject(payload.answers);
+  const status = String(payload.status ?? (row.success ? "sent" : "failed"));
+  const answeredAt = status === "submitted" ? formatDate(String(row.created_at ?? "")) : "-";
+
+  return {
+    answeredAt,
+    answers: {
+      age: String(answers.age ?? ""),
+      name: String(answers.name ?? ""),
+      otherInfo: String(answers.otherInfo ?? ""),
+      profession: String(answers.profession ?? ""),
+      residence: String(answers.residence ?? ""),
+    },
+    raw: String(row.new_value ?? ""),
+    requestedAt: formatDate(String(row.created_at ?? "")),
+    status,
+    statusLabel: mapMemberIntakeStatus(status),
+  };
 }
 
 function mapCategories(rows: Record<string, unknown>[]): WorkspaceCategory[] {
@@ -1458,6 +1554,9 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
     liveSignalAgeSeconds === null ? "-" : formatAgeShort(liveSignalAgeSeconds);
   const liveVoiceSessions = Number(heartbeatMetadata.activeVoiceSessions ?? 0);
   const moderationQueueSize = Number(heartbeatMetadata.moderationQueueSize ?? 0);
+  const questionnaireQueueSize = Number(
+    heartbeatMetadata.questionnaireQueueSize ?? 0,
+  );
   const memberScanned = Number(memberMetadata.scanned ?? 0);
   const memberPageLimitHit = Boolean(memberMetadata.pageLimitHit);
   const memberSkippedBots = Number(memberMetadata.skippedBots ?? 0);
@@ -1511,6 +1610,7 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
     memberSkippedBots,
     memberUpserted,
     moderationQueueSize,
+    questionnaireQueueSize,
     rows: [
       {
         label: "Gateway-Herzschlag",
@@ -1558,6 +1658,15 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
         label: "DB-Einladungen",
         status: "Live-Erstellung aktiv",
         active: true,
+      },
+      {
+        label: "Aktenbogen-DMs",
+        status: liveSignalFresh
+          ? questionnaireQueueSize > 0
+            ? `${questionnaireQueueSize} offene Anfragen`
+            : "Bot-Abfrage live verbunden"
+          : "DM-Abfrage vorbereitet",
+        active: liveSignalFresh || !isRailwayLive,
       },
       {
         label: "Moderationsregister",
@@ -1611,6 +1720,19 @@ function mapMemberStatusKey(status: string): "active" | "archived" | "review" {
   }
 
   return "active";
+}
+
+function mapMemberIntakeStatus(status: string) {
+  const labels: Record<string, string> = {
+    failed: "DM fehlgeschlagen",
+    none: "Nicht angefragt",
+    sending: "Wird gesendet",
+    sent: "DM gesendet",
+    skipped: "Uebersprungen",
+    submitted: "Eingereicht - Pruefung",
+  };
+
+  return labels[status] ?? status;
 }
 
 function mapUserStatus(status: string) {
@@ -1860,6 +1982,20 @@ function asArray(value: unknown): Record<string, unknown>[] {
 
 function asObject(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : {};
+}
+
+function parseJsonObject(value: unknown): Record<string, unknown> {
+  const text = String(value ?? "").trim();
+
+  if (!text) {
+    return {};
+  }
+
+  try {
+    return asObject(JSON.parse(text));
+  } catch {
+    return {};
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

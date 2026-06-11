@@ -1,12 +1,18 @@
 import { setTimeout as delay } from "node:timers/promises";
 
 import {
+  ActionRowBuilder,
   AuditLogEvent,
+  ButtonBuilder,
+  ButtonStyle,
   Client,
   EmbedBuilder,
   Events,
   GatewayIntentBits,
+  ModalBuilder,
   PermissionFlagsBits,
+  TextInputBuilder,
+  TextInputStyle,
 } from "discord.js";
 
 const LOCKDOWN_PERMISSION_KEYS = [
@@ -52,6 +58,8 @@ const LOCKDOWN_MEMBER_CONCURRENCY = 3;
 const LOCKDOWN_CHANNEL_CONCURRENCY = 3;
 const GUILD_MEMBER_CACHE_MAX_AGE_MS = 5 * 60_000;
 const GUILD_MEMBER_FETCH_MAX_RETRIES = 3;
+const MEMBER_QUESTIONNAIRE_BUTTON_PREFIX = "member-intake:open:";
+const MEMBER_QUESTIONNAIRE_MODAL_PREFIX = "member-intake:submit:";
 
 const config = loadConfig();
 const client = new Client({
@@ -78,12 +86,14 @@ let heartbeatRunning = false;
 let lockdownPollRunning = false;
 let messageFlushRunning = false;
 let moderationPollRunning = false;
+let questionnairePollRunning = false;
 let voiceFlushRunning = false;
 let lastFullSyncStats = null;
 let guildMembersFetchPromise = null;
 let lastGuildMembersFetchAt = 0;
 let lockdownQueueSize = 0;
 let moderationQueueSize = 0;
+let questionnaireQueueSize = 0;
 
 client.once(Events.ClientReady, async () => {
   console.log(`Schland bot online as ${client.user.tag}`);
@@ -97,6 +107,12 @@ function startBotTimers() {
   timers.push(setInterval(() => void flushVoiceSessions(), config.voiceFlushMs));
   timers.push(setInterval(() => void sendHeartbeat(), config.heartbeatMs));
   timers.push(setInterval(() => void pollInvites(), config.invitePollMs));
+  timers.push(
+    setInterval(
+      () => void pollMemberQuestionnaires(),
+      config.questionnairePollMs,
+    ),
+  );
   timers.push(setInterval(() => void pollLockdownCommands(), config.lockdownPollMs));
   timers.push(setInterval(() => void pollModerationActions(), config.moderationPollMs));
   timers.push(setInterval(() => void refreshPrivacy(), config.privacyRefreshMs));
@@ -113,6 +129,7 @@ async function runStartupTasks() {
     ["poll invites", () => pollInvites()],
     ["prime voice sessions", () => primeVoiceSessions()],
     ["full sync", () => fullSyncGuild("startup")],
+    ["poll member questionnaires", () => pollMemberQuestionnaires()],
     ["poll audit logs", () => pollAuditLogs("startup")],
   ];
 
@@ -176,6 +193,10 @@ client.on(Events.MessageCreate, (message) => {
   existing.count += 1;
   existing.lastAt = message.createdAt?.toISOString() ?? new Date().toISOString();
   messageCounts.set(message.author.id, existing);
+});
+
+client.on(Events.InteractionCreate, (interaction) => {
+  void handleInteraction(interaction);
 });
 
 client.on(Events.VoiceStateUpdate, (oldState, newState) => {
@@ -645,6 +666,263 @@ async function sendInviteDm(inviteRequest, inviteUrl) {
   } catch (error) {
     return { error: errorMessage(error), status: "failed" };
   }
+}
+
+async function pollMemberQuestionnaires() {
+  if (questionnairePollRunning) {
+    return;
+  }
+
+  questionnairePollRunning = true;
+
+  try {
+    const result = await api("/member-questionnaires", { method: "GET" });
+    const questionnaires = Array.isArray(result.questionnaires)
+      ? result.questionnaires
+      : [];
+    questionnaireQueueSize = Number(result.queueSize ?? questionnaires.length) || 0;
+
+    for (const questionnaire of questionnaires) {
+      await processMemberQuestionnaire(questionnaire);
+      await delay(config.questionnaireDmDelayMs);
+    }
+
+    await sendHeartbeat();
+  } catch (error) {
+    console.error("Member questionnaire poll failed", errorMessage(error));
+  } finally {
+    questionnairePollRunning = false;
+  }
+}
+
+async function processMemberQuestionnaire(questionnaire) {
+  try {
+    await api("/member-questionnaires", {
+      body: {
+        discordUserId: questionnaire.discordUserId,
+        memberId: questionnaire.memberId,
+        status: "sending",
+      },
+      method: "PATCH",
+    });
+
+    const dm = await sendMemberQuestionnaireDm(questionnaire);
+
+    await api("/member-questionnaires", {
+      body: {
+        botError: dm.error,
+        discordUserId: questionnaire.discordUserId,
+        dmMessageId: dm.messageId,
+        memberId: questionnaire.memberId,
+        status: dm.status,
+      },
+      method: "PATCH",
+    });
+
+    questionnaireQueueSize = Math.max(0, questionnaireQueueSize - 1);
+  } catch (error) {
+    questionnaireQueueSize = Math.max(0, questionnaireQueueSize - 1);
+    console.error("Member questionnaire failed", errorMessage(error));
+
+    await api("/member-questionnaires", {
+      body: {
+        botError: errorMessage(error),
+        discordUserId: questionnaire.discordUserId,
+        memberId: questionnaire.memberId,
+        status: "failed",
+      },
+      method: "PATCH",
+    }).catch((updateError) => {
+      console.error(
+        "Member questionnaire failure update failed",
+        errorMessage(updateError),
+      );
+    });
+  }
+}
+
+async function sendMemberQuestionnaireDm(questionnaire) {
+  if (!questionnaire.discordUserId || !questionnaire.memberId) {
+    return { error: null, messageId: null, status: "skipped" };
+  }
+
+  try {
+    const user = await client.users.fetch(questionnaire.discordUserId);
+    const message = await user.send({
+      components: [buildMemberQuestionnaireActionRow(questionnaire.memberId)],
+      embeds: [buildMemberQuestionnaireEmbed(questionnaire)],
+    });
+
+    return { error: null, messageId: message.id, status: "sent" };
+  } catch (error) {
+    return { error: errorMessage(error), messageId: null, status: "failed" };
+  }
+}
+
+function buildMemberQuestionnaireEmbed(questionnaire) {
+  const displayName =
+    questionnaire.discordDisplayName ??
+    questionnaire.discordUsername ??
+    questionnaire.name ??
+    "Mitglied";
+
+  return new EmbedBuilder()
+    .setColor(0x263f72)
+    .setTitle("Schland Mitgliederakte")
+    .setDescription(
+      [
+        `Servus ${displayName}, bitte fuelle den Aktenbogen fuer die Verwaltung aus.`,
+        "Discord-ID, Anzeigename und Telefonnummer werden nicht abgefragt.",
+      ].join("\n"),
+    )
+    .addFields(
+      {
+        inline: true,
+        name: "Dauer",
+        value: "ca. 1 Minute",
+      },
+      {
+        inline: true,
+        name: "Status",
+        value: "Wird nach dem Absenden geprueft",
+      },
+    )
+    .setFooter({ text: "Schland Verwaltung" })
+    .setTimestamp(new Date());
+}
+
+function buildMemberQuestionnaireActionRow(memberId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`${MEMBER_QUESTIONNAIRE_BUTTON_PREFIX}${memberId}`)
+      .setLabel("Aktenbogen ausfuellen")
+      .setStyle(ButtonStyle.Primary),
+  );
+}
+
+async function handleInteraction(interaction) {
+  try {
+    if (interaction.isButton()) {
+      const memberId = getMemberIdFromCustomId(
+        interaction.customId,
+        MEMBER_QUESTIONNAIRE_BUTTON_PREFIX,
+      );
+
+      if (memberId) {
+        await showMemberQuestionnaireModal(interaction, memberId);
+      }
+
+      return;
+    }
+
+    if (interaction.isModalSubmit()) {
+      const memberId = getMemberIdFromCustomId(
+        interaction.customId,
+        MEMBER_QUESTIONNAIRE_MODAL_PREFIX,
+      );
+
+      if (memberId) {
+        await handleMemberQuestionnaireSubmit(interaction, memberId);
+      }
+    }
+  } catch (error) {
+    console.error("Discord interaction failed", errorMessage(error));
+
+    if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
+      await interaction
+        .reply({
+          content: "Aktenbogen konnte gerade nicht verarbeitet werden.",
+          ephemeral: true,
+        })
+        .catch(() => {});
+    }
+  }
+}
+
+async function showMemberQuestionnaireModal(interaction, memberId) {
+  const modal = new ModalBuilder()
+    .setCustomId(`${MEMBER_QUESTIONNAIRE_MODAL_PREFIX}${memberId}`)
+    .setTitle("Mitgliederakte");
+
+  modal.addComponents(
+    buildTextInputRow("name", "Name fuer die Akte", {
+      maxLength: 120,
+      placeholder: "Vorname / Name",
+      required: true,
+      style: TextInputStyle.Short,
+    }),
+    buildTextInputRow("age", "Alter", {
+      maxLength: 3,
+      placeholder: "optional",
+      required: false,
+      style: TextInputStyle.Short,
+    }),
+    buildTextInputRow("residence", "Wohnort", {
+      maxLength: 120,
+      placeholder: "optional",
+      required: false,
+      style: TextInputStyle.Short,
+    }),
+    buildTextInputRow("profession", "Beruf / Taetigkeit", {
+      maxLength: 120,
+      placeholder: "optional",
+      required: false,
+      style: TextInputStyle.Short,
+    }),
+    buildTextInputRow("otherInfo", "Socials / weitere Angaben", {
+      maxLength: 800,
+      placeholder: "Instagram, Snapchat, TikTok, Stream, Ubisoft, EA, Hinweise",
+      required: false,
+      style: TextInputStyle.Paragraph,
+    }),
+  );
+
+  await interaction.showModal(modal);
+}
+
+async function handleMemberQuestionnaireSubmit(interaction, memberId) {
+  const answers = {
+    age: interaction.fields.getTextInputValue("age"),
+    name: interaction.fields.getTextInputValue("name"),
+    otherInfo: interaction.fields.getTextInputValue("otherInfo"),
+    profession: interaction.fields.getTextInputValue("profession"),
+    residence: interaction.fields.getTextInputValue("residence"),
+  };
+
+  await api("/member-questionnaires", {
+    body: {
+      answers,
+      discordUserId: interaction.user.id,
+      memberId,
+      status: "submitted",
+    },
+    method: "PATCH",
+  });
+
+  await interaction.reply({
+    content: "Danke, deine Angaben wurden gespeichert und werden geprueft.",
+    ephemeral: true,
+  });
+}
+
+function buildTextInputRow(customId, label, options) {
+  return new ActionRowBuilder().addComponents(
+    new TextInputBuilder()
+      .setCustomId(customId)
+      .setLabel(label)
+      .setMaxLength(options.maxLength)
+      .setPlaceholder(options.placeholder)
+      .setRequired(options.required)
+      .setStyle(options.style),
+  );
+}
+
+function getMemberIdFromCustomId(customId, prefix) {
+  if (!customId?.startsWith(prefix)) {
+    return null;
+  }
+
+  return customId.slice(prefix.length).trim() || null;
 }
 
 async function pollLockdownCommands() {
@@ -2972,6 +3250,7 @@ async function sendHeartbeat() {
         lockdownQueueSize,
         messageBufferSize: messageCounts.size,
         moderationQueueSize,
+        questionnaireQueueSize,
         skippedBots: stats.skippedBots,
         uptimeSeconds: Math.round(process.uptime()),
       },
@@ -3105,6 +3384,8 @@ function loadConfig() {
     lockdownStrategy: readLockdownStrategy(env.LOCKDOWN_STRATEGY),
     moderationPollMs: readMs(env.MODERATION_POLL_MS, 5_000),
     privacyRefreshMs: readMs(env.PRIVACY_REFRESH_MS, 30_000),
+    questionnaireDmDelayMs: readMs(env.QUESTIONNAIRE_DM_DELAY_MS, 2_500),
+    questionnairePollMs: readMs(env.QUESTIONNAIRE_POLL_MS, 60_000),
     syncToken: env.DISCORD_BOT_SYNC_TOKEN.trim(),
     voiceFlushMs: readMs(env.VOICE_FLUSH_MS, 60_000),
   };

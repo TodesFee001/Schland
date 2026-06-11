@@ -31,6 +31,7 @@ export async function POST(request: Request) {
     lockdownQueueSize: asInteger(body?.lockdownQueueSize) ?? 0,
     messageBufferSize: asInteger(body?.messageBufferSize) ?? 0,
     moderationQueueSize: asInteger(body?.moderationQueueSize) ?? 0,
+    questionnaireQueueSize: asInteger(body?.questionnaireQueueSize) ?? 0,
     skippedBots: asInteger(body?.skippedBots),
     uptimeSeconds: asInteger(body?.uptimeSeconds) ?? 0,
   };
