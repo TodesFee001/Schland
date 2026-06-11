@@ -122,40 +122,55 @@ export async function GET(request: Request) {
     !BULK_ROLLOUT_ENABLED && TEST_DISCORD_IDS.size > 0;
   const rolloutPaused = !BULK_ROLLOUT_ENABLED && TEST_DISCORD_IDS.size === 0;
   const now = Date.now();
+  const memberRecords = (membersResult.data ?? []).map(asRecord);
   const pending = rolloutPaused
     ? []
-    : (membersResult.data ?? [])
-    .map(asRecord)
-    .filter((member) =>
-      isQuestionnaireDue(member, latestLogs, now, {
-        limitedToTestUsers: rolloutLimitedToTestUsers,
-      }),
-    )
-    .map((member) => {
-      const discordId = asText(member.discord_id) ?? "";
-      const username = asText(member.discord_username);
-      const displayName = asText(member.discord_display_name);
+    : memberRecords
+        .filter((member) =>
+          isQuestionnaireDue(member, latestLogs, now, {
+            limitedToTestUsers: rolloutLimitedToTestUsers,
+          }),
+        )
+        .map((member) => {
+          const discordId = asText(member.discord_id) ?? "";
+          const username = asText(member.discord_username);
+          const displayName = asText(member.discord_display_name);
 
-      return {
-        discordDisplayName: displayName,
-        discordUserId: discordId,
-        discordUsername: username,
-        id: asText(member.id),
-        joinedAt: asIsoDate(member.discord_joined_at),
-        memberId: asText(member.id),
-        name: asText(member.name) ?? displayName ?? username ?? discordId,
-      };
-    })
-    .filter((entry) => entry.memberId && entry.discordUserId);
+          return {
+            discordDisplayName: displayName,
+            discordUserId: discordId,
+            discordUsername: username,
+            id: asText(member.id),
+            joinedAt: asIsoDate(member.discord_joined_at),
+            memberId: asText(member.id),
+            name: asText(member.name) ?? displayName ?? username ?? discordId,
+          };
+        })
+        .filter((entry) => entry.memberId && entry.discordUserId);
+  const rollout = rolloutPaused
+    ? "paused"
+    : rolloutLimitedToTestUsers
+      ? "test"
+      : "bulk";
+
+  if (rollout !== "bulk") {
+    console.info("discord questionnaire rollout", {
+      queueSize: pending.length,
+      rollout,
+      testIdsConfigured: TEST_DISCORD_IDS.size,
+      testMembersMatched: memberRecords.filter((member) => {
+        const discordId = asText(member.discord_id);
+
+        return discordId ? TEST_DISCORD_IDS.has(discordId) : false;
+      }).length,
+      totalMembersConsidered: memberRecords.length,
+    });
+  }
 
   return NextResponse.json({
     questionnaires: pending.slice(0, PENDING_BATCH_LIMIT),
     queueSize: pending.length,
-    rollout: rolloutPaused
-      ? "paused"
-      : rolloutLimitedToTestUsers
-        ? "test"
-        : "bulk",
+    rollout,
   });
 }
 
