@@ -63,6 +63,7 @@ import {
   unlinkMemberFileAction,
   updateMemberCaseAction,
   updateModerationEventAction,
+  uploadMemberProfileImageAction,
   uploadFileAction,
 } from "@/app/actions";
 import type { AuthStatus } from "@/lib/auth";
@@ -872,6 +873,9 @@ function MembersSection({
       return matchesMember || matchesDiscord;
     });
   }, [moderationEvents, selectedMember]);
+  const selectedProfileImageFile = selectedMember
+    ? getMemberProfileImageFile(selectedMember)
+    : null;
 
   return (
     <div className="grid gap-4">
@@ -1434,38 +1438,88 @@ function MembersSection({
             </div>
           ) : (
             <>
-              <div>
-                <div className="flex items-start justify-between gap-3">
+              <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-muted)] p-3">
+                <div className="grid gap-3 sm:grid-cols-[8.5rem_1fr]">
+                  <MemberProfileImage
+                    member={selectedMember}
+                    profileImageFile={selectedProfileImageFile}
+                  />
                   <div>
-                    <p className="text-lg font-semibold">{selectedMember.name}</p>
-                    <p className="font-mono text-xs text-neutral-500">
-                      {selectedMember.id}
-                    </p>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-lg font-semibold">{selectedMember.name}</p>
+                        <p className="font-mono text-xs text-neutral-500">
+                          {selectedMember.id}
+                        </p>
+                      </div>
+                      <StatusBadge status={selectedMember.status} />
+                    </div>
+                    <dl className="mt-4 grid gap-3 text-sm">
+                      <DetailRow label="Alter" value={formatNullable(selectedMember.age)} />
+                      <DetailRow label="Wohnort" value={selectedMember.residence} />
+                      <DetailRow label="Berufsfeld" value={selectedMember.profession} />
+                      <DetailRow
+                        label="Discord-Benutzername"
+                        value={selectedMember.discordName}
+                      />
+                      <DetailRow
+                        label="Discord-Anzeigename"
+                        value={selectedMember.displayName}
+                      />
+                      <DetailRow
+                        label="Server"
+                        value={selectedMember.discordOnServer ? "Auf Server" : "Nicht auf Server"}
+                      />
+                      <DetailRow
+                        label="Beigetreten"
+                        value={selectedMember.discordJoinedAt}
+                      />
+                      <DetailRow label="Eingeladen von" value={selectedMember.invitedBy} />
+                    </dl>
                   </div>
-                  <StatusBadge status={selectedMember.status} />
                 </div>
-                <dl className="mt-4 grid gap-3 text-sm">
-                  <DetailRow label="Alter" value={formatNullable(selectedMember.age)} />
-                  <DetailRow label="Wohnort" value={selectedMember.residence} />
-                  <DetailRow label="Berufsfeld" value={selectedMember.profession} />
-                  <DetailRow
-                    label="Discord-Benutzername"
-                    value={selectedMember.discordName}
-                  />
-                  <DetailRow
-                    label="Discord-Anzeigename"
-                    value={selectedMember.displayName}
-                  />
-                  <DetailRow
-                    label="Server"
-                    value={selectedMember.discordOnServer ? "Auf Server" : "Nicht auf Server"}
-                  />
-                  <DetailRow
-                    label="Beigetreten"
-                    value={selectedMember.discordJoinedAt}
-                  />
-                  <DetailRow label="Eingeladen von" value={selectedMember.invitedBy} />
-                </dl>
+                <form
+                  action={uploadMemberProfileImageAction}
+                  className="mt-3 grid gap-2 border-t border-[var(--line)] pt-3 lg:grid-cols-[1fr_1fr_auto]"
+                  encType="multipart/form-data"
+                >
+                  <input type="hidden" name="memberId" value={selectedMember.id} />
+                  <label className="grid gap-1">
+                    <span className="text-xs font-medium uppercase text-neutral-500">
+                      Profilbild
+                    </span>
+                    <input
+                      name="profileImage"
+                      type="file"
+                      accept="image/avif,image/gif,image/jpeg,image/png,image/webp"
+                      required
+                      disabled={!mfaReady}
+                      className="h-9 rounded-md border border-[var(--line)] bg-white px-2 py-1 text-sm outline-none file:mr-3 file:rounded-md file:border-0 file:bg-[var(--surface-muted)] file:px-2 file:py-1 file:text-xs file:font-medium disabled:cursor-not-allowed disabled:opacity-45"
+                    />
+                  </label>
+                  <label className="grid gap-1">
+                    <span className="text-xs font-medium uppercase text-neutral-500">
+                      Grund
+                    </span>
+                    <input
+                      name="reason"
+                      required
+                      minLength={8}
+                      placeholder="z.B. Profilbild aktualisiert"
+                      className="h-9 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)]"
+                    />
+                  </label>
+                  <div className="flex items-end">
+                    <button
+                      type="submit"
+                      disabled={!mfaReady}
+                      className="flex h-9 w-full items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-3 text-sm text-white disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      <Upload className="size-4" aria-hidden="true" />
+                      <span>Bild setzen</span>
+                    </button>
+                  </div>
+                </form>
               </div>
 
               <details className="rounded-lg border border-[var(--line)] bg-[var(--surface-muted)] p-3">
@@ -4978,6 +5032,51 @@ function getPatchNoteTypeLabel(type: "feature" | "fix" | "system") {
   return "System";
 }
 
+function MemberProfileImage({
+  member,
+  profileImageFile,
+}: {
+  member: WorkspaceMember;
+  profileImageFile: WorkspaceMember["linkedFiles"][number] | null;
+}) {
+  const imageUrl = profileImageFile
+    ? `/files/open?fileId=${encodeURIComponent(profileImageFile.fileId)}`
+    : "";
+
+  return (
+    <div className="grid gap-2">
+      <div
+        aria-label={
+          profileImageFile
+            ? `Profilbild von ${member.name}`
+            : `Profilbild-Platzhalter fuer ${member.name}`
+        }
+        role="img"
+        className={[
+          "flex aspect-square min-h-28 items-center justify-center overflow-hidden rounded-lg border border-[var(--line-strong)] bg-white bg-cover bg-center text-3xl font-black text-neutral-500",
+          profileImageFile ? "shadow-inner" : "",
+        ].join(" ")}
+        style={
+          imageUrl
+            ? {
+                backgroundImage: `url("${imageUrl}")`,
+              }
+            : undefined
+        }
+      >
+        {!profileImageFile ? getMemberInitials(member.name) : null}
+      </div>
+      <div className="text-xs text-neutral-500">
+        {profileImageFile ? (
+          <span className="line-clamp-2">{profileImageFile.name}</span>
+        ) : (
+          <span>Noch kein Profilbild</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-4 border-b border-[var(--line)] pb-2 last:border-b-0 last:pb-0">
@@ -4985,6 +5084,37 @@ function DetailRow({ label, value }: { label: string; value: string }) {
       <dd className="max-w-[60%] text-right font-medium">{value}</dd>
     </div>
   );
+}
+
+function getMemberProfileImageFile(member: WorkspaceMember) {
+  const currentImage = member.linkedFiles.find(
+    (file) =>
+      file.fileId === member.profileImageFileId && isMemberImageFile(file),
+  );
+
+  if (currentImage) {
+    return currentImage;
+  }
+
+  return (
+    member.linkedFiles.find(
+      (file) => file.relationType === "avatar" && isMemberImageFile(file),
+    ) ?? null
+  );
+}
+
+function isMemberImageFile(file: WorkspaceMember["linkedFiles"][number]) {
+  return file.type.toLowerCase().startsWith("image/");
+}
+
+function getMemberInitials(name: string) {
+  const parts = name
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .slice(0, 2);
+
+  return (parts.map((part) => part[0]).join("") || "?").toUpperCase();
 }
 
 function DetailBox({ label, value }: { label: string; value: string }) {

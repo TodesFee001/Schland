@@ -10,6 +10,18 @@ export type PatchNote = {
 // Jede produktive Aenderung bekommt hier ab jetzt einen Eintrag.
 export const patchNotes: PatchNote[] = [
   {
+    date: "11.06.2026",
+    id: "member-record-profile-images",
+    items: [
+      "Mitgliederakten koennen jetzt direkt im Aktenkopf ein Profilbild anzeigen.",
+      "Profilbilder lassen sich aus der geoeffneten Akte hochladen und werden automatisch als Profilbild-Dateiverknuepfung gesetzt.",
+      "Beim Setzen eines neuen Profilbilds wird die aktive Profilbildreferenz der Akte aktualisiert.",
+    ],
+    title: "Profilbilder fuer Akten",
+    type: "feature",
+    version: "0.10.1",
+  },
+  {
     date: "10.06.2026",
     id: "discord-member-fetch-backoff",
     items: [

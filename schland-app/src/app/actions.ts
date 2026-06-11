@@ -15,6 +15,15 @@ import {
 
 const FILE_BUCKET = "schland-files";
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MAX_PROFILE_IMAGE_BYTES = 8 * 1024 * 1024;
+const PROFILE_IMAGE_CATEGORY_NAME = "Profilbilder";
+const PROFILE_IMAGE_CONTENT_TYPES = new Set([
+  "image/avif",
+  "image/gif",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
 
 export async function claimFirstAdminAction() {
   if (!hasSupabasePublicEnv()) {
@@ -288,6 +297,161 @@ export async function unlinkMemberFileAction(formData: FormData) {
     `/?section=members&member=${encodeURIComponent(
       memberId,
     )}&setup=member-file-unlinked`,
+  );
+}
+
+export async function uploadMemberProfileImageAction(formData: FormData) {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
+    redirect("/?section=members&setup=missing-supabase");
+  }
+
+  const memberId = getFormText(formData, "memberId");
+  const reason = getFormText(formData, "reason");
+  const file = formData.get("profileImage");
+
+  if (!isUuidText(memberId) || !(file instanceof File)) {
+    redirect("/?section=members&setup=member-avatar-missing");
+  }
+
+  if (reason.length < 8) {
+    redirect(
+      `/?section=members&member=${encodeURIComponent(
+        memberId,
+      )}&setup=member-avatar-reason`,
+    );
+  }
+
+  if (file.size <= 0 || file.size > MAX_PROFILE_IMAGE_BYTES) {
+    redirect(
+      `/?section=members&member=${encodeURIComponent(
+        memberId,
+      )}&setup=member-avatar-size`,
+    );
+  }
+
+  const fileType = (file.type || "application/octet-stream").toLowerCase();
+
+  if (!PROFILE_IMAGE_CONTENT_TYPES.has(fileType)) {
+    redirect(
+      `/?section=members&member=${encodeURIComponent(
+        memberId,
+      )}&setup=member-avatar-type`,
+    );
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect(
+      `/?section=members&member=${encodeURIComponent(
+        memberId,
+      )}&setup=member-file-aal2`,
+    );
+  }
+
+  const { data: canEdit } = await supabase.rpc("has_permission", {
+    required_key: "members.edit",
+  });
+  const { data: canUploadFiles } = await supabase.rpc("has_permission", {
+    required_key: "files.upload",
+  });
+  const { data: canOpenFiles } = await supabase.rpc("has_permission", {
+    required_key: "files.open",
+  });
+  const { data: canViewFiles } = await supabase.rpc("has_permission", {
+    required_key: "files.view",
+  });
+
+  if (
+    canEdit !== true ||
+    canUploadFiles !== true ||
+    canOpenFiles !== true ||
+    canViewFiles !== true
+  ) {
+    redirect(
+      `/?section=members&member=${encodeURIComponent(
+        memberId,
+      )}&setup=member-file-permission`,
+    );
+  }
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    redirect(
+      `/?section=members&member=${encodeURIComponent(
+        memberId,
+      )}&setup=member-file-permission`,
+    );
+  }
+
+  const originalName = file.name || "profilbild";
+  const storagePath = buildStoragePath(user.id, `profile-${originalName}`);
+  const fileBody = new Uint8Array(await file.arrayBuffer());
+
+  const { error: uploadError } = await supabase.storage
+    .from(FILE_BUCKET)
+    .upload(storagePath, fileBody, {
+      contentType: fileType,
+      upsert: false,
+    });
+
+  if (uploadError) {
+    console.error("profile image storage upload failed", {
+      message: uploadError.message,
+    });
+    redirect(
+      `/?section=members&member=${encodeURIComponent(
+        memberId,
+      )}&setup=member-avatar-storage`,
+    );
+  }
+
+  try {
+    const categoryId = await ensureProfileImageCategory();
+    const { data: fileId, error } = await supabase.rpc("register_uploaded_file", {
+      p_category_id: categoryId,
+      p_description: `Profilbild fuer Mitgliederakte ${memberId}`,
+      p_file_size: file.size,
+      p_file_type: fileType,
+      p_folder_id: null,
+      p_original_filename: originalName,
+      p_storage_path: storagePath,
+      p_tags: ["profilbild", "mitgliederakte"],
+    });
+
+    if (error || !isUuidText(String(fileId ?? ""))) {
+      throw new Error(error?.message ?? "profile image file registration failed");
+    }
+
+    await setMemberFileLinkWithAudit({
+      fileId: String(fileId),
+      link: true,
+      memberId,
+      reason,
+      relationType: "avatar",
+      supabase,
+    });
+  } catch (error) {
+    await supabase.storage.from(FILE_BUCKET).remove([storagePath]);
+    console.error("profile image upload failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    redirect(
+      `/?section=members&member=${encodeURIComponent(
+        memberId,
+      )}&setup=${getMemberProfileImageErrorSetup(error)}`,
+    );
+  }
+
+  revalidatePath("/", "layout");
+  redirect(
+    `/?section=members&member=${encodeURIComponent(
+      memberId,
+    )}&setup=member-avatar-uploaded`,
   );
 }
 
@@ -1853,6 +2017,19 @@ async function setMemberFileLinkWithAudit(input: {
   }
 
   if (input.link) {
+    if (input.relationType === "avatar") {
+      const { error: oldAvatarError } = await admin
+        .from("member_files")
+        .delete()
+        .eq("member_id", input.memberId)
+        .eq("relation_type", "avatar")
+        .neq("file_id", input.fileId);
+
+      if (oldAvatarError) {
+        throw new Error(oldAvatarError.message);
+      }
+    }
+
     const { error } = await admin.from("member_files").upsert(
       {
         created_by: actor.id,
@@ -1865,6 +2042,20 @@ async function setMemberFileLinkWithAudit(input: {
 
     if (error) {
       throw new Error(error.message);
+    }
+
+    if (input.relationType === "avatar") {
+      const { error: avatarError } = await admin
+        .from("members")
+        .update({
+          image_file_id: input.fileId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", input.memberId);
+
+      if (avatarError) {
+        throw new Error(avatarError.message);
+      }
     }
   } else {
     const { data, error } = await admin
@@ -1880,6 +2071,30 @@ async function setMemberFileLinkWithAudit(input: {
 
     if (!data || data.length === 0) {
       throw new Error("link not found");
+    }
+
+    const { data: currentMember, error: currentMemberError } = await admin
+      .from("members")
+      .select("image_file_id")
+      .eq("id", input.memberId)
+      .maybeSingle();
+
+    if (currentMemberError) {
+      throw new Error(currentMemberError.message);
+    }
+
+    if (String(currentMember?.image_file_id ?? "") === input.fileId) {
+      const { error: avatarError } = await admin
+        .from("members")
+        .update({
+          image_file_id: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", input.memberId);
+
+      if (avatarError) {
+        throw new Error(avatarError.message);
+      }
     }
   }
 
@@ -1900,6 +2115,40 @@ async function setMemberFileLinkWithAudit(input: {
       message: logError.message,
     });
   }
+}
+
+async function ensureProfileImageCategory() {
+  const admin = getSupabaseAdminClient();
+  const { data: existing, error: lookupError } = await admin
+    .from("file_categories")
+    .select("id")
+    .eq("name", PROFILE_IMAGE_CATEGORY_NAME)
+    .maybeSingle();
+
+  if (lookupError) {
+    throw new Error(lookupError.message);
+  }
+
+  if (existing?.id) {
+    return String(existing.id);
+  }
+
+  const { data, error } = await admin
+    .from("file_categories")
+    .insert({
+      active: true,
+      description: "Profilbilder fuer Mitgliederakten.",
+      name: PROFILE_IMAGE_CATEGORY_NAME,
+      sort_order: 15,
+    })
+    .select("id")
+    .single();
+
+  if (error || !data?.id) {
+    throw new Error(error?.message ?? "profile image category failed");
+  }
+
+  return String(data.id);
 }
 
 function getMemberFileRelationType(formData: FormData) {
@@ -2055,6 +2304,27 @@ function getMemberFileLinkErrorSetup(error: unknown) {
   }
 
   return "member-file-error";
+}
+
+function getMemberProfileImageErrorSetup(error: unknown) {
+  const message =
+    error instanceof Error
+      ? error.message.toLowerCase()
+      : String(error).toLowerCase();
+
+  if (message.includes("permission") || message.includes("denied")) {
+    return "member-file-permission";
+  }
+
+  if (message.includes("member")) {
+    return "member-avatar-missing";
+  }
+
+  if (message.includes("storage")) {
+    return "member-avatar-storage";
+  }
+
+  return "member-avatar-error";
 }
 
 function getActionError(error: unknown): ActionErrorLike {

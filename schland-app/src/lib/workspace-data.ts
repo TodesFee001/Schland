@@ -26,6 +26,7 @@ export type WorkspaceMember = {
   name: string;
   notes: string;
   phone: string;
+  profileImageFileId: string;
   profession: string;
   residence: string;
   roles: string[];
@@ -273,6 +274,7 @@ export const demoWorkspaceData: WorkspaceData = {
       residence: "Gera",
       profession: "IT-Service",
       phone: "-",
+      profileImageFileId: "file-demo-2",
       discordId: "842109348219",
       discordJoinedAt: "Heute, 00:20",
       discordLastSeenAt: "Heute, 00:42",
@@ -306,7 +308,7 @@ export const demoWorkspaceData: WorkspaceData = {
           createdAt: "Gestern, 21:10",
           fileId: "file-demo-2",
           name: "Rollenfreigabe.png",
-          relationType: "linked",
+          relationType: "avatar",
           sizeLabel: "94 KB",
           type: "image/png",
         },
@@ -322,6 +324,7 @@ export const demoWorkspaceData: WorkspaceData = {
       residence: "Jena",
       profession: "Medien",
       phone: "-",
+      profileImageFileId: "",
       discordId: "742101095203",
       discordJoinedAt: "Gestern, 20:10",
       discordLastSeenAt: "Gestern, 22:18",
@@ -363,6 +366,7 @@ export const demoWorkspaceData: WorkspaceData = {
       residence: "Leipzig",
       profession: "Logistik",
       phone: "-",
+      profileImageFileId: "",
       discordId: "663180193355",
       discordJoinedAt: "02.06.2026, 18:20",
       discordLastSeenAt: "02.06.2026, 19:04",
@@ -839,6 +843,7 @@ export async function getWorkspaceData(
         .select(
           `
             id,
+            image_file_id,
             name,
             age,
             residence,
@@ -1103,6 +1108,7 @@ function mapMembers(rows: Record<string, unknown>[]): WorkspaceMember[] {
       residence: String(row.residence ?? "-"),
       profession: String(row.profession ?? "-"),
       phone: String(row.phone ?? ""),
+      profileImageFileId: String(row.image_file_id ?? ""),
       discordId: String(row.discord_id ?? "-"),
       discordJoinedAt: formatDate(String(row.discord_joined_at ?? "")),
       discordLastSeenAt: formatDate(String(row.discord_last_seen_at ?? "")),

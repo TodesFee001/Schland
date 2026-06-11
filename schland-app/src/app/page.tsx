@@ -211,6 +211,13 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "member-avatar-uploaded") {
+    return {
+      tone: "success" as const,
+      text: "Profilbild wurde hochgeladen und in der Mitgliederakte gesetzt.",
+    };
+  }
+
   if (setup === "member-file-unlinked") {
     return {
       tone: "success" as const,
@@ -271,6 +278,48 @@ function getSetupNotice(setup?: string) {
     return {
       tone: "error" as const,
       text: "Dateiverknuepfung konnte nicht geaendert werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
+  if (setup === "member-avatar-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Mitgliederakte oder Profilbild-Datei wurde nicht gefunden.",
+    };
+  }
+
+  if (setup === "member-avatar-reason") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte gib fuer das Profilbild einen Grund mit mindestens 8 Zeichen an.",
+    };
+  }
+
+  if (setup === "member-avatar-size") {
+    return {
+      tone: "warning" as const,
+      text: "Profilbilder duerfen maximal 8 MB gross sein.",
+    };
+  }
+
+  if (setup === "member-avatar-type") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte lade ein Profilbild als PNG, JPG, WebP, GIF oder AVIF hoch.",
+    };
+  }
+
+  if (setup === "member-avatar-storage") {
+    return {
+      tone: "error" as const,
+      text: "Profilbild konnte nicht in Supabase Storage gespeichert werden.",
+    };
+  }
+
+  if (setup === "member-avatar-error") {
+    return {
+      tone: "error" as const,
+      text: "Profilbild konnte nicht gesetzt werden. Der genaue Fehler wurde protokolliert.",
     };
   }
 
