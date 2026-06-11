@@ -27,6 +27,10 @@ const NEW_MEMBER_DELAY_MS = 3 * 60 * 60 * 1000;
 const PENDING_BATCH_LIMIT = 5;
 const SENDING_RETRY_MS = 30 * 60 * 1000;
 const TEST_DISCORD_IDS = new Set(readList(process.env.QUESTIONNAIRE_TEST_DISCORD_IDS));
+const FORCE_RESEND_DISCORD_IDS = new Set(
+  readList(process.env.QUESTIONNAIRE_FORCE_RESEND_DISCORD_IDS),
+);
+const FORCE_RESEND_RUN_ID = asText(process.env.QUESTIONNAIRE_FORCE_RESEND_RUN_ID);
 const BULK_ROLLOUT_ENABLED =
   process.env.QUESTIONNAIRE_BULK_ROLLOUT_ENABLED?.trim().toLowerCase() ===
   "true";
@@ -408,6 +412,7 @@ async function insertQuestionnaireLog(
     botError: input.botError,
     discordUserId: input.discordUserId,
     dmMessageId: input.dmMessageId,
+    forceResendRunId: FORCE_RESEND_RUN_ID,
     formVersion: FORM_VERSION,
     status: input.status,
   };
@@ -468,6 +473,18 @@ function isQuestionnaireDue(
   if (latestLog) {
     const payload = parseJsonRecord(latestLog.new_value);
     const status = asText(payload.status);
+    const forceResendAllowed =
+      options.limitedToTestUsers &&
+      Boolean(FORCE_RESEND_RUN_ID) &&
+      (FORCE_RESEND_DISCORD_IDS.size === 0 ||
+        FORCE_RESEND_DISCORD_IDS.has(discordId));
+
+    if (
+      forceResendAllowed &&
+      asText(payload.forceResendRunId) !== FORCE_RESEND_RUN_ID
+    ) {
+      return true;
+    }
 
     if (status === "sending") {
       const createdAt = Date.parse(asIsoDate(latestLog.created_at) ?? "");
