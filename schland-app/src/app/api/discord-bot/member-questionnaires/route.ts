@@ -516,12 +516,6 @@ function isSubmissionStatus(status: string) {
 }
 
 function isOutdatedQuestionnairePayload(payload: Record<string, unknown>) {
-  const status = asText(payload.status);
-
-  if (status === "failed" || status === "skipped") {
-    return false;
-  }
-
   const formVersion = asInteger(payload.formVersion) ?? 1;
 
   return formVersion < FORM_VERSION;
