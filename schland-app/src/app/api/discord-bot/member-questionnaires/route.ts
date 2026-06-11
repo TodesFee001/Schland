@@ -25,6 +25,10 @@ const FIELD_NAME = "discord_intake_questionnaire";
 const NEW_MEMBER_DELAY_MS = 3 * 60 * 60 * 1000;
 const PENDING_BATCH_LIMIT = 5;
 const SENDING_RETRY_MS = 30 * 60 * 1000;
+const TEST_DISCORD_IDS = new Set(readList(process.env.QUESTIONNAIRE_TEST_DISCORD_IDS));
+const BULK_ROLLOUT_ENABLED =
+  process.env.QUESTIONNAIRE_BULK_ROLLOUT_ENABLED?.trim().toLowerCase() ===
+  "true";
 const WRITE_STATUSES = new Set([
   "failed",
   "sending",
@@ -104,10 +108,19 @@ export async function GET(request: Request) {
   }
 
   const latestLogs = mapLatestLogsByMember(logsResult.data ?? []);
+  const rolloutLimitedToTestUsers =
+    !BULK_ROLLOUT_ENABLED && TEST_DISCORD_IDS.size > 0;
+  const rolloutPaused = !BULK_ROLLOUT_ENABLED && TEST_DISCORD_IDS.size === 0;
   const now = Date.now();
-  const pending = (membersResult.data ?? [])
+  const pending = rolloutPaused
+    ? []
+    : (membersResult.data ?? [])
     .map(asRecord)
-    .filter((member) => isQuestionnaireDue(member, latestLogs, now))
+    .filter((member) =>
+      isQuestionnaireDue(member, latestLogs, now, {
+        limitedToTestUsers: rolloutLimitedToTestUsers,
+      }),
+    )
     .map((member) => {
       const discordId = asText(member.discord_id) ?? "";
       const username = asText(member.discord_username);
@@ -128,6 +141,11 @@ export async function GET(request: Request) {
   return NextResponse.json({
     questionnaires: pending.slice(0, PENDING_BATCH_LIMIT),
     queueSize: pending.length,
+    rollout: rolloutPaused
+      ? "paused"
+      : rolloutLimitedToTestUsers
+        ? "test"
+        : "bulk",
   });
 }
 
@@ -358,6 +376,7 @@ function isQuestionnaireDue(
   member: Record<string, unknown>,
   latestLogs: Map<string, Record<string, unknown>>,
   now: number,
+  options: { limitedToTestUsers: boolean },
 ) {
   const memberId = asText(member.id);
   const discordId = asText(member.discord_id);
@@ -367,6 +386,10 @@ function isQuestionnaireDue(
   }
 
   if (EXCLUDED_DISCORD_IDS.has(discordId)) {
+    return false;
+  }
+
+  if (options.limitedToTestUsers && !TEST_DISCORD_IDS.has(discordId)) {
     return false;
   }
 
@@ -465,4 +488,11 @@ function trimText(value: unknown, maxLength: number) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, maxLength);
+}
+
+function readList(value: unknown) {
+  return String(value ?? "")
+    .split(/[\n,;]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 }
