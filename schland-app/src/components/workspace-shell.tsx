@@ -5079,9 +5079,9 @@ function MemberProfileImage({
 }
 
 function MemberIntakePanel({ intake }: { intake: WorkspaceMember["intake"] }) {
-  const hasAnswers =
-    intake.status === "submitted" &&
-    Object.values(intake.answers).some((value) => value.trim().length > 0);
+  const hasAnswers = Object.values(intake.answers).some(
+    (value) => value.trim().length > 0,
+  );
 
   return (
     <div className="mt-3 border-t border-[var(--line)] pt-3">
@@ -5098,11 +5098,14 @@ function MemberIntakePanel({ intake }: { intake: WorkspaceMember["intake"] }) {
           <DetailRow label="Alter" value={intake.answers.age || "-"} />
           <DetailRow label="Wohnort" value={intake.answers.residence || "-"} />
           <DetailRow label="Beruf" value={intake.answers.profession || "-"} />
+          <DetailRow label="Instagram" value={intake.answers.instagram || "-"} />
+          <DetailRow label="Snapchat" value={intake.answers.snapchat || "-"} />
+          <DetailRow label="TikTok" value={intake.answers.tiktok || "-"} />
+          <DetailRow label="Stream" value={intake.answers.stream || "-"} />
+          <DetailRow label="Ubisoft" value={intake.answers.ubisoft || "-"} />
+          <DetailRow label="EA" value={intake.answers.ea || "-"} />
           <div className="sm:col-span-2">
-            <DetailRow
-              label="Weitere Angaben"
-              value={intake.answers.otherInfo || "-"}
-            />
+            <DetailRow label="Notizen" value={intake.answers.notes || "-"} />
           </div>
           <div className="sm:col-span-2">
             <DetailRow label="Eingereicht" value={intake.answeredAt} />

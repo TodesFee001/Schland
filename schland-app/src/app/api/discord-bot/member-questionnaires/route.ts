@@ -22,6 +22,7 @@ const EXCLUDED_DISCORD_IDS = new Set([
   "262579804975398923",
 ]);
 const FIELD_NAME = "discord_intake_questionnaire";
+const FORM_VERSION = 2;
 const NEW_MEMBER_DELAY_MS = 3 * 60 * 60 * 1000;
 const PENDING_BATCH_LIMIT = 5;
 const SENDING_RETRY_MS = 30 * 60 * 1000;
@@ -31,18 +32,27 @@ const BULK_ROLLOUT_ENABLED =
   "true";
 const WRITE_STATUSES = new Set([
   "failed",
+  "gaming_submitted",
+  "profile_submitted",
   "sending",
   "sent",
   "skipped",
+  "socials_submitted",
   "submitted",
 ]);
 
 type IntakeAnswers = {
   age: number | null;
+  ea: string;
+  instagram: string;
   name: string;
-  otherInfo: string;
+  notes: string;
   profession: string;
   residence: string;
+  snapchat: string;
+  stream: string;
+  tiktok: string;
+  ubisoft: string;
 };
 
 export async function GET(request: Request) {
@@ -189,6 +199,12 @@ export async function PATCH(request: Request) {
         residence,
         profession,
         notes,
+        instagram,
+        snapchat,
+        tiktok,
+        stream,
+        ubisoft,
+        ea,
         discord_id,
         discord_username,
         discord_display_name
@@ -224,8 +240,8 @@ export async function PATCH(request: Request) {
     );
   }
 
-  if (status === "submitted") {
-    return submitQuestionnaire(supabase, memberId, memberRecord, body);
+  if (isSubmissionStatus(status)) {
+    return submitQuestionnaire(supabase, memberId, memberRecord, body, status);
   }
 
   const logError = await insertQuestionnaireLog(supabase, {
@@ -250,30 +266,40 @@ async function submitQuestionnaire(
   memberId: string,
   member: Record<string, unknown>,
   body: Record<string, unknown> | null,
+  status: string,
 ) {
   const answers = normalizeAnswers(body?.answers);
   const discordUserId = asText(
     body?.discordUserId ?? body?.discord_user_id ?? body?.userId,
   );
 
-  if (!answers.name || answers.name.length < 2) {
+  if ((status === "profile_submitted" || status === "submitted") && !answers.name) {
     return NextResponse.json({ error: "name_required" }, { status: 400 });
   }
 
   const oldValues = {
     age: asInteger(member.age),
+    ea: asText(member.ea),
+    instagram: asText(member.instagram),
     name: asText(member.name),
     notes: asText(member.notes),
     profession: asText(member.profession),
     residence: asText(member.residence),
+    snapchat: asText(member.snapchat),
+    stream: asText(member.stream),
+    tiktok: asText(member.tiktok),
+    ubisoft: asText(member.ubisoft),
   };
   const update: Record<string, unknown> = {
-    name: answers.name,
     status: "review",
     updated_at: new Date().toISOString(),
   };
 
-  if (answers.age !== null) {
+  if (answers.name) {
+    update.name = answers.name;
+  }
+
+  if (status !== "gaming_submitted" && status !== "socials_submitted" && answers.age !== null) {
     update.age = answers.age;
   }
 
@@ -285,8 +311,32 @@ async function submitQuestionnaire(
     update.profession = answers.profession;
   }
 
-  if (answers.otherInfo) {
-    update.notes = mergeIntakeNotes(asText(member.notes) ?? "", answers.otherInfo);
+  if (answers.instagram) {
+    update.instagram = answers.instagram;
+  }
+
+  if (answers.snapchat) {
+    update.snapchat = answers.snapchat;
+  }
+
+  if (answers.tiktok) {
+    update.tiktok = answers.tiktok;
+  }
+
+  if (answers.stream) {
+    update.stream = answers.stream;
+  }
+
+  if (answers.ubisoft) {
+    update.ubisoft = answers.ubisoft;
+  }
+
+  if (answers.ea) {
+    update.ea = answers.ea;
+  }
+
+  if (answers.notes) {
+    update.notes = mergeIntakeNotes(asText(member.notes) ?? "", answers.notes);
   }
 
   const { error: updateError } = await supabase
@@ -312,8 +362,8 @@ async function submitQuestionnaire(
     discordUserId,
     memberId,
     oldValues,
-    reason: "Discord-Aktenbogen eingereicht - Pruefung offen",
-    status: "submitted",
+    reason: mapStatusReason(status),
+    status,
     success: true,
   });
 
@@ -321,7 +371,7 @@ async function submitQuestionnaire(
     return logError;
   }
 
-  return NextResponse.json({ questionnaire: { memberId, status: "submitted" } });
+  return NextResponse.json({ questionnaire: { memberId, status } });
 }
 
 async function insertQuestionnaireLog(
@@ -343,6 +393,7 @@ async function insertQuestionnaireLog(
     botError: input.botError,
     discordUserId: input.discordUserId,
     dmMessageId: input.dmMessageId,
+    formVersion: FORM_VERSION,
     status: input.status,
   };
   const { error } = await supabase.from("member_case_logs").insert({
@@ -409,6 +460,10 @@ function isQuestionnaireDue(
       return Number.isFinite(createdAt) && now - createdAt > SENDING_RETRY_MS;
     }
 
+    if (isOutdatedQuestionnairePayload(payload)) {
+      return true;
+    }
+
     return false;
   }
 
@@ -439,12 +494,37 @@ function mapLatestLogsByMember(rows: unknown[]) {
 function mapStatusReason(status: string) {
   const labels: Record<string, string> = {
     failed: "Discord-Aktenbogen DM fehlgeschlagen",
+    gaming_submitted: "Discord-Aktenbogen Gaming-Felder eingereicht",
+    profile_submitted: "Discord-Aktenbogen Basisfelder eingereicht",
     sending: "Discord-Aktenbogen wird gesendet",
     sent: "Discord-Aktenbogen DM gesendet",
     skipped: "Discord-Aktenbogen uebersprungen",
+    socials_submitted: "Discord-Aktenbogen Social-Felder eingereicht",
+    submitted: "Discord-Aktenbogen eingereicht - Pruefung offen",
   };
 
   return labels[status] ?? "Discord-Aktenbogen aktualisiert";
+}
+
+function isSubmissionStatus(status: string) {
+  return (
+    status === "gaming_submitted" ||
+    status === "profile_submitted" ||
+    status === "socials_submitted" ||
+    status === "submitted"
+  );
+}
+
+function isOutdatedQuestionnairePayload(payload: Record<string, unknown>) {
+  const status = asText(payload.status);
+
+  if (status === "failed" || status === "skipped") {
+    return false;
+  }
+
+  const formVersion = asInteger(payload.formVersion) ?? 1;
+
+  return formVersion < FORM_VERSION;
 }
 
 function normalizeAnswers(value: unknown): IntakeAnswers {
@@ -453,10 +533,16 @@ function normalizeAnswers(value: unknown): IntakeAnswers {
 
   return {
     age: age === null ? null : Math.min(Math.max(age, 0), 120),
+    ea: trimText(record.ea, 120),
+    instagram: trimText(record.instagram, 120),
     name: trimText(record.name ?? record.recordName, 120),
-    otherInfo: trimText(record.otherInfo ?? record.notes, 1200),
+    notes: trimText(record.notes ?? record.otherInfo, 1200),
     profession: trimText(record.profession, 120),
     residence: trimText(record.residence, 120),
+    snapchat: trimText(record.snapchat, 120),
+    stream: trimText(record.stream, 120),
+    tiktok: trimText(record.tiktok, 120),
+    ubisoft: trimText(record.ubisoft, 120),
   };
 }
 

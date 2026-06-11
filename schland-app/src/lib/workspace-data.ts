@@ -53,10 +53,16 @@ export type WorkspaceMemberIntake = {
   answeredAt: string;
   answers: {
     age: string;
+    ea: string;
+    instagram: string;
     name: string;
-    otherInfo: string;
+    notes: string;
     profession: string;
     residence: string;
+    snapchat: string;
+    stream: string;
+    tiktok: string;
+    ubisoft: string;
   };
   raw: string;
   requestedAt: string;
@@ -282,10 +288,16 @@ function emptyMemberIntake(): WorkspaceMemberIntake {
     answeredAt: "-",
     answers: {
       age: "",
+      ea: "",
+      instagram: "",
       name: "",
-      otherInfo: "",
+      notes: "",
       profession: "",
       residence: "",
+      snapchat: "",
+      stream: "",
+      tiktok: "",
+      ubisoft: "",
     },
     raw: "",
     requestedAt: "-",
@@ -1216,41 +1228,109 @@ function mapMembers(
 function mapMemberIntakeLogs(
   rows: Record<string, unknown>[],
 ): Map<string, WorkspaceMemberIntake> {
-  const byMemberId = new Map<string, WorkspaceMemberIntake>();
+  const groupedRows = new Map<string, Record<string, unknown>[]>();
 
   for (const row of rows) {
     const memberId = String(row.member_id ?? "");
 
-    if (!memberId || byMemberId.has(memberId)) {
+    if (!memberId) {
       continue;
     }
 
-    byMemberId.set(memberId, mapMemberIntake(row));
+    groupedRows.set(memberId, [...(groupedRows.get(memberId) ?? []), row]);
+  }
+
+  const byMemberId = new Map<string, WorkspaceMemberIntake>();
+
+  for (const [memberId, memberRows] of groupedRows.entries()) {
+    byMemberId.set(memberId, mapMemberIntake(memberRows));
   }
 
   return byMemberId;
 }
 
-function mapMemberIntake(row: Record<string, unknown>): WorkspaceMemberIntake {
-  const payload = parseJsonObject(row.new_value);
-  const answers = asObject(payload.answers);
-  const status = String(payload.status ?? (row.success ? "sent" : "failed"));
-  const answeredAt = status === "submitted" ? formatDate(String(row.created_at ?? "")) : "-";
+function mapMemberIntake(rows: Record<string, unknown>[]): WorkspaceMemberIntake {
+  const intake = emptyMemberIntake();
+  const submittedSections = new Set<string>();
+  let latestStatus = "none";
 
-  return {
-    answeredAt,
-    answers: {
-      age: String(answers.age ?? ""),
-      name: String(answers.name ?? ""),
-      otherInfo: String(answers.otherInfo ?? ""),
-      profession: String(answers.profession ?? ""),
-      residence: String(answers.residence ?? ""),
-    },
-    raw: String(row.new_value ?? ""),
-    requestedAt: formatDate(String(row.created_at ?? "")),
-    status,
-    statusLabel: mapMemberIntakeStatus(status),
-  };
+  for (const row of rows) {
+    const payload = parseJsonObject(row.new_value);
+    const answers = asObject(payload.answers);
+    const status = String(payload.status ?? (row.success ? "sent" : "failed"));
+    const createdAt = formatDate(String(row.created_at ?? ""));
+
+    if (latestStatus === "none") {
+      latestStatus = status;
+    }
+
+    if (status === "sent" || status === "sending" || status === "failed") {
+      intake.requestedAt = createdAt;
+    }
+
+    if (status.endsWith("_submitted") || status === "submitted") {
+      intake.answeredAt = intake.answeredAt === "-" ? createdAt : intake.answeredAt;
+    }
+
+    if (status === "profile_submitted" || status === "submitted") {
+      submittedSections.add("profile");
+    }
+
+    if (status === "socials_submitted" || status === "submitted") {
+      submittedSections.add("socials");
+    }
+
+    if (status === "gaming_submitted" || status === "submitted") {
+      submittedSections.add("gaming");
+    }
+
+    mergeIntakeAnswers(intake, answers);
+  }
+
+  if (submittedSections.size >= 3 || latestStatus === "submitted") {
+    latestStatus = "submitted";
+  } else if (submittedSections.size > 0) {
+    latestStatus = "partial";
+  }
+
+  intake.raw = rows.map((row) => String(row.new_value ?? "")).filter(Boolean).join("\n");
+  intake.status = latestStatus;
+  intake.statusLabel = mapMemberIntakeStatus(latestStatus);
+
+  return intake;
+}
+
+function mergeIntakeAnswers(
+  intake: WorkspaceMemberIntake,
+  answers: Record<string, unknown>,
+) {
+  const keys = [
+    "age",
+    "ea",
+    "instagram",
+    "name",
+    "notes",
+    "profession",
+    "residence",
+    "snapchat",
+    "stream",
+    "tiktok",
+    "ubisoft",
+  ] as const;
+
+  for (const key of keys) {
+    const value = String(answers[key] ?? "").trim();
+
+    if (value && !intake.answers[key]) {
+      intake.answers[key] = value;
+    }
+  }
+
+  const legacyOtherInfo = String(answers.otherInfo ?? "").trim();
+
+  if (legacyOtherInfo && !intake.answers.notes) {
+    intake.answers.notes = legacyOtherInfo;
+  }
 }
 
 function mapCategories(rows: Record<string, unknown>[]): WorkspaceCategory[] {
@@ -1725,10 +1805,14 @@ function mapMemberStatusKey(status: string): "active" | "archived" | "review" {
 function mapMemberIntakeStatus(status: string) {
   const labels: Record<string, string> = {
     failed: "DM fehlgeschlagen",
+    gaming_submitted: "Gaming eingereicht",
     none: "Nicht angefragt",
+    partial: "Teilweise eingereicht",
+    profile_submitted: "Basisdaten eingereicht",
     sending: "Wird gesendet",
     sent: "DM gesendet",
     skipped: "Uebersprungen",
+    socials_submitted: "Socials eingereicht",
     submitted: "Eingereicht - Pruefung",
   };
 

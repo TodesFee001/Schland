@@ -10,6 +10,19 @@ export type PatchNote = {
 // Jede produktive Aenderung bekommt hier ab jetzt einen Eintrag.
 export const patchNotes: PatchNote[] = [
   {
+    date: "12.06.2026",
+    id: "discord-member-intake-split-fields",
+    items: [
+      "Discord-Aktenbogen nutzt jetzt einzelne Formularteile fuer Basisdaten, Socials und Gaming.",
+      "Instagram, Snapchat, TikTok, Stream, Ubisoft und EA werden als eigene Felder gespeichert.",
+      "Die Massenausgabe bleibt gesperrt, bis Test-Empfaenger oder Bulk-Freigabe explizit gesetzt sind.",
+      "Alte Sammelfeld-Aktenbogen werden durch die neue Formularversion erneut als offen erkannt.",
+    ],
+    title: "Aktenbogen mit Einzelfeldern",
+    type: "fix",
+    version: "0.10.3",
+  },
+  {
     date: "11.06.2026",
     id: "discord-member-intake-questionnaire",
     items: [

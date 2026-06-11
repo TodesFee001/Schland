@@ -59,7 +59,13 @@ const LOCKDOWN_CHANNEL_CONCURRENCY = 3;
 const GUILD_MEMBER_CACHE_MAX_AGE_MS = 5 * 60_000;
 const GUILD_MEMBER_FETCH_MAX_RETRIES = 3;
 const MEMBER_QUESTIONNAIRE_BUTTON_PREFIX = "member-intake:open:";
+const MEMBER_QUESTIONNAIRE_GAMING_BUTTON_PREFIX = "member-intake:gaming:";
+const MEMBER_QUESTIONNAIRE_GAMING_MODAL_PREFIX = "member-intake:gaming-submit:";
 const MEMBER_QUESTIONNAIRE_MODAL_PREFIX = "member-intake:submit:";
+const MEMBER_QUESTIONNAIRE_PROFILE_BUTTON_PREFIX = "member-intake:profile:";
+const MEMBER_QUESTIONNAIRE_PROFILE_MODAL_PREFIX = "member-intake:profile-submit:";
+const MEMBER_QUESTIONNAIRE_SOCIALS_BUTTON_PREFIX = "member-intake:socials:";
+const MEMBER_QUESTIONNAIRE_SOCIALS_MODAL_PREFIX = "member-intake:socials-submit:";
 
 const config = loadConfig();
 const client = new Client({
@@ -749,7 +755,7 @@ async function sendMemberQuestionnaireDm(questionnaire) {
   try {
     const user = await client.users.fetch(questionnaire.discordUserId);
     const message = await user.send({
-      components: [buildMemberQuestionnaireActionRow(questionnaire.memberId)],
+      components: buildMemberQuestionnaireActionRows(questionnaire.memberId),
       embeds: [buildMemberQuestionnaireEmbed(questionnaire)],
     });
 
@@ -773,6 +779,7 @@ function buildMemberQuestionnaireEmbed(questionnaire) {
       [
         `Servus ${displayName}, bitte fuelle den Aktenbogen fuer die Verwaltung aus.`,
         "Discord-ID, Anzeigename und Telefonnummer werden nicht abgefragt.",
+        "Der Bogen ist in einzelne Feldgruppen aufgeteilt.",
       ].join("\n"),
     )
     .addFields(
@@ -791,38 +798,105 @@ function buildMemberQuestionnaireEmbed(questionnaire) {
     .setTimestamp(new Date());
 }
 
-function buildMemberQuestionnaireActionRow(memberId) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`${MEMBER_QUESTIONNAIRE_BUTTON_PREFIX}${memberId}`)
-      .setLabel("Aktenbogen ausfuellen")
-      .setStyle(ButtonStyle.Primary),
-  );
+function buildMemberQuestionnaireActionRows(memberId) {
+  return [
+    new ActionRowBuilder().addComponents(
+      buildMemberQuestionnaireButton(
+        `${MEMBER_QUESTIONNAIRE_PROFILE_BUTTON_PREFIX}${memberId}`,
+        "1 Basisdaten",
+        ButtonStyle.Primary,
+      ),
+      buildMemberQuestionnaireButton(
+        `${MEMBER_QUESTIONNAIRE_SOCIALS_BUTTON_PREFIX}${memberId}`,
+        "2 Socials",
+        ButtonStyle.Secondary,
+      ),
+      buildMemberQuestionnaireButton(
+        `${MEMBER_QUESTIONNAIRE_GAMING_BUTTON_PREFIX}${memberId}`,
+        "3 Gaming",
+        ButtonStyle.Secondary,
+      ),
+    ),
+  ];
+}
+
+function buildMemberQuestionnaireButton(customId, label, style) {
+  return new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
 }
 
 async function handleInteraction(interaction) {
   try {
     if (interaction.isButton()) {
-      const memberId = getMemberIdFromCustomId(
+      const profileMemberId =
+        getMemberIdFromCustomId(
+          interaction.customId,
+          MEMBER_QUESTIONNAIRE_PROFILE_BUTTON_PREFIX,
+        ) ??
+        getMemberIdFromCustomId(
+          interaction.customId,
+          MEMBER_QUESTIONNAIRE_BUTTON_PREFIX,
+        );
+
+      if (profileMemberId) {
+        await showMemberQuestionnaireProfileModal(interaction, profileMemberId);
+        return;
+      }
+
+      const socialsMemberId = getMemberIdFromCustomId(
         interaction.customId,
-        MEMBER_QUESTIONNAIRE_BUTTON_PREFIX,
+        MEMBER_QUESTIONNAIRE_SOCIALS_BUTTON_PREFIX,
       );
 
-      if (memberId) {
-        await showMemberQuestionnaireModal(interaction, memberId);
+      if (socialsMemberId) {
+        await showMemberQuestionnaireSocialsModal(interaction, socialsMemberId);
+        return;
+      }
+
+      const gamingMemberId = getMemberIdFromCustomId(
+        interaction.customId,
+        MEMBER_QUESTIONNAIRE_GAMING_BUTTON_PREFIX,
+      );
+
+      if (gamingMemberId) {
+        await showMemberQuestionnaireGamingModal(interaction, gamingMemberId);
       }
 
       return;
     }
 
     if (interaction.isModalSubmit()) {
-      const memberId = getMemberIdFromCustomId(
+      const profileMemberId =
+        getMemberIdFromCustomId(
+          interaction.customId,
+          MEMBER_QUESTIONNAIRE_PROFILE_MODAL_PREFIX,
+        ) ??
+        getMemberIdFromCustomId(
+          interaction.customId,
+          MEMBER_QUESTIONNAIRE_MODAL_PREFIX,
+        );
+
+      if (profileMemberId) {
+        await handleMemberQuestionnaireProfileSubmit(interaction, profileMemberId);
+        return;
+      }
+
+      const socialsMemberId = getMemberIdFromCustomId(
         interaction.customId,
-        MEMBER_QUESTIONNAIRE_MODAL_PREFIX,
+        MEMBER_QUESTIONNAIRE_SOCIALS_MODAL_PREFIX,
       );
 
-      if (memberId) {
-        await handleMemberQuestionnaireSubmit(interaction, memberId);
+      if (socialsMemberId) {
+        await handleMemberQuestionnaireSocialsSubmit(interaction, socialsMemberId);
+        return;
+      }
+
+      const gamingMemberId = getMemberIdFromCustomId(
+        interaction.customId,
+        MEMBER_QUESTIONNAIRE_GAMING_MODAL_PREFIX,
+      );
+
+      if (gamingMemberId) {
+        await handleMemberQuestionnaireGamingSubmit(interaction, gamingMemberId);
       }
     }
   } catch (error) {
@@ -832,17 +906,17 @@ async function handleInteraction(interaction) {
       await interaction
         .reply({
           content: "Aktenbogen konnte gerade nicht verarbeitet werden.",
-          ephemeral: true,
+          ephemeral: Boolean(interaction.guildId),
         })
         .catch(() => {});
     }
   }
 }
 
-async function showMemberQuestionnaireModal(interaction, memberId) {
+async function showMemberQuestionnaireProfileModal(interaction, memberId) {
   const modal = new ModalBuilder()
-    .setCustomId(`${MEMBER_QUESTIONNAIRE_MODAL_PREFIX}${memberId}`)
-    .setTitle("Mitgliederakte");
+    .setCustomId(`${MEMBER_QUESTIONNAIRE_PROFILE_MODAL_PREFIX}${memberId}`)
+    .setTitle("Mitgliederakte - Basis");
 
   modal.addComponents(
     buildTextInputRow("name", "Name fuer die Akte", {
@@ -869,9 +943,9 @@ async function showMemberQuestionnaireModal(interaction, memberId) {
       required: false,
       style: TextInputStyle.Short,
     }),
-    buildTextInputRow("otherInfo", "Socials / weitere Angaben", {
+    buildTextInputRow("notes", "Notizen / Hinweise", {
       maxLength: 800,
-      placeholder: "Instagram, Snapchat, TikTok, Stream, Ubisoft, EA, Hinweise",
+      placeholder: "optional",
       required: false,
       style: TextInputStyle.Paragraph,
     }),
@@ -880,13 +954,73 @@ async function showMemberQuestionnaireModal(interaction, memberId) {
   await interaction.showModal(modal);
 }
 
-async function handleMemberQuestionnaireSubmit(interaction, memberId) {
+async function showMemberQuestionnaireSocialsModal(interaction, memberId) {
+  const modal = new ModalBuilder()
+    .setCustomId(`${MEMBER_QUESTIONNAIRE_SOCIALS_MODAL_PREFIX}${memberId}`)
+    .setTitle("Mitgliederakte - Socials");
+
+  modal.addComponents(
+    buildTextInputRow("instagram", "Instagram", {
+      maxLength: 120,
+      placeholder: "optional",
+      required: false,
+      style: TextInputStyle.Short,
+    }),
+    buildTextInputRow("snapchat", "Snapchat", {
+      maxLength: 120,
+      placeholder: "optional",
+      required: false,
+      style: TextInputStyle.Short,
+    }),
+    buildTextInputRow("tiktok", "TikTok", {
+      maxLength: 120,
+      placeholder: "optional",
+      required: false,
+      style: TextInputStyle.Short,
+    }),
+    buildTextInputRow("stream", "Stream / Twitch / YouTube", {
+      maxLength: 120,
+      placeholder: "optional",
+      required: false,
+      style: TextInputStyle.Short,
+    }),
+  );
+
+  await interaction.showModal(modal);
+}
+
+async function showMemberQuestionnaireGamingModal(interaction, memberId) {
+  const modal = new ModalBuilder()
+    .setCustomId(`${MEMBER_QUESTIONNAIRE_GAMING_MODAL_PREFIX}${memberId}`)
+    .setTitle("Mitgliederakte - Gaming");
+
+  modal.addComponents(
+    buildTextInputRow("ubisoft", "Ubisoft", {
+      maxLength: 120,
+      placeholder: "optional",
+      required: false,
+      style: TextInputStyle.Short,
+    }),
+    buildTextInputRow("ea", "EA", {
+      maxLength: 120,
+      placeholder: "optional",
+      required: false,
+      style: TextInputStyle.Short,
+    }),
+  );
+
+  await interaction.showModal(modal);
+}
+
+async function handleMemberQuestionnaireProfileSubmit(interaction, memberId) {
   const answers = {
-    age: interaction.fields.getTextInputValue("age"),
-    name: interaction.fields.getTextInputValue("name"),
-    otherInfo: interaction.fields.getTextInputValue("otherInfo"),
-    profession: interaction.fields.getTextInputValue("profession"),
-    residence: interaction.fields.getTextInputValue("residence"),
+    age: getModalText(interaction, "age"),
+    name: getModalText(interaction, "name"),
+    notes:
+      getModalText(interaction, "notes") ||
+      getModalText(interaction, "otherInfo"),
+    profession: getModalText(interaction, "profession"),
+    residence: getModalText(interaction, "residence"),
   };
 
   await api("/member-questionnaires", {
@@ -894,15 +1028,68 @@ async function handleMemberQuestionnaireSubmit(interaction, memberId) {
       answers,
       discordUserId: interaction.user.id,
       memberId,
-      status: "submitted",
+      status: "profile_submitted",
     },
     method: "PATCH",
   });
 
-  await interaction.reply({
-    content: "Danke, deine Angaben wurden gespeichert und werden geprueft.",
-    ephemeral: true,
+  await replyMemberQuestionnaireStep(interaction, memberId, "Basisdaten gespeichert.");
+}
+
+async function handleMemberQuestionnaireSocialsSubmit(interaction, memberId) {
+  const answers = {
+    instagram: getModalText(interaction, "instagram"),
+    snapchat: getModalText(interaction, "snapchat"),
+    stream: getModalText(interaction, "stream"),
+    tiktok: getModalText(interaction, "tiktok"),
+  };
+
+  await api("/member-questionnaires", {
+    body: {
+      answers,
+      discordUserId: interaction.user.id,
+      memberId,
+      status: "socials_submitted",
+    },
+    method: "PATCH",
   });
+
+  await replyMemberQuestionnaireStep(interaction, memberId, "Socials gespeichert.");
+}
+
+async function handleMemberQuestionnaireGamingSubmit(interaction, memberId) {
+  const answers = {
+    ea: getModalText(interaction, "ea"),
+    ubisoft: getModalText(interaction, "ubisoft"),
+  };
+
+  await api("/member-questionnaires", {
+    body: {
+      answers,
+      discordUserId: interaction.user.id,
+      memberId,
+      status: "gaming_submitted",
+    },
+    method: "PATCH",
+  });
+
+  await replyMemberQuestionnaireStep(interaction, memberId, "Gaming-Felder gespeichert.");
+}
+
+async function replyMemberQuestionnaireStep(interaction, memberId, message) {
+  await interaction.reply({
+    components: buildMemberQuestionnaireActionRows(memberId),
+    content: `${message} Bitte fuelle bei Bedarf auch die anderen Teile aus.`,
+    ephemeral: Boolean(interaction.guildId),
+  });
+}
+
+function getModalText(interaction, customId) {
+  try {
+    return interaction.fields.getTextInputValue(customId);
+  } catch {
+    return "";
+  }
 }
 
 function buildTextInputRow(customId, label, options) {
