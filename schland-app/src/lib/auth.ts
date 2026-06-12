@@ -14,6 +14,7 @@ export type AuthStatus = {
   signedIn: boolean;
   email?: string;
   mfaLevel?: string;
+  mfaRequired?: boolean;
   sessionExpiresAt?: string;
   sessionRemainingSeconds?: number;
   userId?: string;
@@ -49,13 +50,21 @@ export async function getAuthStatus(): Promise<AuthStatus> {
     };
   }
 
-  const { data: mfaReady } = await supabase.rpc("has_mfa_level2");
+  const [{ data: mfaReady }, { data: profile }] = await Promise.all([
+    supabase.rpc("has_mfa_level2"),
+    supabase
+      .from("profiles")
+      .select("two_factor_required")
+      .eq("id", user.id)
+      .maybeSingle(),
+  ]);
 
   return {
     configured: true,
     signedIn: true,
     email: user.email ?? undefined,
     mfaLevel: mfaReady ? "aal2" : "aal1",
+    mfaRequired: profile?.two_factor_required !== false,
     sessionExpiresAt: getSessionExpiresAt(sessionStartedAt) ?? undefined,
     sessionRemainingSeconds: getSessionRemainingSeconds(sessionStartedAt),
     userId: user.id,

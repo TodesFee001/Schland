@@ -274,6 +274,7 @@ export type WorkspaceUserRow = {
   status: string;
   statusLabel: string;
   twoFactorEnabled: boolean;
+  twoFactorRequired: boolean;
   username: string;
 };
 
@@ -281,6 +282,8 @@ export type WorkspaceUserSummary = {
   active: number;
   disabled: number;
   mfaEnabled: number;
+  mfaRequirementDisabled: number;
+  mfaRequired: number;
   rows: WorkspaceUserRow[];
 };
 
@@ -849,6 +852,8 @@ export const demoWorkspaceData: WorkspaceData = {
   users: {
     active: 21,
     mfaEnabled: 18,
+    mfaRequired: 20,
+    mfaRequirementDisabled: 1,
     disabled: 3,
     rows: [
       {
@@ -858,6 +863,7 @@ export const demoWorkspaceData: WorkspaceData = {
         status: "active",
         statusLabel: "Aktiv",
         twoFactorEnabled: true,
+        twoFactorRequired: true,
         username: "mara",
         roles: [
           {
@@ -879,6 +885,7 @@ export const demoWorkspaceData: WorkspaceData = {
         status: "active",
         statusLabel: "Aktiv",
         twoFactorEnabled: true,
+        twoFactorRequired: false,
         username: "elias",
         roles: [
           {
@@ -895,6 +902,7 @@ export const demoWorkspaceData: WorkspaceData = {
         status: "disabled",
         statusLabel: "Deaktiviert",
         twoFactorEnabled: false,
+        twoFactorRequired: true,
         username: "tom",
         roles: [],
       },
@@ -1142,6 +1150,7 @@ export async function getWorkspaceData(
             email,
             status,
             two_factor_enabled,
+            two_factor_required,
             user_roles(roles(id, role_key, name))
           `,
         )
@@ -1871,6 +1880,12 @@ function mapUsers(rows: Record<string, unknown>[]): WorkspaceUserSummary {
         summary.mfaEnabled += 1;
       }
 
+      if (row.two_factor_required === false) {
+        summary.mfaRequirementDisabled += 1;
+      } else {
+        summary.mfaRequired += 1;
+      }
+
       summary.rows.push({
         id: String(row.id ?? ""),
         displayName: String(row.display_name ?? row.email ?? "Benutzer"),
@@ -1878,13 +1893,21 @@ function mapUsers(rows: Record<string, unknown>[]): WorkspaceUserSummary {
         status,
         statusLabel: mapUserStatus(status),
         twoFactorEnabled: Boolean(row.two_factor_enabled),
+        twoFactorRequired: row.two_factor_required !== false,
         username: String(row.username ?? "-"),
         roles,
       });
 
       return summary;
     },
-    { active: 0, disabled: 0, mfaEnabled: 0, rows: [] },
+    {
+      active: 0,
+      disabled: 0,
+      mfaEnabled: 0,
+      mfaRequired: 0,
+      mfaRequirementDisabled: 0,
+      rows: [],
+    },
   );
 }
 

@@ -10,6 +10,19 @@ export type PatchNote = {
 // Jede produktive Aenderung bekommt hier ab jetzt einen Eintrag.
 export const patchNotes: PatchNote[] = [
   {
+    date: "13.06.2026",
+    id: "root-two-factor-requirement-control",
+    items: [
+      "Root Owner koennen die 2FA-Pflicht fuer Website-Benutzer gezielt deaktivieren oder wieder erzwingen.",
+      "Benutzer mit deaktivierter 2FA-Pflicht erhalten nach dem Login vollen Zugriff gemaess Rollenrechten.",
+      "Benutzerverwaltung zeigt 2FA-Einrichtung und 2FA-Pflicht getrennt an.",
+      "Aenderungen an der 2FA-Pflicht werden serverseitig geprueft und protokolliert.",
+    ],
+    title: "Root-Steuerung fuer 2FA-Pflicht",
+    type: "feature",
+    version: "0.10.5",
+  },
+  {
     date: "12.06.2026",
     id: "discord-absence-representations",
     items: [

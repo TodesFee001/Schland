@@ -949,6 +949,41 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "two-factor-requirement-enabled") {
+    return {
+      tone: "success" as const,
+      text: "2FA-Pflicht wurde fuer diesen Benutzer wieder aktiviert.",
+    };
+  }
+
+  if (setup === "two-factor-requirement-disabled") {
+    return {
+      tone: "success" as const,
+      text: "2FA-Pflicht wurde fuer diesen Benutzer deaktiviert.",
+    };
+  }
+
+  if (setup === "two-factor-requirement-denied") {
+    return {
+      tone: "error" as const,
+      text: "2FA-Pflicht konnte nicht geaendert werden. Nur Root Owner duerfen das.",
+    };
+  }
+
+  if (setup === "two-factor-requirement-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Benutzer oder 2FA-Zielzustand wurde nicht gefunden.",
+    };
+  }
+
+  if (setup === "two-factor-requirement-error") {
+    return {
+      tone: "error" as const,
+      text: "2FA-Pflicht konnte nicht geaendert werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
   if (setup === "category-created") {
     return {
       tone: "success" as const,

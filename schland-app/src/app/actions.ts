@@ -787,6 +787,45 @@ export async function setUserRoleAction(formData: FormData) {
   );
 }
 
+export async function setUserTwoFactorRequirementAction(formData: FormData) {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=users&setup=missing-supabase");
+  }
+
+  const userId = getFormText(formData, "userId");
+  const intent = getFormText(formData, "intent");
+
+  if (!isUuidText(userId) || (intent !== "require" && intent !== "disable")) {
+    redirect("/?section=users&setup=two-factor-requirement-missing");
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("set_profile_two_factor_required", {
+    p_required: intent === "require",
+    p_user_id: userId,
+  });
+
+  if (error) {
+    console.error("set_profile_two_factor_required failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect(
+      `/?section=users&setup=${getTwoFactorRequirementErrorSetup(error)}`,
+    );
+  }
+
+  revalidatePath("/", "layout");
+  redirect(
+    `/?section=users&setup=${
+      intent === "require"
+        ? "two-factor-requirement-enabled"
+        : "two-factor-requirement-disabled"
+    }`,
+  );
+}
+
 export async function saveCategoryAction(formData: FormData) {
   if (!hasSupabasePublicEnv()) {
     redirect("/?section=categories&setup=missing-supabase");
@@ -3137,6 +3176,20 @@ function getUserRoleErrorSetup(error: { message?: string }) {
   }
 
   return "role-assignment-error";
+}
+
+function getTwoFactorRequirementErrorSetup(error: { message?: string }) {
+  const message = error.message?.toLowerCase() ?? "";
+
+  if (message.includes("not found")) {
+    return "two-factor-requirement-missing";
+  }
+
+  if (message.includes("denied")) {
+    return "two-factor-requirement-denied";
+  }
+
+  return "two-factor-requirement-error";
 }
 
 function getCategoryErrorSetup(error: { code?: string; message?: string }) {

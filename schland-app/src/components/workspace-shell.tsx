@@ -65,6 +65,7 @@ import {
   setMemberDiscordAnalyticsAction,
   setFolderPermissionAction,
   setRolePermissionAction,
+  setUserTwoFactorRequirementAction,
   setUserRoleAction,
   unlinkMemberFileAction,
   updateMemberCaseAction,
@@ -411,7 +412,13 @@ export function WorkspaceShell({
                 {authStatus.signedIn ? (
                   <EnvironmentPill
                     active={authStatus.mfaLevel === "aal2"}
-                    label={authStatus.mfaLevel === "aal2" ? "2FA aktiv" : "2FA offen"}
+                    label={
+                      authStatus.mfaRequired === false
+                        ? "2FA Pflicht aus"
+                        : authStatus.mfaLevel === "aal2"
+                          ? "2FA aktiv"
+                          : "2FA offen"
+                    }
                   />
                 ) : null}
                 {authStatus.signedIn && sessionRemainingSeconds !== null ? (
@@ -632,6 +639,7 @@ export function WorkspaceShell({
       case "users":
         return (
           <UsersSection
+            authStatus={authStatus}
             mfaReady={mfaReady}
             roles={workspaceData.roles}
             users={workspaceData.users}
@@ -3118,15 +3126,21 @@ function CategoriesSection({
 }
 
 function UsersSection({
+  authStatus,
   mfaReady,
   roles,
   users,
 }: {
+  authStatus: AuthStatus;
   mfaReady: boolean;
   roles: WorkspaceRoleRow[];
   users: WorkspaceUserSummary;
 }) {
   const roleOptions = roles.filter((role) => role.id && role.role && role.active);
+  const currentUser = users.rows.find((user) => user.id === authStatus.userId);
+  const canManageTwoFactorRequirement = Boolean(
+    currentUser?.roles.some((role) => role.roleKey === rootRoleKey),
+  );
   const rootAssignments = users.rows.filter((user) =>
     user.status !== "disabled" &&
     user.roles.some((role) => role.roleKey === rootRoleKey),
@@ -3151,10 +3165,12 @@ function UsersSection({
           </a>
         }
       />
-      <div className="grid gap-3 border-t border-[var(--line)] p-4 md:grid-cols-3">
+      <div className="grid gap-3 border-t border-[var(--line)] p-4 md:grid-cols-5">
         {[
           ["Aktiv", users.active],
           ["2FA aktiv", users.mfaEnabled],
+          ["2FA Pflicht", users.mfaRequired],
+          ["2FA befreit", users.mfaRequirementDisabled],
           ["Deaktiviert", users.disabled],
         ].map(([label, value]) => (
           <article
@@ -3174,11 +3190,12 @@ function UsersSection({
         </div>
       ) : null}
       <div className="overflow-x-auto border-t border-[var(--line)]">
-        <table className="w-full min-w-[940px] text-sm">
+        <table className="w-full min-w-[1120px] text-sm">
           <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
             <tr>
               <th className="px-4 py-3 font-medium">Benutzer</th>
               <th className="px-4 py-3 font-medium">Status</th>
+              <th className="px-4 py-3 font-medium">2FA-Pflicht</th>
               <th className="px-4 py-3 font-medium">Rollen</th>
               <th className="px-4 py-3 font-medium">Zuweisen</th>
             </tr>
@@ -3218,7 +3235,57 @@ function UsersSection({
                       >
                         {user.twoFactorEnabled ? "2FA aktiv" : "2FA offen"}
                       </span>
+                      <span
+                        className={[
+                          "rounded-md px-2 py-1 text-xs font-medium",
+                          user.twoFactorRequired
+                            ? "bg-[var(--surface-muted)] text-neutral-700"
+                            : "bg-red-50 text-[var(--danger)]",
+                        ].join(" ")}
+                      >
+                        {user.twoFactorRequired ? "Pflicht an" : "Pflicht aus"}
+                      </span>
                     </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <form
+                      action={setUserTwoFactorRequirementAction}
+                      className="grid min-w-[190px] gap-2"
+                    >
+                      <input type="hidden" name="userId" value={user.id} />
+                      <input
+                        type="hidden"
+                        name="intent"
+                        value={user.twoFactorRequired ? "disable" : "require"}
+                      />
+                      <div className="text-xs text-neutral-600">
+                        {user.twoFactorRequired
+                          ? "Nach Login verlangt"
+                          : "Root-Freigabe ohne 2FA"}
+                      </div>
+                      <button
+                        type="submit"
+                        title={
+                          canManageTwoFactorRequirement
+                            ? user.twoFactorRequired
+                              ? "2FA-Pflicht deaktivieren"
+                              : "2FA-Pflicht wieder aktivieren"
+                            : "Nur Root Owner darf die 2FA-Pflicht steuern"
+                        }
+                        disabled={!canManageTwoFactorRequirement}
+                        className={[
+                          "flex h-9 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-45",
+                          user.twoFactorRequired
+                            ? "bg-[var(--danger)] text-white"
+                            : "border border-[var(--line)] bg-white text-[var(--foreground)]",
+                        ].join(" ")}
+                      >
+                        <KeyRound className="size-4" aria-hidden="true" />
+                        <span>
+                          {user.twoFactorRequired ? "Deaktivieren" : "Erzwingen"}
+                        </span>
+                      </button>
+                    </form>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1">
@@ -3304,7 +3371,7 @@ function UsersSection({
                 </tr>
               ))
             ) : (
-              <TableEmpty colSpan={4} label="Noch keine Benutzer sichtbar." />
+              <TableEmpty colSpan={5} label="Noch keine Benutzer sichtbar." />
             )}
           </tbody>
         </table>
@@ -5217,7 +5284,11 @@ function SettingsSection({
           <StatusLine active={authStatus.signedIn} label="Angemeldet" />
           <StatusLine
             active={authStatus.mfaLevel === "aal2"}
-            label="2FA AAL2"
+            label={
+              authStatus.mfaRequired === false
+                ? "2FA-Pflicht deaktiviert"
+                : "2FA AAL2"
+            }
           />
         </div>
       </section>
@@ -5240,7 +5311,7 @@ function SettingsSection({
           {[
             "Persoenliche Benutzerkonten",
             "Flexible Rollen und Rechte",
-            "2FA-Pflicht fuer Mitgliederakten",
+            "2FA-Pflicht standardmaessig aktiv",
             "Zugriffsgrund vor Aktenansicht",
             "Detailprotokoll nur fuer Mitgliederakten",
           ].map((rule) => (
