@@ -66,6 +66,8 @@ const MEMBER_QUESTIONNAIRE_PROFILE_BUTTON_PREFIX = "member-intake:profile:";
 const MEMBER_QUESTIONNAIRE_PROFILE_MODAL_PREFIX = "member-intake:profile-submit:";
 const MEMBER_QUESTIONNAIRE_SOCIALS_BUTTON_PREFIX = "member-intake:socials:";
 const MEMBER_QUESTIONNAIRE_SOCIALS_MODAL_PREFIX = "member-intake:socials-submit:";
+const REPRESENTATION_APPROVAL_ACCEPT_PREFIX = "representation-approval:accept:";
+const REPRESENTATION_APPROVAL_DECLINE_PREFIX = "representation-approval:decline:";
 
 const config = loadConfig();
 const client = new Client({
@@ -833,9 +835,92 @@ function buildMemberQuestionnaireButton(customId, label, style) {
   return new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
 }
 
+function getRepresentationApprovalFromCustomId(customId) {
+  const acceptedId = getMemberIdFromCustomId(
+    customId,
+    REPRESENTATION_APPROVAL_ACCEPT_PREFIX,
+  );
+
+  if (acceptedId) {
+    return { decision: "accepted", id: acceptedId };
+  }
+
+  const declinedId = getMemberIdFromCustomId(
+    customId,
+    REPRESENTATION_APPROVAL_DECLINE_PREFIX,
+  );
+
+  if (declinedId) {
+    return { decision: "declined", id: declinedId };
+  }
+
+  return null;
+}
+
+async function handleRepresentationApprovalInteraction(interaction, approval) {
+  await interaction.deferUpdate();
+
+  let result;
+
+  try {
+    result = await api("/representations", {
+      body: {
+        approvalStatus: approval.decision,
+        id: approval.id,
+        respondentDiscordId: interaction.user.id,
+      },
+      method: "PATCH",
+    });
+  } catch (error) {
+    await interaction
+      .followUp({
+        content:
+          "Diese Vertretungsantwort konnte nicht gespeichert werden. Bitte melde dich bei der Verwaltung.",
+        ephemeral: Boolean(interaction.guildId),
+      })
+      .catch(() => {});
+    throw error;
+  }
+
+  await interaction.message
+    ?.edit({
+      components: buildRepresentationApprovalActionRows(approval.id, {
+        decision: approval.decision,
+        disabled: true,
+      }),
+    })
+    .catch(() => {});
+
+  const accepted = approval.decision === "accepted";
+  const content = accepted
+    ? "Zustimmung gespeichert. Die Vertretungsrolle wird automatisch gesetzt."
+    : result.replacementFound
+      ? "Ablehnung gespeichert. Eine neue Vertretung wird automatisch angefragt."
+      : "Ablehnung gespeichert. Es ist keine freie Ersatzvertretung mehr vorhanden.";
+
+  await interaction
+    .followUp({
+      content,
+      ephemeral: Boolean(interaction.guildId),
+    })
+    .catch(() => {});
+}
+
 async function handleInteraction(interaction) {
   try {
     if (interaction.isButton()) {
+      const representationApproval = getRepresentationApprovalFromCustomId(
+        interaction.customId,
+      );
+
+      if (representationApproval) {
+        await handleRepresentationApprovalInteraction(
+          interaction,
+          representationApproval,
+        );
+        return;
+      }
+
       const profileMemberId =
         getMemberIdFromCustomId(
           interaction.customId,
@@ -914,7 +999,7 @@ async function handleInteraction(interaction) {
     if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
       await interaction
         .reply({
-          content: "Aktenbogen konnte gerade nicht verarbeitet werden.",
+          content: "Discord-Aktion konnte gerade nicht verarbeitet werden.",
           ephemeral: Boolean(interaction.guildId),
         })
         .catch(() => {});
@@ -3179,7 +3264,40 @@ async function pollRepresentationActions() {
 
 async function processRepresentationAction(action) {
   try {
-    if (action.action === "assign") {
+    if (action.action === "request_approval") {
+      const result = await sendRepresentationApprovalRequest(action);
+
+      if (result.status === "sent") {
+        await api("/representations", {
+          body: {
+            approvalChannelId: result.channelId,
+            approvalMessageId: result.messageId,
+            approvalRequestedAt: result.requestedAt,
+            approvalStatus: "pending",
+            id: action.id,
+          },
+          method: "PATCH",
+        });
+
+        console.log(
+          `Representation approval requested: ${action.ministryRoleName} -> ${action.representativeDiscordId}`,
+        );
+      } else {
+        await api("/representations", {
+          body: {
+            approvalError: result.error,
+            approvalStatus: "declined",
+            id: action.id,
+            respondentDiscordId: action.representativeDiscordId,
+          },
+          method: "PATCH",
+        });
+
+        console.warn(
+          `Representation approval DM failed, replacement requested: ${action.representativeDiscordId}`,
+        );
+      }
+    } else if (action.action === "assign") {
       await api("/representations", {
         body: {
           id: action.id,
@@ -3240,6 +3358,118 @@ async function processRepresentationAction(action) {
       );
     });
   }
+}
+
+async function sendRepresentationApprovalRequest(action) {
+  const requestedAt = new Date().toISOString();
+
+  try {
+    if (!isDiscordSnowflake(action.representativeDiscordId)) {
+      throw new Error("Vertretung hat keine gueltige Discord-ID.");
+    }
+
+    const user = await client.users.fetch(action.representativeDiscordId);
+    const message = await user.send({
+      components: buildRepresentationApprovalActionRows(action.id),
+      embeds: [buildRepresentationApprovalEmbed(action, requestedAt)],
+    });
+
+    return {
+      channelId: message.channelId,
+      messageId: message.id,
+      requestedAt,
+      status: "sent",
+    };
+  } catch (error) {
+    return {
+      error: errorMessage(error),
+      requestedAt,
+      status: "failed",
+    };
+  }
+}
+
+function buildRepresentationApprovalEmbed(action, requestedAt) {
+  const represented = buildMentionLabel(
+    action.representedDiscordId,
+    action.representedName,
+  );
+  const period = `${formatDiscordTimestamp(action.startedAt, "ab sofort")} - ${
+    action.expectedReturnAt
+      ? formatDiscordTimestamp(action.expectedReturnAt, "offen")
+      : "bis Rueckkehr / offen"
+  }`;
+
+  return new EmbedBuilder()
+    .setColor(0x263f72)
+    .setTitle("Schland DB - Amtsvertretung")
+    .setDescription(
+      "Du wurdest als Vertretung vorgeschlagen. Bitte bestaetige, ob du die Vertretung uebernimmst.",
+    )
+    .addFields(
+      {
+        name: "Zu vertretende Person",
+        value: represented,
+      },
+      {
+        name: "Zu vertretende Funktion",
+        value: action.ministryRoleName ?? "Amtsrolle",
+      },
+      {
+        name: "Zeitraum",
+        value: period,
+      },
+      {
+        name: "Grund",
+        value: action.reason ?? "Abmeldung",
+      },
+      {
+        name: "Angefragt von",
+        value: action.requestedByName ?? "Schland Verwaltung",
+      },
+    )
+    .setFooter({ text: "Schland DB - Vertretungsabfrage" })
+    .setTimestamp(new Date(requestedAt));
+}
+
+function buildRepresentationApprovalActionRows(id, options = {}) {
+  const disabled = Boolean(options.disabled);
+  const decision = options.decision ?? "";
+  const acceptLabel = decision === "accepted" ? "Zugestimmt" : "Zustimmen";
+  const declineLabel = decision === "declined" ? "Abgelehnt" : "Ablehnen";
+
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${REPRESENTATION_APPROVAL_ACCEPT_PREFIX}${id}`)
+        .setDisabled(disabled)
+        .setLabel(acceptLabel)
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`${REPRESENTATION_APPROVAL_DECLINE_PREFIX}${id}`)
+        .setDisabled(disabled)
+        .setLabel(declineLabel)
+        .setStyle(ButtonStyle.Danger),
+    ),
+  ];
+}
+
+function buildMentionLabel(discordId, fallback) {
+  if (isDiscordSnowflake(discordId)) {
+    return `${fallback ?? discordId} (<@${discordId}>)`;
+  }
+
+  return fallback ?? "Unbekannt";
+}
+
+function formatDiscordTimestamp(iso, fallback) {
+  const time = Date.parse(iso ?? "");
+
+  if (!Number.isFinite(time)) {
+    return fallback;
+  }
+
+  return `<t:${Math.floor(time / 1000)}:f>`;
 }
 
 async function executeRepresentationAssign(action) {

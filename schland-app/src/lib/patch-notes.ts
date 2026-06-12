@@ -11,6 +11,19 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "13.06.2026",
+    id: "representation-approval-dm-flow",
+    items: [
+      "Amtsvertretungen werden vor der Rollenzuweisung per Discord-DM bei der vertretenden Person angefragt.",
+      "Die DM enthaelt Zeitraum, zu vertretende Person, Funktion, Grund und Zustimmen/Ablehnen-Buttons.",
+      "Bei Zustimmung setzt der Bot die Vertretungsrolle wie bisher automatisch.",
+      "Bei Ablehnung oder nicht zustellbarer DM sucht die Verwaltung automatisch die naechste freie Vertretung.",
+    ],
+    title: "Zustimmung fuer Amtsvertretung",
+    type: "feature",
+    version: "0.10.6",
+  },
+  {
+    date: "13.06.2026",
     id: "root-two-factor-requirement-control",
     items: [
       "Root Owner koennen die 2FA-Pflicht fuer Website-Benutzer gezielt deaktivieren oder wieder erzwingen.",

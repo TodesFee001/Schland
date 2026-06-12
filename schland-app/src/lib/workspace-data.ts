@@ -161,6 +161,9 @@ export type WorkspaceRepresentationEligibility = {
 
 export type WorkspaceAbsenceRepresentation = {
   assignedAt: string;
+  approvalRequestedAt: string;
+  approvalRespondedAt: string;
+  approvalStatus: string;
   botError: string;
   discordRoleId: string;
   id: string;
@@ -1224,6 +1227,9 @@ export async function getWorkspaceData(
               discord_role_id,
               ministry_role_name,
               status,
+              approval_status,
+              approval_requested_at,
+              approval_responded_at,
               representative_had_role_before,
               role_was_assigned_automatically,
               assigned_at,
@@ -1732,6 +1738,9 @@ function mapAbsenceRepresentation(
 
   return {
     assignedAt: formatDate(String(row.assigned_at ?? "")),
+    approvalRequestedAt: formatDate(String(row.approval_requested_at ?? "")),
+    approvalRespondedAt: formatDate(String(row.approval_responded_at ?? "")),
+    approvalStatus: String(row.approval_status ?? "pending"),
     botError: String(row.bot_error ?? ""),
     discordRoleId: String(row.discord_role_id ?? ""),
     id: String(row.id ?? ""),
@@ -1751,7 +1760,11 @@ function mapAbsenceRepresentation(
     ),
     roleWasAssignedAutomatically: Boolean(row.role_was_assigned_automatically),
     status: String(row.status ?? "pending"),
-    statusLabel: mapRepresentationStatus(String(row.status ?? "pending")),
+    statusLabel: mapRepresentationStatus(
+      String(row.status ?? "pending"),
+      String(row.approval_status ?? "pending"),
+      String(row.approval_requested_at ?? ""),
+    ),
   };
 }
 
@@ -2195,7 +2208,25 @@ function mapAbsenceStatus(status: string) {
   return labels[status] ?? status;
 }
 
-function mapRepresentationStatus(status: string) {
+function mapRepresentationStatus(
+  status: string,
+  approvalStatus = "accepted",
+  approvalRequestedAt = "",
+) {
+  if (status === "pending") {
+    if (approvalStatus === "pending") {
+      return approvalRequestedAt ? "Zustimmung offen" : "DM wird vorbereitet";
+    }
+
+    if (approvalStatus === "accepted") {
+      return "Zugestimmt";
+    }
+
+    if (approvalStatus === "declined") {
+      return "Abgelehnt";
+    }
+  }
+
   const labels: Record<string, string> = {
     active: "Aktiv",
     assigning: "Wird gesetzt",
