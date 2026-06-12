@@ -11,6 +11,19 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "12.06.2026",
+    id: "discord-absence-representations",
+    items: [
+      "Neue Ansicht Amtsvertretung fuer Abmeldungen, Amtsrollen und Vertretungsberechtigungen.",
+      "Abmeldungen legen automatisch Bot-Auftraege fuer passende Discord-Amtsrollen an.",
+      "Der Discord-Bot setzt Vertretungsrollen temporaer und entfernt sie beim Beenden nur, wenn sie automatisch vergeben wurden.",
+      "Benachrichtigungen zeigen offene oder fehlgeschlagene Vertretungsauftraege im Panel an.",
+    ],
+    title: "Abmeldung mit Amtsvertretung",
+    type: "feature",
+    version: "0.10.4",
+  },
+  {
+    date: "12.06.2026",
     id: "discord-member-intake-split-fields",
     items: [
       "Discord-Aktenbogen nutzt jetzt einzelne Formularteile fuer Basisdaten, Socials und Gaming.",

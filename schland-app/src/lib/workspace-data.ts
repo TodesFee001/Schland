@@ -16,6 +16,7 @@ export type WorkspaceMember = {
   discordLastSeenAt: string;
   discordName: string;
   discordOnServer: boolean;
+  discordRoleIds: string[];
   displayName: string;
   ea: string;
   instagram: string;
@@ -132,6 +133,65 @@ export type WorkspacePermissionOption = {
   key: string;
 };
 
+export type WorkspaceDiscordRoleOption = {
+  discordRoleId: string;
+  id: string;
+  name: string;
+};
+
+export type WorkspaceRepresentationMinistryRole = {
+  active: boolean;
+  discordRoleId: string;
+  id: string;
+  name: string;
+  sortOrder: number;
+};
+
+export type WorkspaceRepresentationEligibility = {
+  active: boolean;
+  allowedMinistryRoleIds: string[];
+  allowedMinistryRoles: string[];
+  discordId: string;
+  id: string;
+  memberId: string;
+  memberName: string;
+  notes: string;
+  priority: number;
+};
+
+export type WorkspaceAbsenceRepresentation = {
+  assignedAt: string;
+  botError: string;
+  discordRoleId: string;
+  id: string;
+  ministryRoleName: string;
+  removedAt: string;
+  representativeDiscordId: string;
+  representativeHadRoleBefore: boolean;
+  representativeMemberId: string;
+  representativeName: string;
+  roleWasAssignedAutomatically: boolean;
+  status: string;
+  statusLabel: string;
+};
+
+export type WorkspaceMemberAbsence = {
+  discordId: string;
+  endedAt: string;
+  endedBy: string;
+  endReason: string;
+  expectedReturnAt: string;
+  id: string;
+  memberId: string;
+  memberName: string;
+  reason: string;
+  representations: WorkspaceAbsenceRepresentation[];
+  requestedBy: string;
+  startedAt: string;
+  status: string;
+  statusLabel: string;
+};
+
 export type WorkspaceDiscordInvite = {
   botError: string;
   createdAt: string;
@@ -242,6 +302,7 @@ export type WorkspaceSyncStatus = {
   memberUpserted: number;
   moderationQueueSize: number;
   questionnaireQueueSize: number;
+  representationQueueSize: number;
   rows: {
     active: boolean;
     label: string;
@@ -250,15 +311,19 @@ export type WorkspaceSyncStatus = {
 };
 
 export type WorkspaceData = {
+  absences: WorkspaceMemberAbsence[];
   categories: WorkspaceCategory[];
   discordInvites: WorkspaceDiscordInvite[];
+  discordRoles: WorkspaceDiscordRoleOption[];
   files: WorkspaceFile[];
   folders: WorkspaceFolder[];
   logs: WorkspaceLogRow[];
   lockdown: LockdownStatus;
   members: WorkspaceMember[];
+  ministryRoles: WorkspaceRepresentationMinistryRole[];
   moderationEvents: WorkspaceModerationEvent[];
   permissions: WorkspacePermissionOption[];
+  representationEligibilities: WorkspaceRepresentationEligibility[];
   roles: WorkspaceRoleRow[];
   source: "demo" | "supabase";
   sync: WorkspaceSyncStatus;
@@ -309,6 +374,10 @@ function emptyMemberIntake(): WorkspaceMemberIntake {
 export const demoWorkspaceData: WorkspaceData = {
   source: "demo",
   lockdown: inactiveLockdownStatus,
+  absences: [],
+  discordRoles: [],
+  ministryRoles: [],
+  representationEligibilities: [],
   members: [
     {
       id: "MEM-1007",
@@ -326,6 +395,7 @@ export const demoWorkspaceData: WorkspaceData = {
       discordLastSeenAt: "Heute, 00:42",
       discordName: "elyx",
       discordOnServer: true,
+      discordRoleIds: [],
       displayName: "Elias",
       instagram: "",
       intake: emptyMemberIntake(),
@@ -377,6 +447,7 @@ export const demoWorkspaceData: WorkspaceData = {
       discordLastSeenAt: "Gestern, 22:18",
       discordName: "mara.s",
       discordOnServer: true,
+      discordRoleIds: [],
       displayName: "Mara",
       instagram: "",
       intake: emptyMemberIntake(),
@@ -420,6 +491,7 @@ export const demoWorkspaceData: WorkspaceData = {
       discordLastSeenAt: "02.06.2026, 19:04",
       discordName: "nobeck",
       discordOnServer: true,
+      discordRoleIds: [],
       displayName: "Noah",
       instagram: "",
       intake: emptyMemberIntake(),
@@ -846,6 +918,7 @@ export const demoWorkspaceData: WorkspaceData = {
     memberUpserted: 0,
     moderationQueueSize: 0,
     questionnaireQueueSize: 0,
+    representationQueueSize: 0,
     rows: [
       ["Rollen-Sync", "Schema vorbereitet", true],
       ["Neue Mitglieder", "Auto-Aktenabgleich aktiv", true],
@@ -889,6 +962,10 @@ export async function getWorkspaceData(
       logsResult,
       lockdownResult,
       syncResult,
+      discordRolesResult,
+      ministryRolesResult,
+      representationEligibilitiesResult,
+      absencesResult,
     ] = await Promise.all([
       supabase
         .from("members")
@@ -922,7 +999,7 @@ export async function getWorkspaceData(
             invited_by:invited_by_member_id(name),
             message_activity_monthly(year, month, message_count, last_message_at),
             voice_activity_monthly(year, month, voice_minutes, last_voice_at),
-            member_discord_roles(discord_roles(role_name)),
+            member_discord_roles(discord_roles(discord_role_id, role_name)),
             member_files(
               relation_type,
               created_at,
@@ -1086,6 +1163,75 @@ export async function getWorkspaceData(
         .select("id, source, status, started_at, finished_at, error_message, metadata")
         .order("started_at", { ascending: false })
         .limit(12),
+      supabase
+        .from("discord_roles")
+        .select("id, discord_role_id, role_name")
+        .order("role_name", { ascending: true })
+        .limit(500),
+      supabase
+        .from("representation_ministry_roles")
+        .select("id, discord_role_id, name, active, sort_order")
+        .order("sort_order", { ascending: true })
+        .order("name", { ascending: true }),
+      supabase
+        .from("representation_eligibilities")
+        .select(
+          `
+            id,
+            representative_member_id,
+            representative_discord_id,
+            active,
+            priority,
+            notes,
+            members(id, name, discord_id, discord_username, discord_display_name),
+            representation_eligibility_ministry_roles(
+              ministry_role_id,
+              representation_ministry_roles(id, name, discord_role_id)
+            )
+          `,
+        )
+        .order("priority", { ascending: true })
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("member_absences")
+        .select(
+          `
+            id,
+            member_id,
+            discord_user_id,
+            reason,
+            status,
+            expected_return_at,
+            started_at,
+            ended_at,
+            requested_by_name,
+            ended_by_name,
+            end_reason,
+            members(id, name, discord_id, discord_username, discord_display_name),
+            member_absence_representations(
+              id,
+              representative_member_id,
+              representative_discord_id,
+              discord_role_id,
+              ministry_role_name,
+              status,
+              representative_had_role_before,
+              role_was_assigned_automatically,
+              assigned_at,
+              removed_at,
+              bot_error,
+              representative:members!member_absence_representations_representative_member_id_fkey(
+                id,
+                name,
+                discord_id,
+                discord_username,
+                discord_display_name
+              )
+            )
+          `,
+        )
+        .order("started_at", { ascending: false })
+        .limit(100),
     ]);
 
     collectWarning(warnings, membersResult.error?.message);
@@ -1101,9 +1247,14 @@ export async function getWorkspaceData(
     collectWarning(warnings, logsResult.error?.message);
     collectWarning(warnings, lockdownResult.error?.message);
     collectWarning(warnings, syncResult.error?.message);
+    collectWarning(warnings, discordRolesResult.error?.message);
+    collectWarning(warnings, ministryRolesResult.error?.message);
+    collectWarning(warnings, representationEligibilitiesResult.error?.message);
+    collectWarning(warnings, absencesResult.error?.message);
 
     return {
       source: "supabase",
+      absences: mapAbsences(absencesResult.data ?? []),
       members: mapMembers(
         membersResult.data ?? [],
         intakeLogsResult.data ?? [],
@@ -1113,6 +1264,11 @@ export async function getWorkspaceData(
       files: mapFiles(filesResult.data ?? []),
       roles: mapRoles(rolesResult.data ?? []),
       permissions: mapPermissions(permissionsResult.data ?? []),
+      discordRoles: mapDiscordRoles(discordRolesResult.data ?? []),
+      ministryRoles: mapMinistryRoles(ministryRolesResult.data ?? []),
+      representationEligibilities: mapRepresentationEligibilities(
+        representationEligibilitiesResult.data ?? [],
+      ),
       discordInvites: mapDiscordInvites(discordInvitesResult.data ?? []),
       moderationEvents: mapModerationEvents(moderationEventsResult.data ?? []),
       users: mapUsers(profilesResult.data ?? []),
@@ -1198,6 +1354,9 @@ function mapMembers(
         : "Auswertung deaktiviert",
       roles: asArray(row.member_discord_roles)
         .map((entry) => String(asObject(entry.discord_roles)?.role_name ?? ""))
+        .filter(Boolean),
+      discordRoleIds: asArray(row.member_discord_roles)
+        .map((entry) => String(asObject(entry.discord_roles)?.discord_role_id ?? ""))
         .filter(Boolean),
       messagesMonth: discordAnalyticsEnabled
         ? Number(currentMessageRow?.message_count ?? 0)
@@ -1456,6 +1615,137 @@ function mapPermissions(rows: Record<string, unknown>[]): WorkspacePermissionOpt
   }));
 }
 
+function mapDiscordRoles(rows: Record<string, unknown>[]): WorkspaceDiscordRoleOption[] {
+  return rows
+    .map((row) => ({
+      discordRoleId: String(row.discord_role_id ?? ""),
+      id: String(row.id ?? ""),
+      name: String(row.role_name ?? row.discord_role_id ?? "Discord-Rolle"),
+    }))
+    .filter((role) => role.id && role.discordRoleId);
+}
+
+function mapMinistryRoles(
+  rows: Record<string, unknown>[],
+): WorkspaceRepresentationMinistryRole[] {
+  return rows
+    .map((row) => ({
+      active: Boolean(row.active ?? true),
+      discordRoleId: String(row.discord_role_id ?? ""),
+      id: String(row.id ?? ""),
+      name: String(row.name ?? "Amtsrolle"),
+      sortOrder: Number(row.sort_order ?? 100),
+    }))
+    .filter((role) => role.id && role.discordRoleId);
+}
+
+function mapRepresentationEligibilities(
+  rows: Record<string, unknown>[],
+): WorkspaceRepresentationEligibility[] {
+  return rows
+    .map((row) => {
+      const member = asObject(row.members);
+      const roleLinks = asArray(row.representation_eligibility_ministry_roles);
+      const allowedMinistryRoleIds = roleLinks
+        .map((entry) => String(entry.ministry_role_id ?? ""))
+        .filter(Boolean);
+      const allowedMinistryRoles = roleLinks
+        .map((entry) =>
+          String(
+            asObject(entry.representation_ministry_roles)?.name ??
+              entry.ministry_role_id ??
+              "",
+          ),
+        )
+        .filter(Boolean);
+
+      return {
+        active: Boolean(row.active ?? true),
+        allowedMinistryRoleIds,
+        allowedMinistryRoles,
+        discordId: String(
+          member.discord_id ?? row.representative_discord_id ?? "",
+        ),
+        id: String(row.id ?? ""),
+        memberId: String(row.representative_member_id ?? member.id ?? ""),
+        memberName: String(
+          member.name ??
+            member.discord_display_name ??
+            member.discord_username ??
+            row.representative_discord_id ??
+            "Vertretung",
+        ),
+        notes: String(row.notes ?? ""),
+        priority: Number(row.priority ?? 100),
+      };
+    })
+    .filter((eligibility) => eligibility.id && eligibility.memberId);
+}
+
+function mapAbsences(rows: Record<string, unknown>[]): WorkspaceMemberAbsence[] {
+  return rows
+    .map((row) => {
+      const member = asObject(row.members);
+      const representations = asArray(row.member_absence_representations)
+        .map((entry) => mapAbsenceRepresentation(asObject(entry)))
+        .filter((entry) => entry.id);
+
+      return {
+        discordId: String(member.discord_id ?? row.discord_user_id ?? ""),
+        endedAt: formatDate(String(row.ended_at ?? "")),
+        endedBy: String(row.ended_by_name ?? "-"),
+        endReason: String(row.end_reason ?? ""),
+        expectedReturnAt: formatDate(String(row.expected_return_at ?? "")),
+        id: String(row.id ?? ""),
+        memberId: String(row.member_id ?? member.id ?? ""),
+        memberName: String(
+          member.name ??
+            member.discord_display_name ??
+            member.discord_username ??
+            row.discord_user_id ??
+            "Abmeldung",
+        ),
+        reason: String(row.reason ?? "-"),
+        representations,
+        requestedBy: String(row.requested_by_name ?? "-"),
+        startedAt: formatDate(String(row.started_at ?? "")),
+        status: String(row.status ?? "active"),
+        statusLabel: mapAbsenceStatus(String(row.status ?? "active")),
+      };
+    })
+    .filter((absence) => absence.id);
+}
+
+function mapAbsenceRepresentation(
+  row: Record<string, unknown>,
+): WorkspaceAbsenceRepresentation {
+  const representative = asObject(row.representative);
+
+  return {
+    assignedAt: formatDate(String(row.assigned_at ?? "")),
+    botError: String(row.bot_error ?? ""),
+    discordRoleId: String(row.discord_role_id ?? ""),
+    id: String(row.id ?? ""),
+    ministryRoleName: String(row.ministry_role_name ?? "Amtsrolle"),
+    removedAt: formatDate(String(row.removed_at ?? "")),
+    representativeDiscordId: String(
+      representative.discord_id ?? row.representative_discord_id ?? "",
+    ),
+    representativeHadRoleBefore: Boolean(row.representative_had_role_before),
+    representativeMemberId: String(row.representative_member_id ?? representative.id ?? ""),
+    representativeName: String(
+      representative.name ??
+        representative.discord_display_name ??
+        representative.discord_username ??
+        row.representative_discord_id ??
+        "Keine Vertretung",
+    ),
+    roleWasAssignedAutomatically: Boolean(row.role_was_assigned_automatically),
+    status: String(row.status ?? "pending"),
+    statusLabel: mapRepresentationStatus(String(row.status ?? "pending")),
+  };
+}
+
 function mapDiscordInvites(rows: Record<string, unknown>[]): WorkspaceDiscordInvite[] {
   return rows.map((row) => {
     const targetMember = asObject(row.target_member);
@@ -1637,6 +1927,9 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
   const questionnaireQueueSize = Number(
     heartbeatMetadata.questionnaireQueueSize ?? 0,
   );
+  const representationQueueSize = Number(
+    heartbeatMetadata.representationQueueSize ?? 0,
+  );
   const memberScanned = Number(memberMetadata.scanned ?? 0);
   const memberPageLimitHit = Boolean(memberMetadata.pageLimitHit);
   const memberSkippedBots = Number(memberMetadata.skippedBots ?? 0);
@@ -1691,6 +1984,7 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
     memberUpserted,
     moderationQueueSize,
     questionnaireQueueSize,
+    representationQueueSize,
     rows: [
       {
         label: "Gateway-Herzschlag",
@@ -1755,6 +2049,15 @@ function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
             ? `${moderationQueueSize} offene Bot-Auftraege`
             : "Bot-Auftraege live verbunden"
           : "Datenbankregister vorbereitet",
+        active: liveSignalFresh || !isRailwayLive,
+      },
+      {
+        label: "Amtsvertretung",
+        status: liveSignalFresh
+          ? representationQueueSize > 0
+            ? `${representationQueueSize} offene Rollen-Auftraege`
+            : "Vertretungsrollen live verbunden"
+          : "Vertretungsregister vorbereitet",
         active: liveSignalFresh || !isRailwayLive,
       },
       {
@@ -1853,6 +2156,31 @@ function mapDiscordInviteStatus(status: string) {
     expired: "Abgelaufen",
     cancelled: "Abgebrochen",
     failed: "Fehler",
+  };
+
+  return labels[status] ?? status;
+}
+
+function mapAbsenceStatus(status: string) {
+  const labels: Record<string, string> = {
+    active: "Aktiv",
+    ended: "Beendet",
+    ending: "Rueckbau laeuft",
+    failed: "Fehler",
+  };
+
+  return labels[status] ?? status;
+}
+
+function mapRepresentationStatus(status: string) {
+  const labels: Record<string, string> = {
+    active: "Aktiv",
+    assigning: "Wird gesetzt",
+    ended: "Beendet",
+    ending: "Wird entfernt",
+    failed: "Fehler",
+    pending: "Wartet auf Bot",
+    skipped: "Uebersprungen",
   };
 
   return labels[status] ?? status;

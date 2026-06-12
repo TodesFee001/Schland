@@ -93,6 +93,7 @@ let lockdownPollRunning = false;
 let messageFlushRunning = false;
 let moderationPollRunning = false;
 let questionnairePollRunning = false;
+let representationPollRunning = false;
 let voiceFlushRunning = false;
 let lastFullSyncStats = null;
 let guildMembersFetchPromise = null;
@@ -100,6 +101,7 @@ let lastGuildMembersFetchAt = 0;
 let lockdownQueueSize = 0;
 let moderationQueueSize = 0;
 let questionnaireQueueSize = 0;
+let representationQueueSize = 0;
 
 client.once(Events.ClientReady, async () => {
   console.log(`Schland bot online as ${client.user.tag}`);
@@ -121,6 +123,12 @@ function startBotTimers() {
   );
   timers.push(setInterval(() => void pollLockdownCommands(), config.lockdownPollMs));
   timers.push(setInterval(() => void pollModerationActions(), config.moderationPollMs));
+  timers.push(
+    setInterval(
+      () => void pollRepresentationActions(),
+      config.representationPollMs,
+    ),
+  );
   timers.push(setInterval(() => void refreshPrivacy(), config.privacyRefreshMs));
   timers.push(setInterval(() => void fullSyncGuild("interval"), config.fullSyncIntervalMs));
   timers.push(setInterval(() => void pollAuditLogs("interval"), config.auditPollMs));
@@ -132,6 +140,7 @@ async function runStartupTasks() {
     ["send heartbeat", () => sendHeartbeat()],
     ["poll lockdown commands", () => pollLockdownCommands()],
     ["poll moderation actions", () => pollModerationActions()],
+    ["poll representation actions", () => pollRepresentationActions()],
     ["poll invites", () => pollInvites()],
     ["prime voice sessions", () => primeVoiceSessions()],
     ["full sync", () => fullSyncGuild("startup")],
@@ -3144,6 +3153,189 @@ function buildModerationDirectMessageEmbed(action, context) {
     .setTimestamp(new Date(context.startedAt));
 }
 
+async function pollRepresentationActions() {
+  if (representationPollRunning) {
+    return;
+  }
+
+  representationPollRunning = true;
+
+  try {
+    const result = await api("/representations", { method: "GET" });
+    const actions = Array.isArray(result.actions) ? result.actions : [];
+    representationQueueSize = Number(result.queueSize ?? actions.length) || 0;
+
+    for (const action of actions) {
+      await processRepresentationAction(action);
+    }
+
+    await sendHeartbeat();
+  } catch (error) {
+    console.error("Representation action poll failed", errorMessage(error));
+  } finally {
+    representationPollRunning = false;
+  }
+}
+
+async function processRepresentationAction(action) {
+  try {
+    if (action.action === "assign") {
+      await api("/representations", {
+        body: {
+          id: action.id,
+          status: "assigning",
+        },
+        method: "PATCH",
+      });
+
+      const result = await executeRepresentationAssign(action);
+
+      await api("/representations", {
+        body: {
+          assignedAt: result.assignedAt,
+          id: action.id,
+          representativeHadRoleBefore: result.representativeHadRoleBefore,
+          roleWasAssignedAutomatically: result.roleWasAssignedAutomatically,
+          status: "active",
+        },
+        method: "PATCH",
+      });
+
+      console.log(
+        `Representation role assigned: ${action.ministryRoleName} -> ${action.representativeDiscordId}`,
+      );
+    } else if (action.action === "remove") {
+      const result = await executeRepresentationRemoval(action);
+
+      await api("/representations", {
+        body: {
+          id: action.id,
+          removedAt: result.removedAt,
+          status: "ended",
+        },
+        method: "PATCH",
+      });
+
+      console.log(
+        `Representation role ended: ${action.ministryRoleName} -> ${action.representativeDiscordId}`,
+      );
+    }
+
+    representationQueueSize = Math.max(0, representationQueueSize - 1);
+  } catch (error) {
+    representationQueueSize = Math.max(0, representationQueueSize - 1);
+    console.error("Representation action failed", errorMessage(error));
+
+    await api("/representations", {
+      body: {
+        botError: errorMessage(error),
+        id: action.id,
+        status: "failed",
+      },
+      method: "PATCH",
+    }).catch((updateError) => {
+      console.error(
+        "Representation action failure update failed",
+        errorMessage(updateError),
+      );
+    });
+  }
+}
+
+async function executeRepresentationAssign(action) {
+  if (
+    !isDiscordSnowflake(action.representativeDiscordId) ||
+    !isDiscordSnowflake(action.discordRoleId)
+  ) {
+    throw new Error("Vertretungsauftrag enthaelt keine gueltige Discord-ID.");
+  }
+
+  const guild = await getGuild();
+  const me = guild.members.me ?? (await guild.members.fetchMe());
+  await guild.roles.fetch();
+  const role =
+    guild.roles.cache.get(action.discordRoleId) ??
+    (await guild.roles.fetch(action.discordRoleId).catch(() => null));
+
+  if (!role) {
+    throw new Error(`Discord-Rolle nicht gefunden: ${action.discordRoleId}`);
+  }
+
+  if (!canManageRole(role, me, guild)) {
+    throw new Error(`Bot kann Amtsrolle ${role.name ?? role.id} nicht verwalten.`);
+  }
+
+  const member = await guild.members.fetch(action.representativeDiscordId);
+  const hadRole = member.roles.cache.has(role.id);
+  const assignedAt = new Date().toISOString();
+
+  if (!hadRole) {
+    await member.roles.add(
+      role.id,
+      buildRepresentationAuditReason(action, "Vertretung aktiviert"),
+    );
+  }
+
+  return {
+    assignedAt,
+    representativeHadRoleBefore: hadRole,
+    roleWasAssignedAutomatically: !hadRole,
+  };
+}
+
+async function executeRepresentationRemoval(action) {
+  const removedAt = new Date().toISOString();
+
+  if (!action.shouldRemoveRole) {
+    return { removedAt };
+  }
+
+  if (
+    !isDiscordSnowflake(action.representativeDiscordId) ||
+    !isDiscordSnowflake(action.discordRoleId)
+  ) {
+    throw new Error("Vertretungsrueckbau enthaelt keine gueltige Discord-ID.");
+  }
+
+  const guild = await getGuild();
+  const me = guild.members.me ?? (await guild.members.fetchMe());
+  await guild.roles.fetch();
+  const role =
+    guild.roles.cache.get(action.discordRoleId) ??
+    (await guild.roles.fetch(action.discordRoleId).catch(() => null));
+
+  if (!role) {
+    return { removedAt };
+  }
+
+  if (!canManageRole(role, me, guild)) {
+    throw new Error(`Bot kann Amtsrolle ${role.name ?? role.id} nicht entfernen.`);
+  }
+
+  const member = await guild.members
+    .fetch(action.representativeDiscordId)
+    .catch(() => null);
+
+  if (!member || !member.roles.cache.has(role.id)) {
+    return { removedAt };
+  }
+
+  await member.roles.remove(
+    role.id,
+    buildRepresentationAuditReason(action, "Vertretung beendet"),
+  );
+
+  return { removedAt };
+}
+
+function buildRepresentationAuditReason(action, label) {
+  return trimReason(
+    `Schland ${label}: ${action.ministryRoleName ?? "Amtsrolle"} fuer ${
+      action.representedDiscordId ?? "unbekannt"
+    } (${action.reason ?? "Abmeldung"})`,
+  );
+}
+
 async function pollAuditLogs(trigger) {
   if (auditPollRunning) {
     return;
@@ -3438,6 +3630,7 @@ async function sendHeartbeat() {
         messageBufferSize: messageCounts.size,
         moderationQueueSize,
         questionnaireQueueSize,
+        representationQueueSize,
         skippedBots: stats.skippedBots,
         uptimeSeconds: Math.round(process.uptime()),
       },
@@ -3573,6 +3766,7 @@ function loadConfig() {
     privacyRefreshMs: readMs(env.PRIVACY_REFRESH_MS, 30_000),
     questionnaireDmDelayMs: readMs(env.QUESTIONNAIRE_DM_DELAY_MS, 2_500),
     questionnairePollMs: readMs(env.QUESTIONNAIRE_POLL_MS, 60_000),
+    representationPollMs: readMs(env.REPRESENTATION_POLL_MS, 5_000),
     syncToken: env.DISCORD_BOT_SYNC_TOKEN.trim(),
     voiceFlushMs: readMs(env.VOICE_FLUSH_MS, 60_000),
   };

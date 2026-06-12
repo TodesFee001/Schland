@@ -915,6 +915,404 @@ export async function setRolePermissionAction(formData: FormData) {
   );
 }
 
+export async function startMemberAbsenceAction(formData: FormData) {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
+    redirect("/?section=representation&setup=missing-supabase");
+  }
+
+  const memberId = getFormText(formData, "memberId");
+  const reason = getFormText(formData, "reason");
+  const expectedReturnAt = getOptionalIsoDate(formData, "expectedReturnAt");
+
+  if (!isUuidText(memberId)) {
+    redirect("/?section=representation&setup=absence-member");
+  }
+
+  if (reason.length < 8) {
+    redirect("/?section=representation&setup=absence-reason");
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect("/?section=representation&setup=absence-aal2");
+  }
+
+  if (!(await hasPermission(supabase, "app.enter"))) {
+    redirect("/?section=representation&setup=absence-denied");
+  }
+
+  const admin = getSupabaseAdminClient();
+  const actor = await getActionActor(supabase);
+
+  try {
+    const member = await getAbsenceMember(admin, memberId);
+
+    if (!member?.id) {
+      redirect("/?section=representation&setup=absence-member");
+    }
+
+    const discordUserId = asActionText(member.discord_id);
+
+    if (!discordUserId || !isDiscordSnowflake(discordUserId)) {
+      redirect("/?section=representation&setup=absence-discord");
+    }
+
+    if (member.discord_on_server !== true) {
+      redirect("/?section=representation&setup=absence-off-server");
+    }
+
+    const existingAbsence = await getActiveAbsenceForMember(admin, memberId);
+
+    if (existingAbsence) {
+      redirect("/?section=representation&setup=absence-already-active");
+    }
+
+    const ministryRoles = await getMemberMinistryRoles(admin, member);
+    const { data: absence, error: absenceError } = await admin
+      .from("member_absences")
+      .insert({
+        discord_user_id: discordUserId,
+        expected_return_at: expectedReturnAt,
+        member_id: memberId,
+        reason,
+        requested_by: actor.id,
+        requested_by_name: actor.name,
+        status: "active",
+      })
+      .select("id")
+      .single();
+
+    if (absenceError || !absence?.id) {
+      throw new Error(absenceError?.message ?? "absence insert failed");
+    }
+
+    const representations = await buildAbsenceRepresentations(admin, {
+      absenceId: String(absence.id),
+      discordUserId,
+      memberId,
+      ministryRoles,
+    });
+
+    if (representations.length > 0) {
+      const { error: representationError } = await admin
+        .from("member_absence_representations")
+        .insert(representations);
+
+      if (representationError) {
+        throw new Error(representationError.message);
+      }
+    }
+
+    await writeMemberCaseAuditLog({
+      fieldName: "absence_started",
+      memberId,
+      newValue: JSON.stringify({
+        absenceId: absence.id,
+        ministryRoles: ministryRoles.map((role) => role.name),
+        representations: representations.length,
+      }),
+      reason,
+      supabase,
+    });
+
+    revalidatePath("/", "layout");
+    redirect(
+      `/?section=representation&setup=${
+        ministryRoles.length > 0 ? "absence-started" : "absence-started-no-roles"
+      }`,
+    );
+  } catch (error) {
+    if (isRedirectError(error)) {
+      throw error;
+    }
+
+    console.error("start member absence failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    redirect("/?section=representation&setup=absence-error");
+  }
+}
+
+export async function endMemberAbsenceAction(formData: FormData) {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
+    redirect("/?section=representation&setup=missing-supabase");
+  }
+
+  const absenceId = getFormText(formData, "absenceId");
+  const reason = getFormText(formData, "reason");
+
+  if (!isUuidText(absenceId)) {
+    redirect("/?section=representation&setup=absence-end-missing");
+  }
+
+  if (reason.length < 8) {
+    redirect("/?section=representation&setup=absence-end-reason");
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect("/?section=representation&setup=absence-aal2");
+  }
+
+  if (!(await hasPermission(supabase, "app.enter"))) {
+    redirect("/?section=representation&setup=absence-denied");
+  }
+
+  const admin = getSupabaseAdminClient();
+  const actor = await getActionActor(supabase);
+  const now = new Date().toISOString();
+
+  try {
+    const { data: absence, error: absenceError } = await admin
+      .from("member_absences")
+      .select("id,member_id,status")
+      .eq("id", absenceId)
+      .maybeSingle();
+
+    if (absenceError || !absence?.id) {
+      redirect("/?section=representation&setup=absence-end-missing");
+    }
+
+    const status = String(absence.status ?? "");
+
+    if (status !== "active" && status !== "ending") {
+      redirect("/?section=representation&setup=absence-end-missing");
+    }
+
+    const { data: endingRows, error: repError } = await admin
+      .from("member_absence_representations")
+      .update({
+        bot_error: null,
+        status: "ending",
+      })
+      .eq("absence_id", absenceId)
+      .in("status", ["pending", "assigning", "active"])
+      .select("id");
+
+    if (repError) {
+      throw new Error(repError.message);
+    }
+
+    const nextStatus = (endingRows ?? []).length > 0 ? "ending" : "ended";
+    const { error: updateError } = await admin
+      .from("member_absences")
+      .update({
+        ended_at: nextStatus === "ended" ? now : null,
+        ended_by: actor.id,
+        ended_by_name: actor.name,
+        end_reason: reason,
+        status: nextStatus,
+      })
+      .eq("id", absenceId);
+
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
+
+    await writeMemberCaseAuditLog({
+      fieldName: "absence_ended",
+      memberId: String(absence.member_id),
+      newValue: JSON.stringify({
+        absenceId,
+        botRoleRemovalsQueued: (endingRows ?? []).length,
+        status: nextStatus,
+      }),
+      reason,
+      supabase,
+    });
+
+    revalidatePath("/", "layout");
+    redirect(
+      `/?section=representation&setup=${
+        nextStatus === "ended" ? "absence-ended" : "absence-ending"
+      }`,
+    );
+  } catch (error) {
+    if (isRedirectError(error)) {
+      throw error;
+    }
+
+    console.error("end member absence failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    redirect("/?section=representation&setup=absence-error");
+  }
+}
+
+export async function saveRepresentationMinistryRoleAction(formData: FormData) {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
+    redirect("/?section=representation&setup=missing-supabase");
+  }
+
+  const ministryRoleId = getFormText(formData, "ministryRoleId") || null;
+  const discordRoleId = getFormText(formData, "discordRoleId");
+  const name = getFormText(formData, "name");
+  const sortOrder = getOptionalFormNumber(formData, "sortOrder") ?? 100;
+
+  if ((ministryRoleId && !isUuidText(ministryRoleId)) || !name || !isDiscordSnowflake(discordRoleId)) {
+    redirect("/?section=representation&setup=ministry-role-missing");
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect("/?section=representation&setup=ministry-role-aal2");
+  }
+
+  if (!(await hasPermission(supabase, "representations.manage"))) {
+    redirect("/?section=representation&setup=ministry-role-denied");
+  }
+
+  const admin = getSupabaseAdminClient();
+  const payload = {
+    active: getFormBool(formData, "active"),
+    discord_role_id: discordRoleId,
+    name,
+    sort_order: Math.max(0, Math.trunc(sortOrder)),
+  };
+  const query = ministryRoleId
+    ? admin
+        .from("representation_ministry_roles")
+        .update(payload)
+        .eq("id", ministryRoleId)
+    : admin.from("representation_ministry_roles").insert(payload);
+  const { error } = await query;
+
+  if (error) {
+    console.error("save representation ministry role failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect("/?section=representation&setup=ministry-role-error");
+  }
+
+  revalidatePath("/", "layout");
+  redirect(
+    `/?section=representation&setup=${
+      ministryRoleId ? "ministry-role-saved" : "ministry-role-created"
+    }`,
+  );
+}
+
+export async function saveRepresentationEligibilityAction(formData: FormData) {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
+    redirect("/?section=representation&setup=missing-supabase");
+  }
+
+  const eligibilityId = getFormText(formData, "eligibilityId") || null;
+  const memberId = getFormText(formData, "memberId");
+  const ministryRoleIds = getFormList(formData, "ministryRoleIds").filter(isUuidText);
+  const priority = getOptionalFormNumber(formData, "priority") ?? 100;
+  const notes = getFormText(formData, "notes") || null;
+
+  if ((eligibilityId && !isUuidText(eligibilityId)) || !isUuidText(memberId)) {
+    redirect("/?section=representation&setup=representation-eligibility-missing");
+  }
+
+  if (ministryRoleIds.length === 0) {
+    redirect("/?section=representation&setup=representation-eligibility-roles");
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect("/?section=representation&setup=representation-eligibility-aal2");
+  }
+
+  if (!(await hasPermission(supabase, "representations.manage"))) {
+    redirect("/?section=representation&setup=representation-eligibility-denied");
+  }
+
+  const admin = getSupabaseAdminClient();
+
+  try {
+    const { data: member, error: memberError } = await admin
+      .from("members")
+      .select("id,discord_id")
+      .eq("id", memberId)
+      .maybeSingle();
+
+    if (memberError || !member?.id) {
+      redirect("/?section=representation&setup=representation-eligibility-missing");
+    }
+
+    const representativeDiscordId = String(member.discord_id ?? "");
+
+    if (!isDiscordSnowflake(representativeDiscordId)) {
+      redirect("/?section=representation&setup=representation-eligibility-discord");
+    }
+
+    const payload = {
+      active: getFormBool(formData, "active"),
+      notes,
+      priority: Math.max(0, Math.trunc(priority)),
+      representative_discord_id: representativeDiscordId,
+      representative_member_id: memberId,
+    };
+    const eligibilityQuery = eligibilityId
+      ? admin
+          .from("representation_eligibilities")
+          .update(payload)
+          .eq("id", eligibilityId)
+          .select("id")
+          .single()
+      : admin
+          .from("representation_eligibilities")
+          .upsert(payload, { onConflict: "representative_member_id" })
+          .select("id")
+          .single();
+    const { data: eligibility, error: eligibilityError } = await eligibilityQuery;
+
+    if (eligibilityError || !eligibility?.id) {
+      throw new Error(eligibilityError?.message ?? "eligibility write failed");
+    }
+
+    const targetEligibilityId = String(eligibility.id);
+    const { error: deleteError } = await admin
+      .from("representation_eligibility_ministry_roles")
+      .delete()
+      .eq("eligibility_id", targetEligibilityId);
+
+    if (deleteError) {
+      throw new Error(deleteError.message);
+    }
+
+    const { error: insertError } = await admin
+      .from("representation_eligibility_ministry_roles")
+      .insert(
+        [...new Set(ministryRoleIds)].map((ministryRoleId) => ({
+          eligibility_id: targetEligibilityId,
+          ministry_role_id: ministryRoleId,
+        })),
+      );
+
+    if (insertError) {
+      throw new Error(insertError.message);
+    }
+
+    revalidatePath("/", "layout");
+    redirect(
+      `/?section=representation&setup=${
+        eligibilityId
+          ? "representation-eligibility-saved"
+          : "representation-eligibility-created"
+      }`,
+    );
+  } catch (error) {
+    if (isRedirectError(error)) {
+      throw error;
+    }
+
+    console.error("save representation eligibility failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    redirect("/?section=representation&setup=representation-eligibility-error");
+  }
+}
+
 export async function runModerationAction(formData: FormData) {
   if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
     redirect("/?section=moderation&setup=moderation-action-failed");
@@ -1763,6 +2161,244 @@ async function getActionActor(supabase: SupabaseServerClient) {
   };
 }
 
+async function hasPermission(supabase: SupabaseServerClient, permissionKey: string) {
+  const { data } = await supabase.rpc("has_permission", {
+    required_key: permissionKey,
+  });
+
+  return data === true;
+}
+
+type AbsenceMinistryRole = {
+  discordRoleId: string;
+  id: string;
+  name: string;
+};
+
+async function getAbsenceMember(admin: SupabaseAdminClient, memberId: string) {
+  const { data, error } = await admin
+    .from("members")
+    .select(
+      `
+        id,
+        name,
+        discord_id,
+        discord_username,
+        discord_display_name,
+        discord_on_server,
+        member_discord_roles(discord_roles(discord_role_id, role_name))
+      `,
+    )
+    .eq("id", memberId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data ? asActionObject(data) : null;
+}
+
+async function getActiveAbsenceForMember(
+  admin: SupabaseAdminClient,
+  memberId: string,
+) {
+  const { data, error } = await admin
+    .from("member_absences")
+    .select("id")
+    .eq("member_id", memberId)
+    .in("status", ["active", "ending"])
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return Boolean(data?.id);
+}
+
+async function getMemberMinistryRoles(
+  admin: SupabaseAdminClient,
+  member: Record<string, unknown>,
+): Promise<AbsenceMinistryRole[]> {
+  const roleIds = getSyncedDiscordRoleIds(member);
+
+  if (roleIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await admin
+    .from("representation_ministry_roles")
+    .select("id,discord_role_id,name")
+    .eq("active", true)
+    .in("discord_role_id", roleIds)
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? [])
+    .map((row) => ({
+      discordRoleId: String(row.discord_role_id ?? ""),
+      id: String(row.id ?? ""),
+      name: String(row.name ?? row.discord_role_id ?? "Amtsrolle"),
+    }))
+    .filter((role) => role.id && role.discordRoleId);
+}
+
+async function buildAbsenceRepresentations(
+  admin: SupabaseAdminClient,
+  input: {
+    absenceId: string;
+    discordUserId: string;
+    memberId: string;
+    ministryRoles: AbsenceMinistryRole[];
+  },
+) {
+  if (input.ministryRoles.length === 0) {
+    return [];
+  }
+
+  const [eligibilitiesResult, absencesResult, busyRepresentationsResult] =
+    await Promise.all([
+      admin
+        .from("representation_eligibilities")
+        .select(
+          `
+            id,
+            representative_member_id,
+            representative_discord_id,
+            active,
+            priority,
+            members(id, name, discord_id, discord_on_server),
+            representation_eligibility_ministry_roles(ministry_role_id)
+          `,
+        )
+        .eq("active", true)
+        .order("priority", { ascending: true })
+        .order("created_at", { ascending: true }),
+      admin
+        .from("member_absences")
+        .select("member_id")
+        .in("status", ["active", "ending"]),
+      admin
+        .from("member_absence_representations")
+        .select("representative_member_id,representative_discord_id")
+        .in("status", ["pending", "assigning", "active", "ending"]),
+    ]);
+
+  if (eligibilitiesResult.error) {
+    throw new Error(eligibilitiesResult.error.message);
+  }
+
+  if (absencesResult.error) {
+    throw new Error(absencesResult.error.message);
+  }
+
+  if (busyRepresentationsResult.error) {
+    throw new Error(busyRepresentationsResult.error.message);
+  }
+
+  const absentMemberIds = new Set(
+    (absencesResult.data ?? [])
+      .map((row) => String(row.member_id ?? ""))
+      .filter(Boolean),
+  );
+  const busyMemberIds = new Set(
+    (busyRepresentationsResult.data ?? [])
+      .map((row) => String(row.representative_member_id ?? ""))
+      .filter(Boolean),
+  );
+  const busyDiscordIds = new Set(
+    (busyRepresentationsResult.data ?? [])
+      .map((row) => String(row.representative_discord_id ?? ""))
+      .filter(Boolean),
+  );
+  const assignedThisRun = new Set<string>();
+  const eligibilities = (eligibilitiesResult.data ?? []).map(asActionObject);
+
+  return input.ministryRoles.map((ministryRole) => {
+    const candidate = eligibilities.find((eligibility) => {
+      const allowedRoleIds = asActionArray(
+        eligibility.representation_eligibility_ministry_roles,
+      ).map((entry) => String(asActionObject(entry).ministry_role_id ?? ""));
+      const representative = asActionObject(eligibility.members);
+      const representativeMemberId = String(
+        eligibility.representative_member_id ?? representative.id ?? "",
+      );
+      const representativeDiscordId =
+        asActionText(representative.discord_id) ??
+        asActionText(eligibility.representative_discord_id) ??
+        "";
+
+      return (
+        allowedRoleIds.includes(ministryRole.id) &&
+        representativeMemberId &&
+        representativeMemberId !== input.memberId &&
+        representativeDiscordId &&
+        representativeDiscordId !== input.discordUserId &&
+        representative.discord_on_server === true &&
+        !absentMemberIds.has(representativeMemberId) &&
+        !busyMemberIds.has(representativeMemberId) &&
+        !busyDiscordIds.has(representativeDiscordId) &&
+        !assignedThisRun.has(representativeMemberId)
+      );
+    });
+
+    if (!candidate) {
+      return {
+        absence_id: input.absenceId,
+        bot_error: "Keine aktive Vertretung fuer diese Amtsrolle frei.",
+        discord_role_id: ministryRole.discordRoleId,
+        ministry_role_id: ministryRole.id,
+        ministry_role_name: ministryRole.name,
+        represented_discord_id: input.discordUserId,
+        represented_member_id: input.memberId,
+        status: "failed",
+      };
+    }
+
+    const representative = asActionObject(candidate.members);
+    const representativeMemberId = String(
+      candidate.representative_member_id ?? representative.id ?? "",
+    );
+    const representativeDiscordId =
+      asActionText(representative.discord_id) ??
+      asActionText(candidate.representative_discord_id) ??
+      "";
+
+    assignedThisRun.add(representativeMemberId);
+
+    return {
+      absence_id: input.absenceId,
+      discord_role_id: ministryRole.discordRoleId,
+      ministry_role_id: ministryRole.id,
+      ministry_role_name: ministryRole.name,
+      represented_discord_id: input.discordUserId,
+      represented_member_id: input.memberId,
+      representative_discord_id: representativeDiscordId,
+      representative_member_id: representativeMemberId,
+      status: "pending",
+    };
+  });
+}
+
+function getSyncedDiscordRoleIds(member: Record<string, unknown>) {
+  return [
+    ...new Set(
+      asActionArray(member.member_discord_roles)
+        .map((entry) =>
+          String(
+            asActionObject(asActionObject(entry).discord_roles).discord_role_id ?? "",
+          ),
+        )
+        .filter(isDiscordSnowflake),
+    ),
+  ];
+}
+
 type FileActionRow = {
   category_id: string | null;
   folder_id: string | null;
@@ -2173,6 +2809,18 @@ function getOptionalFormNumber(formData: FormData, key: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function getOptionalIsoDate(formData: FormData, key: string) {
+  const value = getFormText(formData, key);
+
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 function isMemberStatus(value: string): value is "active" | "archived" | "review" {
   return value === "active" || value === "archived" || value === "review";
 }
@@ -2196,6 +2844,32 @@ function isDiscordSnowflake(value: string) {
 function isUuidText(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
+  );
+}
+
+function asActionObject(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function asActionArray(value: unknown) {
+  return Array.isArray(value) ? value : [];
+}
+
+function asActionText(value: unknown) {
+  const text = String(value ?? "").trim();
+
+  return text || null;
+}
+
+function isRedirectError(error: unknown) {
+  const record = asActionObject(error);
+  const digest = String(record.digest ?? "");
+
+  return (
+    digest.startsWith("NEXT_REDIRECT") ||
+    (error instanceof Error && error.message === "NEXT_REDIRECT")
   );
 }
 

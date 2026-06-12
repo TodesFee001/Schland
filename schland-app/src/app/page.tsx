@@ -64,6 +64,177 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "absence-started") {
+    return {
+      tone: "success" as const,
+      text: "Abmeldung wurde angelegt. Der Discord-Bot setzt die passenden Amtsvertretungen.",
+    };
+  }
+
+  if (setup === "absence-started-no-roles") {
+    return {
+      tone: "warning" as const,
+      text: "Abmeldung wurde angelegt. Fuer diese Person ist keine konfigurierte Amtsrolle betroffen.",
+    };
+  }
+
+  if (setup === "absence-ending") {
+    return {
+      tone: "success" as const,
+      text: "Rueckkehr wurde gespeichert. Der Bot entfernt automatisch gesetzte Vertretungsrollen.",
+    };
+  }
+
+  if (setup === "absence-ended") {
+    return {
+      tone: "success" as const,
+      text: "Abmeldung wurde beendet.",
+    };
+  }
+
+  if (setup === "absence-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Abmeldungen und Amtsvertretungen brauchen eine aktive 2FA-Sitzung.",
+    };
+  }
+
+  if (setup === "absence-reason" || setup === "absence-end-reason") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte gib einen Grund mit mindestens 8 Zeichen an.",
+    };
+  }
+
+  if (setup === "absence-member" || setup === "absence-end-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Die ausgewaehlte Abmeldung oder Mitgliederakte wurde nicht gefunden.",
+    };
+  }
+
+  if (setup === "absence-discord") {
+    return {
+      tone: "warning" as const,
+      text: "Diese Mitgliederakte hat keine gueltige Discord-ID.",
+    };
+  }
+
+  if (setup === "absence-off-server") {
+    return {
+      tone: "warning" as const,
+      text: "Diese Person ist aktuell nicht auf dem Discord-Server.",
+    };
+  }
+
+  if (setup === "absence-already-active") {
+    return {
+      tone: "warning" as const,
+      text: "Fuer diese Person laeuft bereits eine Abmeldung.",
+    };
+  }
+
+  if (setup === "absence-denied") {
+    return {
+      tone: "error" as const,
+      text: "Abmeldung wurde abgelehnt. Dem Account fehlt der Verwaltungszugang.",
+    };
+  }
+
+  if (setup === "absence-error") {
+    return {
+      tone: "error" as const,
+      text: "Abmeldung konnte nicht gespeichert werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
+  if (setup === "ministry-role-created" || setup === "ministry-role-saved") {
+    return {
+      tone: "success" as const,
+      text: "Amtsrolle wurde gespeichert.",
+    };
+  }
+
+  if (setup === "ministry-role-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum Aendern von Amtsrollen muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "ministry-role-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte waehle eine Discord-Rolle und gib einen Namen an.",
+    };
+  }
+
+  if (setup === "ministry-role-denied") {
+    return {
+      tone: "error" as const,
+      text: "Amtsrolle konnte nicht geaendert werden. Dem Account fehlt die Vertretungsverwaltung.",
+    };
+  }
+
+  if (setup === "ministry-role-error") {
+    return {
+      tone: "error" as const,
+      text: "Amtsrolle konnte nicht gespeichert werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
+  if (
+    setup === "representation-eligibility-created" ||
+    setup === "representation-eligibility-saved"
+  ) {
+    return {
+      tone: "success" as const,
+      text: "Vertretungsberechtigung wurde gespeichert.",
+    };
+  }
+
+  if (setup === "representation-eligibility-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum Aendern von Vertretungsberechtigungen muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "representation-eligibility-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte waehle ein Mitglied fuer die Vertretung aus.",
+    };
+  }
+
+  if (setup === "representation-eligibility-roles") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte waehle mindestens eine Amtsrolle fuer diese Vertretung aus.",
+    };
+  }
+
+  if (setup === "representation-eligibility-discord") {
+    return {
+      tone: "warning" as const,
+      text: "Das ausgewaehlte Mitglied hat keine gueltige Discord-ID.",
+    };
+  }
+
+  if (setup === "representation-eligibility-denied") {
+    return {
+      tone: "error" as const,
+      text: "Vertretungsberechtigung konnte nicht geaendert werden. Dem Account fehlt die Vertretungsverwaltung.",
+    };
+  }
+
+  if (setup === "representation-eligibility-error") {
+    return {
+      tone: "error" as const,
+      text: "Vertretungsberechtigung konnte nicht gespeichert werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
   if (setup === "lockdown-activated") {
     return {
       tone: "success" as const,

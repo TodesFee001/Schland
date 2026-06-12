@@ -4,6 +4,7 @@ import {
   Activity,
   Bell,
   Bot,
+  CalendarOff,
   CheckCircle2,
   Clock,
   Database,
@@ -30,6 +31,7 @@ import {
   TriangleAlert,
   Upload,
   UserCog,
+  UserCheck,
   Users,
   XCircle,
 } from "lucide-react";
@@ -49,13 +51,17 @@ import {
   deleteMemberCaseAction,
   deleteModerationEventAction,
   downloadFileAction,
+  endMemberAbsenceAction,
   linkMemberFileAction,
   moveFileAction,
   openMemberCaseAction,
   runModerationAction,
   runDiscordManualSyncAction,
   saveCategoryAction,
+  saveRepresentationEligibilityAction,
+  saveRepresentationMinistryRoleAction,
   saveRoleAction,
+  startMemberAbsenceAction,
   setMemberDiscordAnalyticsAction,
   setFolderPermissionAction,
   setRolePermissionAction,
@@ -72,16 +78,21 @@ import type { EnvironmentStatus } from "@/lib/env";
 import { patchNotes } from "@/lib/patch-notes";
 import type {
   MemberStatusLabel,
+  WorkspaceAbsenceRepresentation,
   WorkspaceCategory,
   WorkspaceData,
   WorkspaceDiscordInvite,
+  WorkspaceDiscordRoleOption,
   WorkspaceFile,
   WorkspaceFolder,
   WorkspaceFolderPermission,
   WorkspaceLogRow,
   WorkspaceMember,
+  WorkspaceMemberAbsence,
   WorkspaceModerationEvent,
   WorkspacePermissionOption,
+  WorkspaceRepresentationEligibility,
+  WorkspaceRepresentationMinistryRole,
   WorkspaceRoleRow,
   WorkspaceSyncStatus,
   WorkspaceUserSummary,
@@ -95,6 +106,7 @@ type SectionId =
   | "categories"
   | "users"
   | "roles"
+  | "representation"
   | "activity"
   | "moderation"
   | "sync"
@@ -143,6 +155,7 @@ const sections: Section[] = [
   { id: "categories", label: "Kategorien", icon: Folder },
   { id: "users", label: "Benutzer", icon: Users },
   { id: "roles", label: "Rollen & Rechte", icon: KeyRound },
+  { id: "representation", label: "Amtsvertretung", icon: UserCheck },
   { id: "activity", label: "Aktivitaet", icon: Activity },
   { id: "moderation", label: "Moderation", icon: Shield },
   { id: "sync", label: "Synchronisation", icon: Bot },
@@ -630,6 +643,17 @@ export function WorkspaceShell({
             mfaReady={mfaReady}
             permissions={workspaceData.permissions}
             roles={workspaceData.roles}
+          />
+        );
+      case "representation":
+        return (
+          <RepresentationSection
+            absences={workspaceData.absences}
+            discordRoles={workspaceData.discordRoles}
+            members={members}
+            mfaReady={mfaReady}
+            ministryRoles={workspaceData.ministryRoles}
+            representationEligibilities={workspaceData.representationEligibilities}
           />
         );
       case "activity":
@@ -3550,6 +3574,635 @@ function RolesSection({
   );
 }
 
+function RepresentationSection({
+  absences,
+  discordRoles,
+  members,
+  mfaReady,
+  ministryRoles,
+  representationEligibilities,
+}: {
+  absences: WorkspaceMemberAbsence[];
+  discordRoles: WorkspaceDiscordRoleOption[];
+  members: WorkspaceMember[];
+  mfaReady: boolean;
+  ministryRoles: WorkspaceRepresentationMinistryRole[];
+  representationEligibilities: WorkspaceRepresentationEligibility[];
+}) {
+  const memberOptions = members.filter(
+    (member) => member.discordOnServer && member.discordId && member.discordId !== "-",
+  );
+  const activeAbsences = absences.filter(
+    (absence) => absence.status === "active" || absence.status === "ending",
+  );
+  const allRepresentations = absences.flatMap((absence) => absence.representations);
+  const pendingRepresentations = allRepresentations.filter((representation) =>
+    ["pending", "assigning", "ending"].includes(representation.status),
+  );
+  const activeMinistryRoles = ministryRoles.filter((role) => role.active);
+  const roleOptions = discordRoles.filter((role) => role.discordRoleId);
+
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-3 md:grid-cols-4">
+        <DetailBox label="Aktive Abmeldungen" value={formatNumber(activeAbsences.length)} />
+        <DetailBox label="Bot-Auftraege" value={formatNumber(pendingRepresentations.length)} />
+        <DetailBox label="Amtsrollen" value={formatNumber(activeMinistryRoles.length)} />
+        <DetailBox
+          label="Vertreter"
+          value={formatNumber(
+            representationEligibilities.filter((entry) => entry.active).length,
+          )}
+        />
+      </div>
+
+      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+        <SectionHeader icon={CalendarOff} title="Abmeldung" />
+        {!mfaReady ? (
+          <div className="border-t border-[var(--line)] px-4 py-3">
+            <div className="rounded-lg border border-amber-200 bg-[#fff4d6] p-3 text-sm text-amber-900">
+              2FA-Sitzung freischalten, bevor Abmeldungen geaendert werden.
+            </div>
+          </div>
+        ) : null}
+        <form
+          action={startMemberAbsenceAction}
+          className="grid gap-3 border-t border-[var(--line)] p-4 xl:grid-cols-[1.2fr_1.6fr_220px_auto]"
+        >
+          <fieldset disabled={!mfaReady} className="contents disabled:opacity-60">
+            <label className="grid gap-2">
+              <span className="text-xs font-medium uppercase text-neutral-500">
+                Person
+              </span>
+              <select
+                name="memberId"
+                required
+                defaultValue=""
+                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+              >
+                <option value="">Mitglied waehlen</option>
+                {memberOptions.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name} ({member.discordName})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-2">
+              <span className="text-xs font-medium uppercase text-neutral-500">
+                Grund
+              </span>
+              <input
+                name="reason"
+                minLength={8}
+                required
+                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+              />
+            </label>
+            <label className="grid gap-2">
+              <span className="text-xs font-medium uppercase text-neutral-500">
+                Rueckkehr
+              </span>
+              <input
+                name="expectedReturnAt"
+                type="datetime-local"
+                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+              />
+            </label>
+            <div className="flex items-end">
+              <button
+                type="submit"
+                disabled={!mfaReady || memberOptions.length === 0}
+                className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45 xl:w-auto"
+              >
+                <CalendarOff className="size-4" aria-hidden="true" />
+                <span>Abmelden</span>
+              </button>
+            </div>
+          </fieldset>
+        </form>
+      </section>
+
+      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+        <SectionHeader icon={UserCheck} title="Laufende Amtsvertretungen" />
+        <div className="overflow-x-auto border-t border-[var(--line)]">
+          <table className="w-full min-w-[1180px] text-sm">
+            <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">Abmeldung</th>
+                <th className="px-4 py-3 font-medium">Vertretungen</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Rueckkehr</th>
+                <th className="px-4 py-3 font-medium">Beenden</th>
+              </tr>
+            </thead>
+            <tbody>
+              {absences.length > 0 ? (
+                absences.map((absence) => (
+                  <tr key={absence.id} className="border-t border-[var(--line)] align-top">
+                    <td className="px-4 py-3">
+                      <div className="font-medium">{absence.memberName}</div>
+                      <div className="font-mono text-xs text-neutral-500">
+                        {absence.discordId}
+                      </div>
+                      <div className="mt-2 max-w-[320px] text-xs text-neutral-600">
+                        {absence.reason}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="grid gap-2">
+                        {absence.representations.length > 0 ? (
+                          absence.representations.map((representation) => (
+                            <RepresentationRow
+                              key={representation.id}
+                              representation={representation}
+                            />
+                          ))
+                        ) : (
+                          <span className="text-xs text-neutral-500">
+                            Keine Amtsrolle betroffen
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={[
+                          "rounded-md px-2 py-1 text-xs font-medium",
+                          getRepresentationStatusClass(absence.status),
+                        ].join(" ")}
+                      >
+                        {absence.statusLabel}
+                      </span>
+                      <div className="mt-2 text-xs text-neutral-500">
+                        Start: {absence.startedAt}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div>{absence.expectedReturnAt}</div>
+                      {absence.endedAt !== "-" ? (
+                        <div className="mt-1 text-xs text-neutral-500">
+                          Ende: {absence.endedAt}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-3">
+                      {absence.status === "active" || absence.status === "ending" ? (
+                        <form action={endMemberAbsenceAction} className="grid gap-2">
+                          <input type="hidden" name="absenceId" value={absence.id} />
+                          <input
+                            name="reason"
+                            minLength={8}
+                            required
+                            placeholder="Grund fuer Rueckkehr"
+                            disabled={!mfaReady || absence.status === "ending"}
+                            className="h-9 min-w-[240px] rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                          />
+                          <button
+                            type="submit"
+                            disabled={!mfaReady || absence.status === "ending"}
+                            className="flex h-9 items-center justify-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm disabled:cursor-not-allowed disabled:opacity-45"
+                          >
+                            <CheckCircle2 className="size-4" aria-hidden="true" />
+                            <span>Beenden</span>
+                          </button>
+                        </form>
+                      ) : (
+                        <span className="text-xs text-neutral-500">
+                          {absence.endedBy}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <TableEmpty colSpan={5} label="Noch keine Abmeldungen vorhanden." />
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+        <SectionHeader icon={KeyRound} title="Amtsrollen" />
+        <form
+          action={saveRepresentationMinistryRoleAction}
+          className="grid gap-3 border-t border-[var(--line)] p-4 lg:grid-cols-[1.2fr_1.6fr_120px_auto_auto]"
+        >
+          <fieldset disabled={!mfaReady} className="contents disabled:opacity-60">
+            <label className="grid gap-2">
+              <span className="text-xs font-medium uppercase text-neutral-500">
+                Name
+              </span>
+              <input
+                name="name"
+                required
+                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+              />
+            </label>
+            <label className="grid gap-2">
+              <span className="text-xs font-medium uppercase text-neutral-500">
+                Discord-Rolle
+              </span>
+              <select
+                name="discordRoleId"
+                required
+                defaultValue=""
+                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+              >
+                <option value="">Rolle waehlen</option>
+                {roleOptions.map((role) => (
+                  <option key={role.id} value={role.discordRoleId}>
+                    {role.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-2">
+              <span className="text-xs font-medium uppercase text-neutral-500">
+                Prioritaet
+              </span>
+              <input
+                name="sortOrder"
+                type="number"
+                min={0}
+                defaultValue={100}
+                className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+              />
+            </label>
+            <label className="flex items-end gap-2 pb-2 text-sm">
+              <input name="active" type="checkbox" defaultChecked className="size-4" />
+              <span>Aktiv</span>
+            </label>
+            <div className="flex items-end">
+              <button
+                type="submit"
+                disabled={!mfaReady || roleOptions.length === 0}
+                className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45 lg:w-auto"
+              >
+                <Save className="size-4" aria-hidden="true" />
+                <span>Anlegen</span>
+              </button>
+            </div>
+          </fieldset>
+        </form>
+        <div className="overflow-x-auto border-t border-[var(--line)]">
+          <table className="w-full min-w-[920px] text-sm">
+            <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">Name</th>
+                <th className="px-4 py-3 font-medium">Discord-Rolle</th>
+                <th className="px-4 py-3 font-medium">Prioritaet</th>
+                <th className="px-4 py-3 font-medium">Speichern</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ministryRoles.length > 0 ? (
+                ministryRoles.map((role) => (
+                  <tr key={role.id} className="border-t border-[var(--line)]">
+                    <td className="px-4 py-3">
+                      <form
+                        id={`ministry-role-${role.id}`}
+                        action={saveRepresentationMinistryRoleAction}
+                        className="contents"
+                      >
+                        <input type="hidden" name="ministryRoleId" value={role.id} />
+                        <input
+                          name="name"
+                          required
+                          defaultValue={role.name}
+                          disabled={!mfaReady}
+                          className="h-9 w-full rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:opacity-45"
+                        />
+                      </form>
+                    </td>
+                    <td className="px-4 py-3">
+                      <select
+                        form={`ministry-role-${role.id}`}
+                        name="discordRoleId"
+                        required
+                        defaultValue={role.discordRoleId}
+                        disabled={!mfaReady}
+                        className="h-9 w-full rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:opacity-45"
+                      >
+                        {roleOptions.map((option) => (
+                          <option key={option.id} value={option.discordRoleId}>
+                            {option.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-4 py-3">
+                      <input
+                        form={`ministry-role-${role.id}`}
+                        name="sortOrder"
+                        type="number"
+                        min={0}
+                        defaultValue={role.sortOrder}
+                        disabled={!mfaReady}
+                        className="h-9 w-28 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:opacity-45"
+                      />
+                      <label className="ml-3 inline-flex items-center gap-2 text-sm">
+                        <input
+                          form={`ministry-role-${role.id}`}
+                          name="active"
+                          type="checkbox"
+                          defaultChecked={role.active}
+                          disabled={!mfaReady}
+                          className="size-4"
+                        />
+                        <span>Aktiv</span>
+                      </label>
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        form={`ministry-role-${role.id}`}
+                        type="submit"
+                        disabled={!mfaReady}
+                        className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        <Save className="size-4" aria-hidden="true" />
+                        <span>Speichern</span>
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <TableEmpty colSpan={4} label="Noch keine Amtsrollen konfiguriert." />
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+        <SectionHeader icon={Users} title="Vertretungsberechtigungen" />
+        <RepresentationEligibilityForm
+          activeMinistryRoles={activeMinistryRoles}
+          memberOptions={memberOptions}
+          mfaReady={mfaReady}
+        />
+        <div className="overflow-x-auto border-t border-[var(--line)]">
+          <table className="w-full min-w-[1100px] text-sm">
+            <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">Person</th>
+                <th className="px-4 py-3 font-medium">Amtsrollen</th>
+                <th className="px-4 py-3 font-medium">Prioritaet</th>
+                <th className="px-4 py-3 font-medium">Notiz</th>
+                <th className="px-4 py-3 font-medium">Speichern</th>
+              </tr>
+            </thead>
+            <tbody>
+              {representationEligibilities.length > 0 ? (
+                representationEligibilities.map((eligibility) => (
+                  <tr key={eligibility.id} className="border-t border-[var(--line)] align-top">
+                    <td className="px-4 py-3">
+                      <form
+                        id={`eligibility-${eligibility.id}`}
+                        action={saveRepresentationEligibilityAction}
+                        className="contents"
+                      >
+                        <input type="hidden" name="eligibilityId" value={eligibility.id} />
+                        <select
+                          name="memberId"
+                          required
+                          defaultValue={eligibility.memberId}
+                          disabled={!mfaReady}
+                          className="h-9 min-w-[260px] rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:opacity-45"
+                        >
+                          {memberOptions.map((member) => (
+                            <option key={member.id} value={member.id}>
+                              {member.name} ({member.discordName})
+                            </option>
+                          ))}
+                        </select>
+                        <div className="mt-1 font-mono text-xs text-neutral-500">
+                          {eligibility.discordId}
+                        </div>
+                      </form>
+                    </td>
+                    <td className="px-4 py-3">
+                      <MinistryRoleCheckboxes
+                        formId={`eligibility-${eligibility.id}`}
+                        ministryRoles={activeMinistryRoles}
+                        selectedIds={eligibility.allowedMinistryRoleIds}
+                        disabled={!mfaReady}
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      <input
+                        form={`eligibility-${eligibility.id}`}
+                        name="priority"
+                        type="number"
+                        min={0}
+                        defaultValue={eligibility.priority}
+                        disabled={!mfaReady}
+                        className="h-9 w-28 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:opacity-45"
+                      />
+                      <label className="mt-3 flex items-center gap-2 text-sm">
+                        <input
+                          form={`eligibility-${eligibility.id}`}
+                          name="active"
+                          type="checkbox"
+                          defaultChecked={eligibility.active}
+                          disabled={!mfaReady}
+                          className="size-4"
+                        />
+                        <span>Aktiv</span>
+                      </label>
+                    </td>
+                    <td className="px-4 py-3">
+                      <input
+                        form={`eligibility-${eligibility.id}`}
+                        name="notes"
+                        defaultValue={eligibility.notes}
+                        disabled={!mfaReady}
+                        className="h-9 min-w-[220px] rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-[var(--accent)] disabled:opacity-45"
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        form={`eligibility-${eligibility.id}`}
+                        type="submit"
+                        disabled={!mfaReady || activeMinistryRoles.length === 0}
+                        className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        <Save className="size-4" aria-hidden="true" />
+                        <span>Speichern</span>
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <TableEmpty colSpan={5} label="Noch keine Vertretung berechtigt." />
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function RepresentationEligibilityForm({
+  activeMinistryRoles,
+  memberOptions,
+  mfaReady,
+}: {
+  activeMinistryRoles: WorkspaceRepresentationMinistryRole[];
+  memberOptions: WorkspaceMember[];
+  mfaReady: boolean;
+}) {
+  return (
+    <form
+      action={saveRepresentationEligibilityAction}
+      className="grid gap-3 border-t border-[var(--line)] p-4 lg:grid-cols-[1.3fr_1.4fr_120px_1fr_auto_auto]"
+    >
+      <fieldset disabled={!mfaReady} className="contents disabled:opacity-60">
+        <label className="grid gap-2">
+          <span className="text-xs font-medium uppercase text-neutral-500">
+            Person
+          </span>
+          <select
+            name="memberId"
+            required
+            defaultValue=""
+            className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+          >
+            <option value="">Mitglied waehlen</option>
+            {memberOptions.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.name} ({member.discordName})
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="grid gap-2">
+          <span className="text-xs font-medium uppercase text-neutral-500">
+            Amtsrollen
+          </span>
+          <MinistryRoleCheckboxes
+            ministryRoles={activeMinistryRoles}
+            selectedIds={[]}
+            disabled={!mfaReady}
+          />
+        </div>
+        <label className="grid gap-2">
+          <span className="text-xs font-medium uppercase text-neutral-500">
+            Prioritaet
+          </span>
+          <input
+            name="priority"
+            type="number"
+            min={0}
+            defaultValue={100}
+            className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+          />
+        </label>
+        <label className="grid gap-2">
+          <span className="text-xs font-medium uppercase text-neutral-500">
+            Notiz
+          </span>
+          <input
+            name="notes"
+            className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+          />
+        </label>
+        <label className="flex items-end gap-2 pb-2 text-sm">
+          <input name="active" type="checkbox" defaultChecked className="size-4" />
+          <span>Aktiv</span>
+        </label>
+        <div className="flex items-end">
+          <button
+            type="submit"
+            disabled={
+              !mfaReady ||
+              memberOptions.length === 0 ||
+              activeMinistryRoles.length === 0
+            }
+            className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45 lg:w-auto"
+          >
+            <Plus className="size-4" aria-hidden="true" />
+            <span>Anlegen</span>
+          </button>
+        </div>
+      </fieldset>
+    </form>
+  );
+}
+
+function MinistryRoleCheckboxes({
+  disabled,
+  formId,
+  ministryRoles,
+  selectedIds,
+}: {
+  disabled: boolean;
+  formId?: string;
+  ministryRoles: WorkspaceRepresentationMinistryRole[];
+  selectedIds: string[];
+}) {
+  if (ministryRoles.length === 0) {
+    return <span className="text-xs text-neutral-500">Keine aktive Amtsrolle</span>;
+  }
+
+  return (
+    <div className="flex max-w-[420px] flex-wrap gap-2">
+      {ministryRoles.map((role) => (
+        <label
+          key={role.id}
+          className="inline-flex min-h-8 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-2 text-xs"
+        >
+          <input
+            form={formId}
+            name="ministryRoleIds"
+            type="checkbox"
+            value={role.id}
+            defaultChecked={selectedIds.includes(role.id)}
+            disabled={disabled}
+            className="size-4"
+          />
+          <span>{role.name}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function RepresentationRow({
+  representation,
+}: {
+  representation: WorkspaceAbsenceRepresentation;
+}) {
+  return (
+    <div className="border border-[var(--line)] bg-white p-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-medium">{representation.ministryRoleName}</span>
+        <span
+          className={[
+            "rounded-md px-2 py-1 text-xs font-medium",
+            getRepresentationStatusClass(representation.status),
+          ].join(" ")}
+        >
+          {representation.statusLabel}
+        </span>
+      </div>
+      <div className="mt-1 text-xs text-neutral-600">
+        {representation.representativeName}
+        {representation.representativeDiscordId
+          ? ` - ${representation.representativeDiscordId}`
+          : ""}
+      </div>
+      {representation.botError ? (
+        <div className="mt-1 text-xs text-[var(--danger)]">
+          {representation.botError}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ActivitySection({ members }: { members: WorkspaceMember[] }) {
   const activityMembers = members.filter(
     (member) =>
@@ -4830,6 +5483,22 @@ function getModerationStatusClass(status: string) {
   return "bg-[var(--surface-muted)] text-neutral-600";
 }
 
+function getRepresentationStatusClass(status: string) {
+  if (status === "active") {
+    return "bg-[var(--accent-soft)] text-[var(--accent-strong)]";
+  }
+
+  if (status === "failed") {
+    return "bg-red-50 text-[var(--danger)]";
+  }
+
+  if (status === "pending" || status === "assigning" || status === "ending") {
+    return "bg-[#fff4d6] text-[var(--warning)]";
+  }
+
+  return "bg-[var(--surface-muted)] text-neutral-600";
+}
+
 function getEditableModerationStatus(status: string) {
   return ["active", "expired", "failed", "lifted", "recorded"].includes(status)
     ? status
@@ -4942,6 +5611,32 @@ function buildWorkspaceNotifications({
       section: "moderation",
       title: "Moderation wartet",
       tone: "info",
+    });
+  }
+
+  if (workspaceData.sync.representationQueueSize > 0) {
+    notifications.push({
+      detail: `${formatNumber(workspaceData.sync.representationQueueSize)} Rollen-Auftrag(e) warten noch.`,
+      id: `representation-queue-${workspaceData.sync.representationQueueSize}`,
+      section: "representation",
+      title: "Amtsvertretung wartet",
+      tone: "info",
+    });
+  }
+
+  const failedRepresentations = workspaceData.absences.flatMap((absence) =>
+    absence.representations.filter(
+      (representation) => representation.status === "failed" || Boolean(representation.botError),
+    ),
+  );
+
+  if (failedRepresentations.length > 0) {
+    notifications.push({
+      detail: `${formatNumber(failedRepresentations.length)} Vertretungsauftrag(e) brauchen Pruefung.`,
+      id: `representation-failed-${failedRepresentations.length}`,
+      section: "representation",
+      title: "Amtsvertretung Fehler",
+      tone: "error",
     });
   }
 
