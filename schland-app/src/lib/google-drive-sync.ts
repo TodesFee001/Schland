@@ -3,11 +3,13 @@ import {
   getDriveWebViewLink,
   getGoogleDocsTemplateId,
   getGoogleDriveRootFolderId,
+  DriveApiError,
   GoogleDriveClient,
   hasGoogleDriveServerConfig,
   isGoogleDocsMimeType,
   isGoogleFolderMimeType,
   type DriveFile,
+  type DriveTreeChunk,
 } from "@/lib/google-drive";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 
@@ -51,14 +53,13 @@ type LocalFile = {
   storagePath: string;
 };
 
-type DriveTree = {
-  files: DriveFile[];
-  folders: DriveFile[];
-};
+type DriveTree = DriveTreeChunk;
 
 const fileBucket = "schland-files";
 const fallbackCategoryName = "Ungeordnet";
 const reviewFolderName = "Zu pruefen";
+const defaultDriveSyncMaxPages = 20;
+const defaultDriveSyncMaxUploads = 5;
 const defaultCounters: SyncCounters = {
   conflictsFound: 0,
   errorsFound: 0,
@@ -119,9 +120,16 @@ export async function runDriveSync(input: {
 
     const drive = new GoogleDriveClient();
     const rootFolderId = getGoogleDriveRootFolderId();
+    const cursor = await getLatestDriveSyncCursor(admin);
+    const maxPages = getDriveSyncMaxPages();
+    const maxUploads = getDriveSyncMaxUploads();
     const [localFiles, driveTree] = await Promise.all([
       getLocalFiles(admin),
-      drive.listTree(rootFolderId),
+      drive.listTreeChunk({
+        maxPages,
+        pendingFolderIds: cursor.pendingFolderIds,
+        rootFolderId,
+      }),
     ]);
 
     counters.filesScanned = localFiles.length + driveTree.files.length;
@@ -139,7 +147,7 @@ export async function runDriveSync(input: {
     );
     const finalFolders = await getLocalFolders(admin);
     await syncDriveFilesToLocal(admin, syncRun.id, finalFolders, driveTree, counters);
-    await syncLocalFilesToDrive(
+    const localFileSync = await syncLocalFilesToDrive(
       admin,
       drive,
       syncRun.id,
@@ -147,18 +155,41 @@ export async function runDriveSync(input: {
       await getLocalFiles(admin),
       driveTree,
       counters,
+      {
+        driveTreeComplete: driveTree.partial !== true,
+        maxUploads,
+      },
     );
+    const partial = driveTree.partial === true || localFileSync.uploadsLimited;
 
-    await finishSyncRun(admin, syncRun.id, counters, {
-      rootFolderId,
-      templateId: getGoogleDocsTemplateId(),
-    });
+    await finishSyncRun(
+      admin,
+      syncRun.id,
+      counters,
+      {
+        driveScan: {
+          filesScanned: driveTree.files.length,
+          foldersScanned: driveTree.folders.length,
+          localUploadsLimited: localFileSync.uploadsLimited,
+          maxPages,
+          maxUploads,
+          pagesScanned: driveTree.pagesScanned ?? null,
+          partial: driveTree.partial === true,
+          pendingFolderIds: driveTree.pendingFolderIds ?? [],
+          resumed: cursor.pendingFolderIds.length > 0,
+        },
+        rootFolderId,
+        templateId: getGoogleDocsTemplateId(),
+      },
+      partial ? "partial" : undefined,
+    );
 
     return {
       counters,
       id: syncRun.id,
       skipped: false,
-      status: counters.errorsFound > 0 ? "partial" : "success",
+      status:
+        counters.errorsFound > 0 || partial ? "partial" : "success",
     };
   } catch (error) {
     counters.errorsFound += 1;
@@ -402,10 +433,40 @@ async function syncLocalFoldersToDrive(
       }
 
       const parentDriveId = parent?.googleDriveFolderId || getGoogleDriveRootFolderId();
-      const created = await drive.createFolder({
-        name: folder.name,
-        parentId: parentDriveId,
-      });
+      let created: DriveFile;
+
+      try {
+        created = await drive.createFolder({
+          name: folder.name,
+          parentId: parentDriveId,
+        });
+      } catch (error) {
+        if (!isDrivePermissionError(error)) {
+          throw error;
+        }
+
+        counters.conflictsFound += 1;
+        pending.splice(index, 1);
+
+        await createConflict(admin, {
+          conflictType: "drive_folder_create_permission_missing",
+          entityType: "folder",
+          localEntityId: folder.id,
+          localValue: folder,
+          syncRunId,
+        });
+        await writeSyncLog(admin, {
+          direction: "website_to_drive",
+          entityId: folder.id,
+          entityType: "folder",
+          errorMessage: getErrorMessage(error),
+          message: `Drive-Ordner konnte nicht erstellt werden: ${folder.name}`,
+          status: "warning",
+          syncRunId,
+        });
+
+        continue;
+      }
 
       await admin
         .from("folders")
@@ -673,17 +734,30 @@ async function syncLocalFilesToDrive(
   localFiles: LocalFile[],
   driveTree: DriveTree,
   counters: SyncCounters,
+  options: {
+    driveTreeComplete: boolean;
+    maxUploads: number;
+  } = {
+    driveTreeComplete: true,
+    maxUploads: defaultDriveSyncMaxUploads,
+  },
 ) {
   const driveIds = new Set(driveTree.files.map((file) => file.id));
   const driveFileById = new Map(driveTree.files.map((file) => [file.id, file]));
   const folderById = new Map(folders.map((folder) => [folder.id, folder]));
+  let uploadsStarted = 0;
+  let uploadsLimited = false;
 
   for (const file of localFiles) {
     if (file.deletedAt) {
       continue;
     }
 
-    if (file.googleDriveFileId && !driveIds.has(file.googleDriveFileId)) {
+    if (
+      options.driveTreeComplete &&
+      file.googleDriveFileId &&
+      !driveIds.has(file.googleDriveFileId)
+    ) {
       counters.conflictsFound += 1;
       await admin
         .from("files")
@@ -719,6 +793,13 @@ async function syncLocalFilesToDrive(
         continue;
       }
 
+      if (uploadsStarted >= options.maxUploads) {
+        uploadsLimited = true;
+        continue;
+      }
+
+      uploadsStarted += 1;
+
       try {
         await uploadStorageFileToDrive(admin, drive, file, targetFolderId);
         counters.filesCreated += 1;
@@ -753,16 +834,49 @@ async function syncLocalFilesToDrive(
       targetFolderId &&
       !driveFile.parents.includes(targetFolderId)
     ) {
-      const moved = await drive.moveFile({
-        fileId: file.googleDriveFileId,
-        previousParents: driveFile.parents,
-        targetParentId: targetFolderId,
-      });
+      let moved: DriveFile;
+
+      try {
+        moved = await drive.moveFile({
+          fileId: file.googleDriveFileId,
+          previousParents: driveFile.parents,
+          targetParentId: targetFolderId,
+        });
+      } catch (error) {
+        if (!isDrivePermissionError(error)) {
+          throw error;
+        }
+
+        counters.conflictsFound += 1;
+        await createConflict(admin, {
+          conflictType: "drive_file_move_permission_missing",
+          entityType: "file",
+          googleDriveId: file.googleDriveFileId,
+          localEntityId: file.id,
+          localValue: file,
+          syncRunId,
+        });
+        await writeSyncLog(admin, {
+          direction: "website_to_drive",
+          entityId: file.id,
+          entityType: "file",
+          errorMessage: getErrorMessage(error),
+          googleDriveId: file.googleDriveFileId,
+          message: `Drive-Datei konnte nicht verschoben werden: ${file.originalFilename}`,
+          status: "warning",
+          syncRunId,
+        });
+        continue;
+      }
 
       await updateFileFromDrive(admin, file.id, moved, targetFolderId, "synced");
       counters.filesMoved += 1;
     }
   }
+
+  return {
+    uploadsLimited,
+  };
 }
 
 async function uploadStorageFileToDrive(
@@ -878,10 +992,39 @@ async function ensureFallbackStructure(
   const existing = await ensureReviewFolder(admin, categoryId);
 
   if (!existing.googleDriveFolderId) {
-    const created = await drive.createFolder({
-      name: reviewFolderName,
-      parentId: getGoogleDriveRootFolderId(),
-    });
+    let created: DriveFile;
+
+    try {
+      created = await drive.createFolder({
+        name: reviewFolderName,
+        parentId: getGoogleDriveRootFolderId(),
+      });
+    } catch (error) {
+      if (!isDrivePermissionError(error)) {
+        throw error;
+      }
+
+      counters.conflictsFound += 1;
+      await createConflict(admin, {
+        conflictType: "drive_root_write_permission_missing",
+        driveValue: {
+          folderName: reviewFolderName,
+          rootFolderId: getGoogleDriveRootFolderId(),
+        },
+        entityType: "sync",
+        syncRunId,
+      });
+      await writeSyncLog(admin, {
+        direction: "website_to_drive",
+        entityId: existing.id,
+        entityType: "folder",
+        errorMessage: getErrorMessage(error),
+        message: "Drive-Root ist nicht beschreibbar. Sync laeuft lesend weiter.",
+        status: "warning",
+        syncRunId,
+      });
+      return;
+    }
 
     await admin
       .from("folders")
@@ -978,6 +1121,54 @@ async function ensureReviewFolder(admin: SupabaseAdmin, categoryId?: string) {
   }
 
   return mapFolderRow(data);
+}
+
+async function getLatestDriveSyncCursor(admin: SupabaseAdmin) {
+  const { data } = await admin
+    .from("sync_runs")
+    .select("metadata")
+    .eq("source", "google-drive")
+    .in("status", ["partial", "success"])
+    .order("started_at", { ascending: false })
+    .limit(5);
+
+  for (const row of data ?? []) {
+    const driveScan = asRecord(asRecord(row).metadata).driveScan;
+    const pendingValue = asRecord(driveScan).pendingFolderIds;
+    const pendingFolderIds = Array.isArray(pendingValue)
+      ? pendingValue.map((value) => String(value ?? "")).filter(Boolean)
+      : [];
+
+    if (pendingFolderIds.length > 0) {
+      return {
+        pendingFolderIds,
+      };
+    }
+  }
+
+  return {
+    pendingFolderIds: [] as string[],
+  };
+}
+
+function getDriveSyncMaxPages() {
+  const configured = Number(process.env.GOOGLE_DRIVE_SYNC_MAX_PAGES ?? "");
+
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.min(Math.floor(configured), 250);
+  }
+
+  return defaultDriveSyncMaxPages;
+}
+
+function getDriveSyncMaxUploads() {
+  const configured = Number(process.env.GOOGLE_DRIVE_SYNC_MAX_UPLOADS ?? "");
+
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.min(Math.floor(configured), 50);
+  }
+
+  return defaultDriveSyncMaxUploads;
 }
 
 async function getActiveDriveSyncRun(admin: SupabaseAdmin) {
@@ -1309,4 +1500,12 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isDrivePermissionError(error: unknown) {
+  return (
+    error instanceof DriveApiError &&
+    error.status === 403 &&
+    /insufficientParentPermissions|insufficient permissions/i.test(error.message)
+  );
 }

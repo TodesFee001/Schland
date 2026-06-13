@@ -15,6 +15,14 @@ export type DriveFile = {
   trashed: boolean;
 };
 
+export type DriveTreeChunk = {
+  files: DriveFile[];
+  folders: DriveFile[];
+  pagesScanned: number;
+  partial: boolean;
+  pendingFolderIds: string[];
+};
+
 export type DriveConfig = {
   clientEmail: string;
   privateKey: string;
@@ -142,21 +150,54 @@ export class GoogleDriveClient {
   }
 
   async listTree(rootFolderId = this.config.rootFolderId) {
+    const chunk = await this.listTreeChunk({
+      maxPages: Number.MAX_SAFE_INTEGER,
+      pendingFolderIds: [rootFolderId],
+    });
+
+    return {
+      files: chunk.files,
+      folders: chunk.folders,
+    };
+  }
+
+  async listTreeChunk(input: {
+    maxPages: number;
+    pendingFolderIds?: string[];
+    rootFolderId?: string;
+  }): Promise<DriveTreeChunk> {
     const folders = new Map<string, DriveFile>();
     const files = new Map<string, DriveFile>();
-    const queue = [rootFolderId];
+    const queue = [
+      ...(input.pendingFolderIds?.filter(Boolean) ?? []),
+      ...(input.pendingFolderIds?.length ? [] : [input.rootFolderId ?? this.config.rootFolderId]),
+    ];
+    const seen = new Set<string>();
+    let pagesScanned = 0;
 
     while (queue.length > 0) {
       const parentId = queue.shift();
 
-      if (!parentId) {
+      if (!parentId || seen.has(parentId)) {
         continue;
+      }
+
+      seen.add(parentId);
+      if (pagesScanned >= input.maxPages) {
+        return {
+          files: [...files.values()],
+          folders: [...folders.values()],
+          pagesScanned,
+          partial: true,
+          pendingFolderIds: [parentId, ...queue],
+        };
       }
 
       let pageToken: string | undefined;
 
       do {
         const page = await this.listChildren(parentId, pageToken);
+        pagesScanned += 1;
 
         for (const item of page.files) {
           if (isGoogleFolderMimeType(item.mimeType)) {
@@ -174,6 +215,9 @@ export class GoogleDriveClient {
     return {
       files: [...files.values()],
       folders: [...folders.values()],
+      pagesScanned,
+      partial: false,
+      pendingFolderIds: [],
     };
   }
 
