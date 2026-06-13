@@ -11,6 +11,23 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "13.06.2026",
+    id: "google-drive-file-sync",
+    items: [
+      "Datei- und Ordnerverwaltung speichert Google-Drive-IDs als feste Verknuepfung.",
+      "Manueller Google-Drive-Sync, sichere Sync-Laeufe, Protokolle und Konfliktanzeige wurden ergaenzt.",
+      "Uploads koennen mehrere Dateien annehmen und werden nach Drive in den passenden Ordner gespiegelt.",
+      "Ordner-Uploads behalten relative Unterordner bei, sofern der Browser diese Pfade mitsendet.",
+      "Google-Docs-Dokumente koennen aus der festgelegten Vorlage erstellt und als Vorschau geoeffnet werden.",
+      "Loeschen markiert Dateien nur noch sicher als geprueftes Soft-Delete statt Storage oder Drive direkt zu entfernen.",
+      "Automatische Drive-Sync-Cronjobs laufen exakt fuer 06:00 und 20:00 Uhr Europe/Berlin mit Sommer-/Winterzeit-Pruefung.",
+      "Die Dateiuebersicht bleibt auch vor eingespielter Drive-Migration im alten Datenbankschema sichtbar.",
+    ],
+    title: "Google Drive Datei-Sync",
+    type: "feature",
+    version: "0.10.7",
+  },
+  {
+    date: "13.06.2026",
     id: "representation-approval-dm-flow",
     items: [
       "Amtsvertretungen werden vor der Rollenzuweisung per Discord-DM bei der vertretenden Person angefragt.",

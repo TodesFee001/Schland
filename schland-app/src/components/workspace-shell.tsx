@@ -41,6 +41,7 @@ import { useRouter } from "next/navigation";
 
 import {
   activateLockdownAction,
+  createGoogleDocAction,
   createDiscordInviteRequestAction,
   createFolderAction,
   deactivateLockdownAction,
@@ -57,6 +58,7 @@ import {
   openMemberCaseAction,
   runModerationAction,
   runDiscordManualSyncAction,
+  runDriveManualSyncAction,
   saveCategoryAction,
   saveRepresentationEligibilityAction,
   saveRepresentationMinistryRoleAction,
@@ -83,6 +85,7 @@ import type {
   WorkspaceCategory,
   WorkspaceData,
   WorkspaceDiscordInvite,
+  WorkspaceDriveSync,
   WorkspaceDiscordRoleOption,
   WorkspaceFile,
   WorkspaceFolder,
@@ -623,6 +626,7 @@ export function WorkspaceShell({
         return (
           <FilesSection
             categories={workspaceData.categories}
+            driveSync={workspaceData.driveSync}
             files={workspaceData.files}
             folders={workspaceData.folders}
             mfaReady={mfaReady}
@@ -2225,12 +2229,14 @@ function MembersSection({
 
 function FilesSection({
   categories,
+  driveSync,
   files,
   folders,
   mfaReady,
   roles,
 }: {
   categories: WorkspaceCategory[];
+  driveSync: WorkspaceDriveSync;
   files: WorkspaceFile[];
   folders: WorkspaceFolder[];
   mfaReady: boolean;
@@ -2277,6 +2283,25 @@ function FilesSection({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <form action={runDriveManualSyncAction}>
+            <button
+              type="submit"
+              title="Mit Google Drive synchronisieren"
+              disabled={!mfaReady}
+              className="flex h-9 items-center gap-2 border border-[var(--line)] bg-white px-3 text-sm disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <RefreshCw className="size-4" aria-hidden="true" />
+              <span>Drive-Sync</span>
+            </button>
+          </form>
+          <a
+            href="#google-doc-create"
+            title="Neues Google Docs Dokument aus Vorlage"
+            className="flex h-9 items-center gap-2 border border-[var(--line)] bg-white px-3 text-sm"
+          >
+            <FileText className="size-4" aria-hidden="true" />
+            <span>Neues Docs</span>
+          </a>
           <a
             href="#file-upload"
             title="Datei hochladen"
@@ -2284,6 +2309,14 @@ function FilesSection({
           >
             <Upload className="size-4" aria-hidden="true" />
             <span>Hochladen</span>
+          </a>
+          <a
+            href="#folder-upload"
+            title="Ordner hochladen"
+            className="flex h-9 items-center gap-2 border border-[var(--line)] bg-white px-3 text-sm"
+          >
+            <Folder className="size-4" aria-hidden="true" />
+            <span>Ordner-Upload</span>
           </a>
           <a
             href="#folder-create"
@@ -2296,12 +2329,38 @@ function FilesSection({
         </div>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-5">
         <DetailBox label="Dateien" value={formatNumber(files.length)} />
         <DetailBox label="Ordner" value={formatNumber(folders.length)} />
         <DetailBox label="Kategorien" value={formatNumber(categories.length)} />
         <DetailBox label="Speicher" value={formatFileSize(totalFileSize)} />
+        <DetailBox
+          label="Drive"
+          value={driveSync.configured ? driveSync.latestStatus : "Config fehlt"}
+          detail={`${driveSync.latestRunAt} | Konflikte ${formatNumber(
+            driveSync.conflictCount,
+          )}`}
+        />
       </div>
+
+      {driveSync.conflictCount > 0 ? (
+        <section className="border border-amber-300 bg-[#fff4d6] p-3 text-sm text-amber-950">
+          <div className="mb-2 flex items-center gap-2 font-bold uppercase">
+            <TriangleAlert className="size-4" aria-hidden="true" />
+            <span>Drive-Konflikte offen</span>
+          </div>
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {driveSync.conflicts.slice(0, 6).map((conflict) => (
+              <div key={conflict.id} className="border border-amber-300 bg-white p-2">
+                <div className="font-mono text-xs">{conflict.conflictType}</div>
+                <div className="text-xs text-neutral-600">
+                  {conflict.entityType} | {conflict.createdAt}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <details
         id="file-upload"
@@ -2322,7 +2381,8 @@ function FilesSection({
             </span>
             <input
               type="file"
-              name="file"
+              name="files"
+              multiple
               required
               disabled={!mfaReady}
               className="h-10 rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none file:mr-3 file:rounded-md file:border-0 file:bg-[var(--surface-muted)] file:px-3 file:py-1 file:text-xs file:font-medium disabled:cursor-not-allowed disabled:opacity-45"
@@ -2406,6 +2466,159 @@ function FilesSection({
         ) : null}
       </details>
 
+      <details
+        id="folder-upload"
+        className="border border-[var(--line-strong)] bg-[var(--surface)]"
+      >
+        <summary className="flex cursor-pointer items-center gap-2 border-b border-[var(--line)] px-3 py-2 text-sm font-bold uppercase">
+          <Upload className="size-4" aria-hidden="true" />
+          <span>Ordner hochladen</span>
+        </summary>
+        <form
+          action={uploadFileAction}
+          encType="multipart/form-data"
+          className="grid gap-3 border-t border-[var(--line)] p-4 lg:grid-cols-[1fr_1fr_1fr_auto]"
+        >
+          <label className="grid gap-2">
+            <span className="text-xs font-medium uppercase text-neutral-500">
+              Ordner
+            </span>
+            <input
+              type="file"
+              name="files"
+              multiple
+              {...({ webkitdirectory: "true" } as Record<string, string>)}
+              disabled={!mfaReady}
+              className="h-10 rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none file:mr-3 file:rounded-md file:border-0 file:bg-[var(--surface-muted)] file:px-3 file:py-1 file:text-xs file:font-medium disabled:cursor-not-allowed disabled:opacity-45"
+            />
+          </label>
+          <label className="grid gap-2">
+            <span className="text-xs font-medium uppercase text-neutral-500">
+              Kategorie
+            </span>
+            <select
+              name="categoryId"
+              required
+              disabled={!mfaReady || categories.length === 0}
+              defaultValue=""
+              className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <option value="">Kategorie waehlen</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-2">
+            <span className="text-xs font-medium uppercase text-neutral-500">
+              Zielordner
+            </span>
+            <select
+              name="folderId"
+              disabled={!mfaReady || folders.length === 0}
+              defaultValue=""
+              className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <option value="">Ohne Ordner</option>
+              {folders.map((folder) => (
+                <option key={folder.id} value={folder.id}>
+                  {folder.category} / {folder.folder}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="flex items-end">
+            <button
+              type="submit"
+              disabled={!mfaReady || categories.length === 0}
+              className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45 lg:w-auto"
+            >
+              <Upload className="size-4" aria-hidden="true" />
+              <span>Ordner speichern</span>
+            </button>
+          </div>
+        </form>
+      </details>
+
+      <details
+        id="google-doc-create"
+        className="border border-[var(--line-strong)] bg-[var(--surface)]"
+      >
+        <summary className="flex cursor-pointer items-center gap-2 border-b border-[var(--line)] px-3 py-2 text-sm font-bold uppercase">
+          <FileText className="size-4" aria-hidden="true" />
+          <span>Neues Docs-Dokument</span>
+        </summary>
+        <form
+          action={createGoogleDocAction}
+          className="grid gap-3 border-t border-[var(--line)] p-4 lg:grid-cols-[1fr_1fr_1fr_1fr_auto]"
+        >
+          <label className="grid gap-2">
+            <span className="text-xs font-medium uppercase text-neutral-500">
+              Dokumentname
+            </span>
+            <input
+              name="documentName"
+              required
+              minLength={2}
+              disabled={!mfaReady}
+              className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+            />
+          </label>
+          <label className="grid gap-2">
+            <span className="text-xs font-medium uppercase text-neutral-500">
+              Zielordner
+            </span>
+            <select
+              name="folderId"
+              required
+              disabled={!mfaReady || folders.length === 0}
+              defaultValue=""
+              className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <option value="">Ordner waehlen</option>
+              {folders.map((folder) => (
+                <option key={folder.id} value={folder.id}>
+                  {folder.category} / {folder.folder}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-2">
+            <span className="text-xs font-medium uppercase text-neutral-500">
+              Beschreibung
+            </span>
+            <input
+              name="description"
+              disabled={!mfaReady}
+              className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+            />
+          </label>
+          <label className="grid gap-2">
+            <span className="text-xs font-medium uppercase text-neutral-500">
+              Tags
+            </span>
+            <input
+              name="tags"
+              defaultValue="google-docs, vorlage"
+              disabled={!mfaReady}
+              className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+            />
+          </label>
+          <div className="flex items-end">
+            <button
+              type="submit"
+              disabled={!mfaReady || folders.length === 0}
+              className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45 lg:w-auto"
+            >
+              <Plus className="size-4" aria-hidden="true" />
+              <span>Erstellen</span>
+            </button>
+          </div>
+        </form>
+      </details>
+
       <section className="border border-[var(--line-strong)] bg-[var(--surface)]">
         <SectionHeader
           icon={FileText}
@@ -2450,12 +2663,13 @@ function FilesSection({
           </label>
         </div>
         <div className="overflow-x-auto border-t border-[var(--line)]">
-          <table className="w-full min-w-[1320px] text-sm">
+          <table className="w-full min-w-[1440px] text-sm">
             <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
               <tr>
                 <th className="px-4 py-3 font-medium">Datei</th>
                 <th className="px-4 py-3 font-medium">Ablage</th>
                 <th className="px-4 py-3 font-medium">Typ</th>
+                <th className="px-4 py-3 font-medium">Sync</th>
                 <th className="px-4 py-3 font-medium">Upload</th>
                 <th className="px-4 py-3 font-medium">Aktion</th>
               </tr>
@@ -2497,6 +2711,26 @@ function FilesSection({
                         </div>
                       ) : null}
                     </td>
+                    <td className="px-4 py-3">
+                      <div
+                        className={[
+                          "inline-flex border px-2 py-1 text-xs font-medium",
+                          file.syncStatus === "synced"
+                            ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-strong)]"
+                            : file.syncStatus === "conflict" ||
+                                file.syncStatus === "failed"
+                              ? "border-red-200 bg-red-50 text-[var(--danger)]"
+                              : "border-amber-200 bg-[#fff4d6] text-amber-900",
+                        ].join(" ")}
+                      >
+                        {file.syncStatusLabel ?? "Zu pruefen"}
+                      </div>
+                      {file.googleDriveFileId ? (
+                        <div className="mt-1 max-w-[180px] truncate font-mono text-xs text-neutral-500">
+                          {file.googleDriveFileId}
+                        </div>
+                      ) : null}
+                    </td>
                     <td className="px-4 py-3">{file.createdAt}</td>
                     <td className="px-4 py-3">
                       <div className="grid gap-2">
@@ -2523,6 +2757,18 @@ function FilesSection({
                               <span>Oeffnen</span>
                             </button>
                           )}
+                          {mfaReady ? (
+                            <a
+                              href={`/files/preview?fileId=${encodeURIComponent(file.id)}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Dateivorschau oeffnen"
+                              className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm"
+                            >
+                              <Eye className="size-4" aria-hidden="true" />
+                              <span>Vorschau</span>
+                            </a>
+                          ) : null}
                           <form action={downloadFileAction}>
                             <input type="hidden" name="fileId" value={file.id} />
                             <button
@@ -2639,7 +2885,7 @@ function FilesSection({
                   </tr>
                 ))
               ) : (
-                <TableEmpty colSpan={5} label="Keine Dateien fuer diesen Filter." />
+                <TableEmpty colSpan={6} label="Keine Dateien fuer diesen Filter." />
               )}
             </tbody>
           </table>
@@ -2742,6 +2988,14 @@ function FilesSection({
                     <td className="px-4 py-3">{folder.category}</td>
                     <td className="px-4 py-3">
                       <div className="font-medium">{folder.folder}</div>
+                      <div className="mt-1 inline-flex border border-[var(--line)] bg-white px-1.5 py-0.5 text-xs text-neutral-600">
+                        {folder.syncStatusLabel ?? "Zu pruefen"}
+                      </div>
+                      {folder.googleDriveFolderId ? (
+                        <div className="mt-1 max-w-[220px] truncate font-mono text-xs text-neutral-500">
+                          {folder.googleDriveFolderId}
+                        </div>
+                      ) : null}
                       <div className="text-xs text-neutral-500">
                         Sicht: {folder.visibleFor}
                       </div>
@@ -5346,12 +5600,36 @@ function SettingsSection({
       </section>
 
       <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+        <SectionHeader icon={Folder} title="Google Drive" />
+        <div className="grid gap-3 border-t border-[var(--line)] p-4 text-sm">
+          <StatusLine
+            active={environmentStatus.googleDriveClientEmail}
+            label="Service-Account E-Mail"
+          />
+          <StatusLine
+            active={environmentStatus.googleDrivePrivateKey}
+            label="Service-Account Private Key"
+          />
+          <StatusLine
+            active={environmentStatus.googleDriveRootFolderId}
+            label="Root-Ordner konfiguriert"
+          />
+          <StatusLine
+            active={environmentStatus.googleDocsTemplateId}
+            label="Docs-Vorlage konfiguriert"
+          />
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
         <SectionHeader icon={Database} title="Datenhaltung" />
         <div className="grid gap-3 border-t border-[var(--line)] p-4 text-sm">
           <StatusLine active label="Mitgliederakten per Discord-ID" />
           <StatusLine active label="Bots ausgeschlossen" />
           <StatusLine active label="Moderationsregister dauerhaft" />
           <StatusLine active label="Einladungen per Discord-DM" />
+          <StatusLine active label="Dateien per Drive-ID verknuepft" />
+          <StatusLine active label="Drive-Loeschungen nur als Konflikt markiert" />
         </div>
       </section>
     </div>
@@ -5628,6 +5906,10 @@ function buildWorkspaceNotifications({
     ["Bot-Token", environmentStatus.discordBotToken],
     ["Bot-Sync", environmentStatus.discordBotSyncToken],
     ["Discord Server", environmentStatus.discordGuildId],
+    [
+      "Google Drive Service",
+      environmentStatus.googleDriveClientEmail && environmentStatus.googleDrivePrivateKey,
+    ],
   ].filter(([, active]) => !active);
 
   if (missingEnvironment.length > 0) {
@@ -5637,6 +5919,37 @@ function buildWorkspaceNotifications({
       section: "settings",
       title: "Umgebung unvollstaendig",
       tone: "error",
+    });
+  }
+
+  if (!workspaceData.driveSync.configured) {
+    notifications.push({
+      detail:
+        "Service-Account fehlt oder ist nicht vollstaendig. Uploads bleiben sicher gespeichert und werden nachgezogen.",
+      id: "drive-config-missing",
+      section: "files",
+      title: "Google Drive nicht bereit",
+      tone: "warning",
+    });
+  }
+
+  if (workspaceData.driveSync.conflictCount > 0) {
+    notifications.push({
+      detail: `${formatNumber(workspaceData.driveSync.conflictCount)} offene Drive-Konflikt(e) muessen geprueft werden.`,
+      id: `drive-conflicts-${workspaceData.driveSync.conflictCount}`,
+      section: "files",
+      title: "Drive-Konflikte",
+      tone: "warning",
+    });
+  }
+
+  if (workspaceData.driveSync.latestStatus === "running") {
+    notifications.push({
+      detail: "Ein Google-Drive-Sync laeuft bereits. Weitere Starts werden sauber uebersprungen.",
+      id: "drive-sync-running",
+      section: "files",
+      title: "Drive-Sync laeuft",
+      tone: "info",
     });
   }
 
@@ -5926,11 +6239,20 @@ function getMemberInitials(name: string) {
   return (parts.map((part) => part[0]).join("") || "?").toUpperCase();
 }
 
-function DetailBox({ label, value }: { label: string; value: string }) {
+function DetailBox({
+  detail,
+  label,
+  value,
+}: {
+  detail?: string;
+  label: string;
+  value: string;
+}) {
   return (
     <div className="border border-[var(--line)] bg-[var(--surface-muted)] p-3">
       <p className="text-xs uppercase text-neutral-500">{label}</p>
       <p className="mt-1 font-mono text-xl font-bold">{value}</p>
+      {detail ? <p className="mt-1 text-xs text-neutral-500">{detail}</p> : null}
     </div>
   );
 }

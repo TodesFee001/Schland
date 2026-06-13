@@ -8,6 +8,10 @@ export type EnvironmentStatus = {
   discordGuildId: boolean;
   discordInviteChannelId: boolean;
   discordPublicKey: boolean;
+  googleDriveClientEmail: boolean;
+  googleDrivePrivateKey: boolean;
+  googleDriveRootFolderId: boolean;
+  googleDocsTemplateId: boolean;
   supabaseUrl: boolean;
   supabasePublishableKey: boolean;
   supabaseServiceRole: boolean;
@@ -25,6 +29,19 @@ export function getEnvironmentStatus(): EnvironmentStatus {
     discordGuildId: Boolean(process.env.DISCORD_GUILD_ID),
     discordInviteChannelId: Boolean(process.env.DISCORD_INVITE_CHANNEL_ID),
     discordPublicKey: Boolean(process.env.DISCORD_PUBLIC_KEY),
+    googleDriveClientEmail: Boolean(
+      process.env.GOOGLE_DRIVE_CLIENT_EMAIL ??
+        process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    ),
+    googleDrivePrivateKey: Boolean(
+      process.env.GOOGLE_DRIVE_PRIVATE_KEY ??
+        process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+    ),
+    googleDriveRootFolderId: Boolean(process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID),
+    googleDocsTemplateId: Boolean(
+      process.env.GOOGLE_DOCS_TEMPLATE_ID ??
+        process.env.GOOGLE_DRIVE_DOCS_TEMPLATE_ID,
+    ),
     supabaseUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
     supabasePublishableKey: Boolean(getSupabasePublishableKey()),
     supabaseServiceRole: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),

@@ -9,6 +9,13 @@ import {
 } from "@/lib/discord-sync";
 import { hasSupabasePublicEnv, hasSupabaseServerEnv } from "@/lib/env";
 import {
+  createGoogleDocFromTemplate,
+  ensureFolderRecordOnDrive,
+  moveDriveFileForRecord,
+  runDriveSync,
+  uploadFileRecordToDrive,
+} from "@/lib/google-drive-sync";
+import {
   createSupabaseServerClient,
   getSupabaseAdminClient,
 } from "@/lib/supabase/server";
@@ -1720,7 +1727,7 @@ export async function createFolderAction(formData: FormData) {
     redirect("/?section=files&setup=folder-aal2");
   }
 
-  const { error } = await supabase.rpc("create_folder_record", {
+  const { data: folderId, error } = await supabase.rpc("create_folder_record", {
     p_category_id: categoryId,
     p_name: name,
     p_parent_folder_id: parentFolderId,
@@ -1733,6 +1740,17 @@ export async function createFolderAction(formData: FormData) {
       message: error.message,
     });
     redirect(`/?section=files&setup=${getFolderErrorSetup(error)}`);
+  }
+
+  if (isUuidText(String(folderId ?? ""))) {
+    try {
+      await ensureFolderRecordOnDrive(String(folderId));
+    } catch (driveError) {
+      console.error("drive folder create sync failed", {
+        message:
+          driveError instanceof Error ? driveError.message : String(driveError),
+      });
+    }
   }
 
   revalidatePath("/", "layout");
@@ -1829,15 +1847,18 @@ export async function uploadFileAction(formData: FormData) {
     redirect("/?section=files&setup=missing-supabase");
   }
 
-  const file = formData.get("file");
+  const files = [
+    ...formData.getAll("files"),
+    ...formData.getAll("file"),
+  ].filter((value): value is File => value instanceof File && value.size > 0);
   const categoryId = getFormText(formData, "categoryId");
   const folderId = getFormText(formData, "folderId") || null;
 
-  if (!(file instanceof File) || !categoryId) {
+  if (files.length === 0 || !categoryId) {
     redirect("/?section=files&setup=file-upload-missing");
   }
 
-  if (file.size <= 0 || file.size > MAX_UPLOAD_BYTES) {
+  if (files.some((file) => file.size <= 0 || file.size > MAX_UPLOAD_BYTES)) {
     redirect("/?section=files&setup=file-upload-size");
   }
 
@@ -1856,48 +1877,224 @@ export async function uploadFileAction(formData: FormData) {
     redirect("/?section=files&setup=file-upload-permission");
   }
 
-  const originalName = file.name || "upload.bin";
-  const fileType = file.type || "application/octet-stream";
-  const storagePath = buildStoragePath(user.id, originalName);
-  const fileBody = new Uint8Array(await file.arrayBuffer());
+  let uploaded = 0;
+  let failed = 0;
+  let driveWarnings = 0;
+  const admin = getSupabaseAdminClient();
+  const uploadFolderCache = new Map<string, string | null>();
+  const tags = getFormTags(formData, "tags");
+  const description = getFormText(formData, "description") || null;
 
-  const { error: uploadError } = await supabase.storage
-    .from(FILE_BUCKET)
-    .upload(storagePath, fileBody, {
-      contentType: fileType,
-      upsert: false,
+  for (const file of files) {
+    const uploadPathParts = getUploadPathParts(file);
+    const originalName = uploadPathParts.at(-1) || file.name || "upload.bin";
+    const fileType = file.type || "application/octet-stream";
+    const storagePath = buildStoragePath(user.id, originalName);
+    const fileBody = new Uint8Array(await file.arrayBuffer());
+    let targetFolderId = folderId;
+
+    if (uploadPathParts.length > 1) {
+      try {
+        targetFolderId = await ensureNestedUploadFolder({
+          admin,
+          baseFolderId: folderId,
+          cache: uploadFolderCache,
+          categoryId,
+          folderNames: uploadPathParts.slice(0, -1),
+          supabase,
+        });
+      } catch (folderError) {
+        failed += 1;
+        console.error("folder upload path create failed", {
+          file: originalName,
+          message:
+            folderError instanceof Error ? folderError.message : String(folderError),
+        });
+        continue;
+      }
+    }
+
+    const { error: uploadError } = await supabase.storage
+      .from(FILE_BUCKET)
+      .upload(storagePath, fileBody, {
+        contentType: fileType,
+        upsert: false,
+      });
+
+    if (uploadError) {
+      failed += 1;
+      console.error("storage upload failed", {
+        file: originalName,
+        message: uploadError.message,
+      });
+      continue;
+    }
+
+    const { data: fileId, error } = await supabase.rpc("register_uploaded_file", {
+      p_category_id: categoryId,
+      p_description: description,
+      p_file_size: file.size,
+      p_file_type: fileType,
+      p_folder_id: targetFolderId,
+      p_original_filename: originalName,
+      p_storage_path: storagePath,
+      p_tags: tags,
     });
 
-  if (uploadError) {
-    console.error("storage upload failed", {
-      message: uploadError.message,
-    });
-    redirect("/?section=files&setup=file-upload-storage");
+    if (error || !isUuidText(String(fileId ?? ""))) {
+      failed += 1;
+      await supabase.storage.from(FILE_BUCKET).remove([storagePath]);
+      console.error("register_uploaded_file failed", {
+        code: error?.code,
+        details: error?.details,
+        file: originalName,
+        message: error?.message,
+      });
+      continue;
+    }
+
+    uploaded += 1;
+
+    try {
+      const driveResult = await uploadFileRecordToDrive(String(fileId));
+
+      if (!driveResult.ok) {
+        driveWarnings += 1;
+      }
+    } catch (driveError) {
+      driveWarnings += 1;
+      console.error("drive upload after file upload failed", {
+        file: originalName,
+        message:
+          driveError instanceof Error ? driveError.message : String(driveError),
+      });
+    }
   }
 
-  const { error } = await supabase.rpc("register_uploaded_file", {
-    p_category_id: categoryId,
-    p_description: getFormText(formData, "description") || null,
-    p_file_size: file.size,
-    p_file_type: fileType,
-    p_folder_id: folderId,
-    p_original_filename: originalName,
-    p_storage_path: storagePath,
-    p_tags: getFormTags(formData, "tags"),
-  });
-
-  if (error) {
-    await supabase.storage.from(FILE_BUCKET).remove([storagePath]);
-    console.error("register_uploaded_file failed", {
-      code: error.code,
-      details: error.details,
-      message: error.message,
-    });
-    redirect(`/?section=files&setup=${getFileUploadErrorSetup(error)}`);
+  if (uploaded === 0) {
+    redirect(
+      `/?section=files&setup=${
+        failed > 0 ? "file-upload-storage" : "file-upload-error"
+      }`,
+    );
   }
 
   revalidatePath("/", "layout");
-  redirect("/?section=files&setup=file-uploaded");
+  redirect(
+    `/?section=files&setup=${
+      failed > 0
+        ? "file-upload-partial"
+        : driveWarnings > 0
+          ? "file-uploaded-drive-pending"
+          : "file-uploaded"
+    }`,
+  );
+}
+
+export async function runDriveManualSyncAction() {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
+    redirect("/?section=files&setup=missing-supabase");
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect("/?section=files&setup=drive-sync-aal2");
+  }
+
+  const { data: canSync } = await supabase.rpc("has_permission", {
+    required_key: "sync.manage",
+  });
+  const { data: canManageFiles } = await supabase.rpc("has_permission", {
+    required_key: "files.manage",
+  });
+
+  if (canSync !== true && canManageFiles !== true) {
+    redirect("/?section=files&setup=drive-sync-denied");
+  }
+
+  const actor = await getActionActor(supabase);
+
+  let setup = "drive-sync-started";
+
+  try {
+    const result = await runDriveSync({
+      triggeredBy: actor.id,
+      triggerType: "manual",
+    });
+
+    setup = result.skipped ? "drive-sync-running" : "drive-sync-started";
+  } catch (error) {
+    console.error("manual drive sync failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    redirect("/?section=files&setup=drive-sync-failed");
+  }
+
+  revalidatePath("/", "layout");
+  redirect(`/?section=files&setup=${setup}`);
+}
+
+export async function createGoogleDocAction(formData: FormData) {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
+    redirect("/?section=files&setup=missing-supabase");
+  }
+
+  const folderId = getFormText(formData, "folderId");
+  const name = getFormText(formData, "documentName");
+
+  if (!isUuidText(folderId) || name.length < 2) {
+    redirect("/?section=files&setup=google-doc-missing");
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect("/?section=files&setup=google-doc-aal2");
+  }
+
+  const { data: canUploadFiles } = await supabase.rpc("has_permission", {
+    required_key: "files.upload",
+  });
+  const { data: canEditFiles } = await supabase.rpc("has_permission", {
+    required_key: "files.edit",
+  });
+
+  if (canUploadFiles !== true || canEditFiles !== true) {
+    redirect("/?section=files&setup=google-doc-denied");
+  }
+
+  if (!(await hasFolderActionPermission(supabase, folderId, "upload"))) {
+    redirect("/?section=files&setup=google-doc-denied");
+  }
+
+  const actor = await getActionActor(supabase);
+
+  let fileId = "";
+
+  try {
+    const result = await createGoogleDocFromTemplate({
+      actorId: actor.id,
+      description: getFormText(formData, "description") || null,
+      folderId,
+      name,
+      tags: getFormTags(formData, "tags"),
+    });
+
+    fileId = result.fileId;
+  } catch (error) {
+    console.error("google doc create failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    redirect(`/?section=files&setup=${getGoogleDocErrorSetup(error)}`);
+  }
+
+  revalidatePath("/", "layout");
+  redirect(
+    `/files/preview?fileId=${encodeURIComponent(
+      fileId,
+    )}&setup=google-doc-created`,
+  );
 }
 
 export async function downloadFileAction(formData: FormData) {
@@ -2051,6 +2248,15 @@ export async function moveFileAction(formData: FormData) {
     });
   }
 
+  try {
+    await moveDriveFileForRecord(fileId);
+  } catch (driveError) {
+    console.error("drive file move failed", {
+      message:
+        driveError instanceof Error ? driveError.message : String(driveError),
+    });
+  }
+
   revalidatePath("/", "layout");
   redirect("/?section=files&setup=file-moved");
 }
@@ -2099,23 +2305,13 @@ export async function deleteFileAction(formData: FormData) {
     redirect("/?section=files&setup=file-delete-permission");
   }
 
-  if (file.storage_path && !file.external_url) {
-    const { error: removeError } = await admin.storage
-      .from(FILE_BUCKET)
-      .remove([file.storage_path]);
-
-    if (removeError) {
-      console.error("storage delete failed", {
-        message: removeError.message,
-      });
-      redirect("/?section=files&setup=file-delete-storage");
-    }
-  }
-
-  const { error } = await admin.from("files").delete().eq("id", fileId);
+  const { error } = await supabase.rpc("soft_delete_file_record", {
+    p_file_id: fileId,
+    p_reason: reason,
+  });
 
   if (error) {
-    console.error("delete file metadata failed", {
+    console.error("soft delete file failed", {
       code: error.code,
       details: error.details,
       message: error.message,
@@ -2125,7 +2321,7 @@ export async function deleteFileAction(formData: FormData) {
 
   try {
     const actor = await getActionActor(supabase);
-    await writeSystemLog(admin, actor.id, "file_deleted", [
+    await writeSystemLog(admin, actor.id, "file_soft_deleted", [
       `file=${fileId}`,
       `name=${file.original_filename ?? "-"}`,
       `reason=${reason}`,
@@ -2469,7 +2665,7 @@ async function getFileActionRow(admin: SupabaseAdminClient, fileId: string) {
 async function hasFolderActionPermission(
   supabase: SupabaseServerClient,
   folderId: string | null,
-  permission: "delete" | "edit" | "open",
+  permission: "delete" | "edit" | "open" | "upload",
 ) {
   if (!folderId) {
     return true;
@@ -2940,6 +3136,150 @@ function buildStoragePath(userId: string, originalName: string) {
   return `${userId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
 }
 
+function getUploadPathParts(file: File) {
+  const relativePath = String(
+    (file as File & { webkitRelativePath?: string }).webkitRelativePath ||
+      file.name ||
+      "upload.bin",
+  );
+  const rawParts = relativePath
+    .split(/[\\/]+/)
+    .map((part) => part.trim())
+    .filter((part) => part && part !== "." && part !== "..");
+  const parts =
+    rawParts[0]?.toLowerCase() === "c:" &&
+    rawParts[1]?.toLowerCase() === "fakepath"
+      ? rawParts.slice(2)
+      : rawParts;
+  const safeParts = parts.map(sanitizeUploadPathPart).filter(Boolean);
+
+  return safeParts.length > 0 ? safeParts : [sanitizeUploadPathPart(file.name) || "upload.bin"];
+}
+
+function sanitizeUploadPathPart(value: string) {
+  return (
+    value
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[<>:"|?*\u0000-\u001f]+/g, "-")
+      .replace(/\s+/g, " ")
+      .replace(/^-+|-+$/g, "")
+      .trim()
+      .slice(0, 120) || ""
+  );
+}
+
+async function ensureNestedUploadFolder({
+  admin,
+  baseFolderId,
+  cache,
+  categoryId,
+  folderNames,
+  supabase,
+}: {
+  admin: SupabaseAdminClient;
+  baseFolderId: string | null;
+  cache: Map<string, string | null>;
+  categoryId: string;
+  folderNames: string[];
+  supabase: SupabaseServerClient;
+}) {
+  let parentFolderId = baseFolderId;
+
+  for (const folderName of folderNames) {
+    const cacheKey = [
+      categoryId,
+      parentFolderId ?? "root",
+      folderName.toLowerCase(),
+    ].join(":");
+
+    if (cache.has(cacheKey)) {
+      parentFolderId = cache.get(cacheKey) ?? null;
+      continue;
+    }
+
+    const existing = await findUploadFolder(admin, {
+      categoryId,
+      name: folderName,
+      parentFolderId,
+    });
+
+    if (existing) {
+      parentFolderId = existing;
+      cache.set(cacheKey, parentFolderId);
+      continue;
+    }
+
+    const { data: createdFolderId, error } = await supabase.rpc(
+      "create_folder_record",
+      {
+        p_category_id: categoryId,
+        p_name: folderName,
+        p_parent_folder_id: parentFolderId,
+      },
+    );
+
+    if (error || !isUuidText(String(createdFolderId ?? ""))) {
+      const retryExisting = await findUploadFolder(admin, {
+        categoryId,
+        name: folderName,
+        parentFolderId,
+      });
+
+      if (!retryExisting) {
+        throw new Error(error?.message ?? "folder upload path failed");
+      }
+
+      parentFolderId = retryExisting;
+      cache.set(cacheKey, parentFolderId);
+      continue;
+    }
+
+    parentFolderId = String(createdFolderId);
+    cache.set(cacheKey, parentFolderId);
+
+    try {
+      await ensureFolderRecordOnDrive(parentFolderId);
+    } catch (driveError) {
+      console.error("drive folder path sync failed", {
+        message:
+          driveError instanceof Error ? driveError.message : String(driveError),
+      });
+    }
+  }
+
+  return parentFolderId;
+}
+
+async function findUploadFolder(
+  admin: SupabaseAdminClient,
+  input: {
+    categoryId: string;
+    name: string;
+    parentFolderId: string | null;
+  },
+) {
+  let query = admin
+    .from("folders")
+    .select("id")
+    .eq("category_id", input.categoryId)
+    .eq("name", input.name)
+    .is("deleted_at", null)
+    .limit(1);
+
+  query = input.parentFolderId
+    ? query.eq("parent_folder_id", input.parentFolderId)
+    : query.is("parent_folder_id", null);
+
+  const { data, error } = await query.maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data?.id ? String(data.id) : null;
+}
+
 function getMemberCreateErrorSetup(error: { code?: string; message?: string }) {
   const message = error.message?.toLowerCase() ?? "";
 
@@ -3288,34 +3628,31 @@ function getFolderErrorSetup(error: { code?: string; message?: string }) {
   return "folder-error";
 }
 
-function getFileUploadErrorSetup(error: { code?: string; message?: string }) {
-  const message = error.message?.toLowerCase() ?? "";
+function getGoogleDocErrorSetup(error: unknown) {
+  const message =
+    error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
 
-  if (message.includes("too large") || message.includes("size")) {
-    return "file-upload-size";
+  if (message.includes("not_configured")) {
+    return "google-doc-drive-config";
+  }
+
+  if (message.includes("name") || message.includes("document")) {
+    return "google-doc-missing";
+  }
+
+  if (message.includes("conflict") || message.includes("duplicate")) {
+    return "google-doc-duplicate";
   }
 
   if (message.includes("folder")) {
-    return "file-upload-folder";
+    return "google-doc-folder";
   }
 
-  if (message.includes("category")) {
-    return "file-upload-category";
+  if (message.includes("denied") || message.includes("permission")) {
+    return "google-doc-denied";
   }
 
-  if (message.includes("storage")) {
-    return "file-upload-storage";
-  }
-
-  if (message.includes("denied")) {
-    return "file-upload-permission";
-  }
-
-  if (error.code === "23505" || message.includes("duplicate")) {
-    return "file-upload-duplicate";
-  }
-
-  return "file-upload-error";
+  return "google-doc-error";
 }
 
 function getFileDownloadErrorSetup(error?: { code?: string; message?: string } | null) {

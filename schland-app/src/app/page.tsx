@@ -1190,7 +1190,21 @@ function getSetupNotice(setup?: string) {
   if (setup === "file-uploaded") {
     return {
       tone: "success" as const,
-      text: "Datei wurde hochgeladen und gespeichert.",
+      text: "Datei wurde hochgeladen, gespeichert und fuer Google Drive vorgemerkt.",
+    };
+  }
+
+  if (setup === "file-uploaded-drive-pending") {
+    return {
+      tone: "warning" as const,
+      text: "Datei wurde gespeichert. Google Drive ist noch nicht konfiguriert oder der Upload wird beim naechsten Sync nachgezogen.",
+    };
+  }
+
+  if (setup === "file-upload-partial") {
+    return {
+      tone: "warning" as const,
+      text: "Mehrfach-Upload teilweise abgeschlossen. Einzelne Dateien sind fehlgeschlagen und wurden nicht ueberschrieben.",
     };
   }
 
@@ -1365,7 +1379,7 @@ function getSetupNotice(setup?: string) {
   if (setup === "file-deleted") {
     return {
       tone: "success" as const,
-      text: "Datei wurde aus Datenbank und Storage geloescht.",
+      text: "Datei wurde sicher markiert. Es wurde nichts hart aus Storage oder Google Drive geloescht.",
     };
   }
 
@@ -1408,6 +1422,90 @@ function getSetupNotice(setup?: string) {
     return {
       tone: "error" as const,
       text: "Datei konnte nicht geloescht werden. Der genaue Fehler wurde protokolliert.",
+    };
+  }
+
+  if (setup === "drive-sync-started") {
+    return {
+      tone: "success" as const,
+      text: "Google-Drive-Sync wurde ausgefuehrt. Konflikte werden im Datei-Bereich angezeigt.",
+    };
+  }
+
+  if (setup === "drive-sync-running") {
+    return {
+      tone: "warning" as const,
+      text: "Es laeuft bereits ein Google-Drive-Sync. Ein zweiter Lauf wurde sicher uebersprungen.",
+    };
+  }
+
+  if (setup === "drive-sync-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum Starten des Google-Drive-Syncs muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "drive-sync-denied") {
+    return {
+      tone: "error" as const,
+      text: "Google-Drive-Sync wurde abgelehnt. Dem Account fehlt die Sync- oder Datei-Verwaltung.",
+    };
+  }
+
+  if (setup === "drive-sync-failed") {
+    return {
+      tone: "error" as const,
+      text: "Google-Drive-Sync ist fehlgeschlagen. Details stehen im Sync-Protokoll.",
+    };
+  }
+
+  if (setup === "google-doc-missing") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte gib Dokumentname und Zielordner an.",
+    };
+  }
+
+  if (setup === "google-doc-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Zum Erstellen von Google Docs muss die aktuelle Sitzung mit 2FA freigeschaltet sein.",
+    };
+  }
+
+  if (setup === "google-doc-drive-config") {
+    return {
+      tone: "error" as const,
+      text: "Google Drive ist serverseitig noch nicht konfiguriert.",
+    };
+  }
+
+  if (setup === "google-doc-duplicate") {
+    return {
+      tone: "warning" as const,
+      text: "In diesem Ordner existiert bereits ein Dokument mit diesem Namen.",
+    };
+  }
+
+  if (setup === "google-doc-folder") {
+    return {
+      tone: "warning" as const,
+      text: "Der Zielordner wurde nicht gefunden oder ist noch nicht sauber verknuepft.",
+    };
+  }
+
+  if (setup === "google-doc-denied") {
+    return {
+      tone: "error" as const,
+      text: "Google Docs konnte nicht erstellt werden. Dem Account fehlt die passende Datei- oder Ordner-Berechtigung.",
+    };
+  }
+
+  if (setup === "google-doc-error") {
+    return {
+      tone: "error" as const,
+      text: "Google Docs konnte nicht erstellt werden. Der genaue Fehler wurde protokolliert.",
     };
   }
 

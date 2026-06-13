@@ -1,4 +1,14 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "crons": [
+    {
+      "path": "/api/cron/drive-sync-06",
+      "schedule": "0 4,5 * * *"
+    },
+    {
+      "path": "/api/cron/drive-sync-20",
+      "schedule": "0 18,19 * * *"
+    }
+  ]
 }

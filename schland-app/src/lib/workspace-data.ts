@@ -1,5 +1,6 @@
 import type { AuthStatus } from "@/lib/auth";
 import { hasSupabasePublicEnv } from "@/lib/env";
+import { hasGoogleDriveServerConfig } from "@/lib/google-drive";
 import { mapLockdownStatusRow, type LockdownStatus } from "@/lib/lockdown";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -76,9 +77,12 @@ export type WorkspaceFolder = {
   categoryId: string;
   files: number;
   folder: string;
+  googleDriveFolderId?: string;
   id: string;
   parentFolderId: string;
   permissions: WorkspaceFolderPermission[];
+  syncStatus?: string;
+  syncStatusLabel?: string;
   uploadFor: string;
   visibleFor: string;
 };
@@ -104,16 +108,42 @@ export type WorkspaceFile = {
   externalUrl: string;
   folder: string;
   folderId: string;
+  googleDriveFileId?: string;
+  googleDrivePreviewLink?: string;
+  googleDriveWebViewLink?: string;
   id: string;
+  isGoogleDoc?: boolean;
   name: string;
   originalName: string;
   size: number;
   sizeLabel: string;
   source: string;
   storagePath: string;
+  syncStatus?: string;
+  syncStatusLabel?: string;
   tags: string[];
   type: string;
   uploadedBy: string;
+};
+
+export type WorkspaceDriveConflict = {
+  conflictType: string;
+  createdAt: string;
+  entityType: string;
+  googleDriveId: string;
+  id: string;
+  localEntityId: string;
+  status: string;
+};
+
+export type WorkspaceDriveSync = {
+  configured: boolean;
+  conflicts: WorkspaceDriveConflict[];
+  conflictCount: number;
+  errorCount: number;
+  latestRunAt: string;
+  latestStatus: string;
+  nextScheduled: string;
 };
 
 export type WorkspaceRoleRow = {
@@ -323,6 +353,7 @@ export type WorkspaceData = {
   discordRoles: WorkspaceDiscordRoleOption[];
   files: WorkspaceFile[];
   folders: WorkspaceFolder[];
+  driveSync: WorkspaceDriveSync;
   logs: WorkspaceLogRow[];
   lockdown: LockdownStatus;
   members: WorkspaceMember[];
@@ -377,9 +408,22 @@ function emptyMemberIntake(): WorkspaceMemberIntake {
   };
 }
 
+function emptyDriveSyncStatus(): WorkspaceDriveSync {
+  return {
+    configured: hasGoogleDriveServerConfig(),
+    conflicts: [],
+    conflictCount: 0,
+    errorCount: 0,
+    latestRunAt: "Noch offen",
+    latestStatus: "nicht gestartet",
+    nextScheduled: "06:00 / 20:00",
+  };
+}
+
 export const demoWorkspaceData: WorkspaceData = {
   source: "demo",
   lockdown: inactiveLockdownStatus,
+  driveSync: emptyDriveSyncStatus(),
   absences: [],
   discordRoles: [],
   ministryRoles: [],
@@ -973,6 +1017,10 @@ export async function getWorkspaceData(
       logsResult,
       lockdownResult,
       syncResult,
+      driveFolderMetaResult,
+      driveFileMetaResult,
+      driveRunsResult,
+      driveConflictsResult,
       discordRolesResult,
       ministryRolesResult,
       representationEligibilitiesResult,
@@ -1176,6 +1224,32 @@ export async function getWorkspaceData(
         .order("started_at", { ascending: false })
         .limit(12),
       supabase
+        .from("folders")
+        .select("id, google_drive_folder_id, sync_status, deleted_at")
+        .limit(500),
+      supabase
+        .from("files")
+        .select(
+          "id, google_drive_file_id, google_drive_web_view_link, google_drive_preview_link, sync_status, is_google_doc, deleted_at",
+        )
+        .limit(500),
+      supabase
+        .from("sync_runs")
+        .select(
+          "id, source, status, trigger_type, started_at, finished_at, error_message, summary, conflicts_found, errors_found",
+        )
+        .eq("source", "google-drive")
+        .order("started_at", { ascending: false })
+        .limit(8),
+      supabase
+        .from("drive_sync_conflicts")
+        .select(
+          "id, entity_type, local_entity_id, google_drive_id, conflict_type, status, created_at",
+        )
+        .eq("status", "open")
+        .order("created_at", { ascending: false })
+        .limit(20),
+      supabase
         .from("discord_roles")
         .select("id, discord_role_id, role_name")
         .order("role_name", { ascending: true })
@@ -1262,6 +1336,8 @@ export async function getWorkspaceData(
     collectWarning(warnings, logsResult.error?.message);
     collectWarning(warnings, lockdownResult.error?.message);
     collectWarning(warnings, syncResult.error?.message);
+    collectWarningIfActionable(warnings, driveRunsResult.error?.message);
+    collectWarningIfActionable(warnings, driveConflictsResult.error?.message);
     collectWarning(warnings, discordRolesResult.error?.message);
     collectWarning(warnings, ministryRolesResult.error?.message);
     collectWarning(warnings, representationEligibilitiesResult.error?.message);
@@ -1275,8 +1351,18 @@ export async function getWorkspaceData(
         intakeLogsResult.data ?? [],
       ),
       categories: mapCategories(categoriesResult.data ?? []),
-      folders: mapFolders(foldersResult.data ?? []),
-      files: mapFiles(filesResult.data ?? []),
+      folders: mapFolders(
+        foldersResult.data ?? [],
+        mapRowsById(driveFolderMetaResult.data ?? []),
+      ),
+      files: mapFiles(
+        filesResult.data ?? [],
+        mapRowsById(driveFileMetaResult.data ?? []),
+      ),
+      driveSync: mapDriveSync(
+        driveRunsResult.data ?? [],
+        driveConflictsResult.data ?? [],
+      ),
       roles: mapRoles(rolesResult.data ?? []),
       permissions: mapPermissions(permissionsResult.data ?? []),
       discordRoles: mapDiscordRoles(discordRolesResult.data ?? []),
@@ -1308,6 +1394,35 @@ function collectWarning(warnings: string[], message?: string) {
   if (message && !warnings.includes(message)) {
     warnings.push(message);
   }
+}
+
+function collectWarningIfActionable(warnings: string[], message?: string) {
+  if (!message || isOptionalDriveSchemaWarning(message)) {
+    return;
+  }
+
+  collectWarning(warnings, message);
+}
+
+function isOptionalDriveSchemaWarning(message: string) {
+  const normalized = message.toLowerCase();
+
+  return (
+    normalized.includes("drive_sync_conflicts") ||
+    normalized.includes("google_drive_") ||
+    normalized.includes("sync_status") ||
+    normalized.includes("deleted_at") ||
+    normalized.includes("trigger_type") ||
+    normalized.includes("schema cache")
+  );
+}
+
+function mapRowsById(rows: Record<string, unknown>[]) {
+  return new Map(
+    rows
+      .map((row) => [String(row.id ?? ""), row] as const)
+      .filter(([id]) => Boolean(id)),
+  );
 }
 
 function mapMembers(
@@ -1517,8 +1632,18 @@ function mapCategories(rows: Record<string, unknown>[]): WorkspaceCategory[] {
   }));
 }
 
-function mapFolders(rows: Record<string, unknown>[]): WorkspaceFolder[] {
-  return rows.map((row) => {
+function mapFolders(
+  rows: Record<string, unknown>[],
+  driveMetaById = new Map<string, Record<string, unknown>>(),
+): WorkspaceFolder[] {
+  return rows.flatMap((row) => {
+    const id = String(row.id ?? "");
+    const driveMeta = driveMetaById.get(id) ?? {};
+
+    if (driveMeta.deleted_at) {
+      return [];
+    }
+
     const permissions = asArray(row.folder_permissions)
       .map((permission) => {
         const role = asObject(permission.roles);
@@ -1545,12 +1670,19 @@ function mapFolders(rows: Record<string, unknown>[]): WorkspaceFolder[] {
       .map((permission) => permission.role);
 
     return {
-      id: String(row.id ?? ""),
+      id,
       categoryId: String(row.category_id ?? ""),
       category: String(asObject(row.file_categories)?.name ?? "-"),
       folder: String(row.name ?? "Ordner"),
+      googleDriveFolderId: String(
+        driveMeta.google_drive_folder_id ?? row.google_drive_folder_id ?? "",
+      ),
       parentFolderId: String(row.parent_folder_id ?? ""),
       permissions,
+      syncStatus: String(driveMeta.sync_status ?? row.sync_status ?? "needs_review"),
+      syncStatusLabel: mapDriveSyncEntityStatus(
+        String(driveMeta.sync_status ?? row.sync_status ?? "needs_review"),
+      ),
       visibleFor: viewRoles.join(", ") || "Nicht gesetzt",
       uploadFor: uploadRoles.join(", ") || "Nicht gesetzt",
       files: asArray(row.files).length,
@@ -1558,8 +1690,18 @@ function mapFolders(rows: Record<string, unknown>[]): WorkspaceFolder[] {
   });
 }
 
-function mapFiles(rows: Record<string, unknown>[]): WorkspaceFile[] {
-  return rows.map((row) => {
+function mapFiles(
+  rows: Record<string, unknown>[],
+  driveMetaById = new Map<string, Record<string, unknown>>(),
+): WorkspaceFile[] {
+  return rows.flatMap((row) => {
+    const id = String(row.id ?? "");
+    const driveMeta = driveMetaById.get(id) ?? {};
+
+    if (driveMeta.deleted_at) {
+      return [];
+    }
+
     const category = asObject(row.file_categories);
     const folder = asObject(row.folders);
     const size = Number(row.file_size ?? 0);
@@ -1568,7 +1710,7 @@ function mapFiles(rows: Record<string, unknown>[]): WorkspaceFile[] {
     );
 
     return {
-      id: String(row.id ?? ""),
+      id,
       categoryId: String(row.category_id ?? ""),
       category: String(category.name ?? "-"),
       createdAt: formatDate(String(row.created_at ?? "")),
@@ -1576,12 +1718,29 @@ function mapFiles(rows: Record<string, unknown>[]): WorkspaceFile[] {
       externalUrl: String(row.external_url ?? ""),
       folder: String(folder.name ?? "-"),
       folderId: String(row.folder_id ?? ""),
+      googleDriveFileId: String(
+        driveMeta.google_drive_file_id ?? row.google_drive_file_id ?? row.source_id ?? "",
+      ),
+      googleDrivePreviewLink: String(
+        driveMeta.google_drive_preview_link ?? row.google_drive_preview_link ?? "",
+      ),
+      googleDriveWebViewLink: String(
+        driveMeta.google_drive_web_view_link ??
+          row.google_drive_web_view_link ??
+          row.external_url ??
+          "",
+      ),
       name: String(row.filename ?? originalName),
+      isGoogleDoc: Boolean(driveMeta.is_google_doc ?? row.is_google_doc),
       originalName,
       size,
       sizeLabel: formatFileSize(size),
       source: String(row.source ?? "supabase"),
       storagePath: String(row.storage_path ?? ""),
+      syncStatus: String(driveMeta.sync_status ?? row.sync_status ?? "needs_review"),
+      syncStatusLabel: mapDriveSyncEntityStatus(
+        String(driveMeta.sync_status ?? row.sync_status ?? "needs_review"),
+      ),
       tags: Array.isArray(row.tags)
         ? row.tags.map(String).filter(Boolean)
         : [],
@@ -1936,6 +2095,39 @@ function mapLogs(rows: Record<string, unknown>[]): WorkspaceLogRow[] {
   }));
 }
 
+function mapDriveSync(
+  runs: Record<string, unknown>[],
+  conflicts: Record<string, unknown>[],
+): WorkspaceDriveSync {
+  const latest = runs[0];
+  const conflictRows = conflicts.map((row) => ({
+    conflictType: String(row.conflict_type ?? ""),
+    createdAt: formatDate(String(row.created_at ?? "")),
+    entityType: String(row.entity_type ?? ""),
+    googleDriveId: String(row.google_drive_id ?? ""),
+    id: String(row.id ?? ""),
+    localEntityId: String(row.local_entity_id ?? ""),
+    status: String(row.status ?? "open"),
+  }));
+  const errorCount = latest
+    ? Number(latest.errors_found ?? (latest.status === "failed" ? 1 : 0))
+    : 0;
+
+  return {
+    configured: hasGoogleDriveServerConfig(),
+    conflictCount: conflictRows.length,
+    conflicts: conflictRows,
+    errorCount,
+    latestRunAt: latest
+      ? formatLiveDate(String(latest.finished_at ?? latest.started_at ?? ""))
+      : "Noch offen",
+    latestStatus: latest
+      ? mapDriveRunStatus(String(latest.status ?? "nicht gestartet"))
+      : "nicht gestartet",
+    nextScheduled: "06:00 / 20:00 Europe/Berlin",
+  };
+}
+
 function mapSync(rows: Record<string, unknown>[]): WorkspaceSyncStatus {
   const liveRows = rows.filter((row) => String(row.source ?? "") === "discord-live");
   const latestLive = liveRows[0];
@@ -2116,6 +2308,33 @@ function mapSyncStatusLabel(status: string) {
     failed: "Fehler",
     partial: "Teilweise",
     success: "Online",
+  };
+
+  return labels[status] ?? status;
+}
+
+function mapDriveRunStatus(status: string) {
+  const labels: Record<string, string> = {
+    failed: "Fehler",
+    partial: "Teilweise",
+    running: "Laeuft",
+    skipped: "Uebersprungen",
+    success: "Synchronisiert",
+  };
+
+  return labels[status] ?? status;
+}
+
+function mapDriveSyncEntityStatus(status: string) {
+  const labels: Record<string, string> = {
+    conflict: "Konflikt",
+    failed: "Fehler",
+    needs_review: "Zu pruefen",
+    orphaned: "Verwaist",
+    pending_download: "Download offen",
+    pending_move: "Verschieben offen",
+    pending_upload: "Upload offen",
+    synced: "Synchronisiert",
   };
 
   return labels[status] ?? status;
