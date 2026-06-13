@@ -2352,7 +2352,12 @@ function FilesSection({
           <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
             {driveSync.conflicts.slice(0, 6).map((conflict) => (
               <div key={conflict.id} className="border border-amber-300 bg-white p-2">
-                <div className="font-mono text-xs">{conflict.conflictType}</div>
+                <div className="text-xs font-bold">
+                  {formatDriveConflictType(conflict.conflictType)}
+                </div>
+                <div className="font-mono text-[11px] text-neutral-500">
+                  {conflict.conflictType}
+                </div>
                 <div className="text-xs text-neutral-600">
                   {conflict.entityType} | {conflict.createdAt}
                 </div>
@@ -6259,6 +6264,22 @@ function DetailBox({
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("de-DE").format(value);
+}
+
+function formatDriveConflictType(type: string) {
+  const labels: Record<string, string> = {
+    db_drive_placeholder_without_drive_id: "Drive-Platzhalter ohne Verknuepfung",
+    db_file_missing_in_drive: "Datei fehlt in Google Drive",
+    drive_file_insert_failed: "Drive-Datei konnte nicht uebernommen werden",
+    drive_file_move_permission_missing: "Drive-Schreibrecht zum Verschieben fehlt",
+    drive_folder_create_permission_missing: "Drive-Schreibrecht zum Ordner-Anlegen fehlt",
+    drive_folder_insert_failed: "Drive-Ordner konnte nicht uebernommen werden",
+    drive_root_write_permission_missing: "Drive-Ordner ist nur lesbar",
+    folder_parent_missing_drive_id: "Uebergeordneter Drive-Ordner fehlt",
+    same_filename_different_drive_file: "Gleicher Dateiname mit anderer Drive-ID",
+  };
+
+  return labels[type] ?? "Drive-Konflikt";
 }
 
 function formatSessionRemaining(seconds: number) {

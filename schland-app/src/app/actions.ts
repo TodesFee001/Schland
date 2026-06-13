@@ -2023,7 +2023,12 @@ export async function runDriveManualSyncAction() {
       triggerType: "manual",
     });
 
-    setup = result.skipped ? "drive-sync-running" : "drive-sync-started";
+    setup =
+      result.skipped
+        ? "drive-sync-running"
+        : result.status === "partial"
+          ? "drive-sync-partial"
+          : "drive-sync-started";
   } catch (error) {
     console.error("manual drive sync failed", {
       message: error instanceof Error ? error.message : String(error),

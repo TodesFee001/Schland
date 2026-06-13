@@ -1432,6 +1432,13 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "drive-sync-partial") {
+    return {
+      tone: "warning" as const,
+      text: "Google-Drive-Sync wurde teilweise ausgefuehrt. Offene Konflikte stehen im Datei-Bereich.",
+    };
+  }
+
   if (setup === "drive-sync-running") {
     return {
       tone: "warning" as const,

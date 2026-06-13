@@ -108,6 +108,7 @@ export async function runDriveSync(input: {
   const counters = { ...defaultCounters };
 
   try {
+    await archiveOpenDriveConflicts(admin, syncRun.id);
     await writeSyncLog(admin, {
       message: "Google-Drive-Sync gestartet.",
       status: "started",
@@ -1313,6 +1314,21 @@ async function createConflict(
   if (error && error.code !== "23505") {
     throw new Error(error.message);
   }
+}
+
+async function archiveOpenDriveConflicts(admin: SupabaseAdmin, syncRunId: string) {
+  await admin
+    .from("drive_sync_conflicts")
+    .update({
+      metadata: {
+        archivedByRunId: syncRunId,
+        archivedReason: "superseded_by_new_drive_sync",
+      },
+      resolution: "Durch neuen Drive-Sync ueberholt.",
+      resolved_at: new Date().toISOString(),
+      status: "ignored",
+    })
+    .eq("status", "open");
 }
 
 async function getLocalFolders(admin: SupabaseAdmin) {

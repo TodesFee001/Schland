@@ -22,6 +22,7 @@ export const patchNotes: PatchNote[] = [
       "Automatische Drive-Sync-Cronjobs laufen exakt fuer 06:00 und 20:00 Uhr Europe/Berlin mit Sommer-/Winterzeit-Pruefung.",
       "Die Dateiuebersicht bleibt auch vor eingespielter Drive-Migration im alten Datenbankschema sichtbar.",
       "Grosse Drive-Ordner werden in fortsetzbaren Portionen synchronisiert und fehlende Drive-Schreibrechte blockieren den Import nicht mehr.",
+      "Teilweise Drive-Syncs werden im Hinweisbereich korrekt als Teil-Erfolg angezeigt und Konflikte bekommen lesbare Bezeichnungen.",
     ],
     title: "Google Drive Datei-Sync",
     type: "feature",
