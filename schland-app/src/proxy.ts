@@ -16,6 +16,7 @@ const PUBLIC_PATHS = [
   "/update-password",
   "/auth/callback",
   "/api/health",
+  "/api/cron",
   "/api/discord-bot",
 ];
 
