@@ -178,6 +178,10 @@ const sections: Section[] = [
   { id: "settings", label: "Einstellungen", icon: Settings },
 ];
 
+const ADVICE_UPLOAD_MAX_FILES = 8;
+const ADVICE_UPLOAD_MAX_FILE_BYTES = 20 * 1024 * 1024;
+const ADVICE_UPLOAD_MAX_TOTAL_BYTES = 45 * 1024 * 1024;
+
 const rootRoleKey = "root_owner";
 const platformAdminRoleKey = "platform_admin";
 const protectedActiveRoleKeys = new Set([rootRoleKey, platformAdminRoleKey]);
@@ -4953,6 +4957,8 @@ function ModerationAdviceSection({
   setSelectedAdviceId: (id: string) => void;
 }) {
   const [adviceSearch, setAdviceSearch] = useState("");
+  const [adviceEvidenceFiles, setAdviceEvidenceFiles] = useState<File[]>([]);
+  const [adviceScreenshotFiles, setAdviceScreenshotFiles] = useState<File[]>([]);
   const [statusFilter, setStatusFilter] = useState("all");
   const moderationMembers = members.filter(
     (member) => member.discordId && member.discordId !== "-",
@@ -4988,6 +4994,11 @@ function ModerationAdviceSection({
     (adviceCase) => adviceCase.status === "queued",
   ).length;
   const executedCount = adviceCases.filter((adviceCase) => adviceCase.executed).length;
+  const adviceUploadValidation = getAdviceUploadValidation([
+    ...adviceScreenshotFiles,
+    ...adviceEvidenceFiles,
+  ]);
+  const adviceUploadBlocked = Boolean(adviceUploadValidation.message);
   const canExecuteSelected =
     Boolean(selectedAdvice) &&
     mfaReady &&
@@ -5004,6 +5015,11 @@ function ModerationAdviceSection({
         <form
           action={createModerationAdviceCaseAction}
           encType="multipart/form-data"
+          onSubmit={(event) => {
+            if (adviceUploadBlocked) {
+              event.preventDefault();
+            }
+          }}
           className="grid gap-4 border-t border-[var(--line-strong)] p-4"
         >
           <fieldset disabled={!mfaReady} className="contents disabled:opacity-60">
@@ -5130,6 +5146,10 @@ function ModerationAdviceSection({
                   type="file"
                   multiple
                   accept="image/*"
+                  aria-invalid={adviceUploadBlocked}
+                  onChange={(event) =>
+                    setAdviceScreenshotFiles(Array.from(event.currentTarget.files ?? []))
+                  }
                   className="h-10 rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none file:mr-3 file:border-0 file:bg-[var(--surface-muted)] file:px-2 file:py-1 file:text-xs disabled:cursor-not-allowed disabled:opacity-45"
                 />
               </label>
@@ -5142,6 +5162,10 @@ function ModerationAdviceSection({
                   type="file"
                   multiple
                   accept="image/*,.pdf,.txt,.md,.csv,.json"
+                  aria-invalid={adviceUploadBlocked}
+                  onChange={(event) =>
+                    setAdviceEvidenceFiles(Array.from(event.currentTarget.files ?? []))
+                  }
                   className="h-10 rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none file:mr-3 file:border-0 file:bg-[var(--surface-muted)] file:px-2 file:py-1 file:text-xs disabled:cursor-not-allowed disabled:opacity-45"
                 />
               </label>
@@ -5155,6 +5179,26 @@ function ModerationAdviceSection({
                   className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
                 />
               </label>
+              {adviceUploadValidation.summary ? (
+                <div
+                  className={`lg:col-span-6 flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${
+                    adviceUploadBlocked
+                      ? "border-amber-300 bg-amber-50 text-amber-900"
+                      : "border-[var(--line)] bg-[var(--surface-muted)] text-neutral-600"
+                  }`}
+                  role={adviceUploadBlocked ? "alert" : "status"}
+                >
+                  <TriangleAlert
+                    className={`mt-0.5 size-4 shrink-0 ${
+                      adviceUploadBlocked ? "text-amber-700" : "text-neutral-500"
+                    }`}
+                    aria-hidden="true"
+                  />
+                  <span>
+                    {adviceUploadValidation.message || adviceUploadValidation.summary}
+                  </span>
+                </div>
+              ) : null}
               <label className="grid gap-2 lg:col-span-6">
                 <span className="text-xs font-medium uppercase text-neutral-500">
                   Interne Notizen
@@ -5171,7 +5215,7 @@ function ModerationAdviceSection({
                 type="submit"
                 name="intent"
                 value="create"
-                disabled={!mfaReady}
+                disabled={!mfaReady || adviceUploadBlocked}
                 className="flex h-10 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-4 text-sm font-medium text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-45"
               >
                 <Save className="size-4" aria-hidden="true" />
@@ -5181,7 +5225,7 @@ function ModerationAdviceSection({
                 type="submit"
                 name="intent"
                 value="analyze"
-                disabled={!mfaReady}
+                disabled={!mfaReady || adviceUploadBlocked}
                 className="flex h-10 items-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
               >
                 <Sparkles className="size-4" aria-hidden="true" />
@@ -7134,6 +7178,48 @@ function DetailBox({
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("de-DE").format(value);
+}
+
+function getAdviceUploadValidation(files: File[]) {
+  const totalSize = files.reduce((total, file) => total + file.size, 0);
+  const summary =
+    files.length > 0
+      ? `${formatNumber(files.length)} Datei(en), ${formatFileSize(totalSize)} ausgewaehlt.`
+      : "";
+  const oversizedFile = files.find(
+    (file) => file.size > ADVICE_UPLOAD_MAX_FILE_BYTES,
+  );
+
+  if (files.length > ADVICE_UPLOAD_MAX_FILES) {
+    return {
+      message: `Bitte maximal ${formatNumber(
+        ADVICE_UPLOAD_MAX_FILES,
+      )} Dateien auswaehlen. Aktuell sind ${formatNumber(files.length)} Dateien markiert.`,
+      summary,
+    };
+  }
+
+  if (oversizedFile) {
+    return {
+      message: `${oversizedFile.name} ist groesser als ${formatFileSize(
+        ADVICE_UPLOAD_MAX_FILE_BYTES,
+      )}.`,
+      summary,
+    };
+  }
+
+  if (totalSize > ADVICE_UPLOAD_MAX_TOTAL_BYTES) {
+    return {
+      message: `Die ausgewaehlten Belege sind zusammen ${formatFileSize(
+        totalSize,
+      )} gross. Erlaubt sind maximal ${formatFileSize(
+        ADVICE_UPLOAD_MAX_TOTAL_BYTES,
+      )}.`,
+      summary,
+    };
+  }
+
+  return { message: "", summary };
 }
 
 function formatDriveConflictType(type: string) {

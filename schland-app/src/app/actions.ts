@@ -28,6 +28,7 @@ import {
 const FILE_BUCKET = "schland-files";
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 const MAX_ADVICE_UPLOAD_BYTES = 20 * 1024 * 1024;
+const MAX_ADVICE_TOTAL_UPLOAD_BYTES = 45 * 1024 * 1024;
 const MAX_ADVICE_UPLOADS = 8;
 const MAX_PROFILE_IMAGE_BYTES = 8 * 1024 * 1024;
 const PROFILE_IMAGE_CATEGORY_NAME = "Profilbilder";
@@ -1500,6 +1501,10 @@ export async function createModerationAdviceCaseAction(formData: FormData) {
 
   if (files.length > MAX_ADVICE_UPLOADS) {
     redirect("/?section=advice&setup=advice-upload-count");
+  }
+
+  if (files.reduce((total, file) => total + file.size, 0) > MAX_ADVICE_TOTAL_UPLOAD_BYTES) {
+    redirect("/?section=advice&setup=advice-upload-total");
   }
 
   if (files.some((file) => file.size <= 0 || file.size > MAX_ADVICE_UPLOAD_BYTES)) {

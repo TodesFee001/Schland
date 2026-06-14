@@ -923,6 +923,13 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "advice-upload-total") {
+    return {
+      tone: "warning" as const,
+      text: "Die ausgewaehlten Belege sind zusammen zu gross. Bitte maximal 45 MB pro Beratung hochladen.",
+    };
+  }
+
   if (setup === "advice-upload-type") {
     return {
       tone: "warning" as const,

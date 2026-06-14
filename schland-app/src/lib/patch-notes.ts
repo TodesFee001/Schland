@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "14.06.2026",
+    id: "ai-sanction-advice-upload-guard",
+    items: [
+      "KI-Sanktionsberater prueft Belegdateien jetzt vor dem Absenden direkt im Formular.",
+      "Zu viele, zu grosse oder insgesamt zu schwere Uploads blockieren die Buttons mit lesbarer Meldung statt einer schwarzen Next-Fehlerseite.",
+      "Serverseitig gibt es eine eigene Meldung fuer Beratungs-Uploads ueber 45 MB Gesamtgroesse.",
+    ],
+    title: "Beratungs-Uploads abgefangen",
+    type: "fix",
+    version: "0.10.9",
+  },
+  {
+    date: "14.06.2026",
     id: "ai-sanction-advice-stability",
     items: [
       "KI-Sanktionsberater faellt bei langsamer oder fehlgeschlagener OpenAI-Antwort kontrolliert auf manuelle Pruefung zurueck.",
