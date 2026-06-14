@@ -10,6 +10,19 @@ export type PatchNote = {
 // Jede produktive Aenderung bekommt hier ab jetzt einen Eintrag.
 export const patchNotes: PatchNote[] = [
   {
+    date: "14.06.2026",
+    id: "ai-sanction-advice-stability",
+    items: [
+      "KI-Sanktionsberater faellt bei langsamer oder fehlgeschlagener OpenAI-Antwort kontrolliert auf manuelle Pruefung zurueck.",
+      "Auswertung bricht nicht mehr hart ab, wenn Belege, Zielperson, alte Warns/Bans/Kicks oder Regelwerksdaten beim Vorab-Laden Probleme machen.",
+      "OpenAI-Aufruf nutzt ein Antwortlimit, niedrigen Reasoning-Aufwand und ein serverseitiges Zeitlimit fuer stabilere Production-Auswertungen.",
+      "Interne Fehlertexte werden bereinigt, damit keine API-Key-Fragmente in Beratungsakten oder Protokolle geschrieben werden.",
+    ],
+    title: "KI-Sanktionsberater stabilisiert",
+    type: "fix",
+    version: "0.10.8",
+  },
+  {
     date: "13.06.2026",
     id: "google-drive-file-sync",
     items: [
