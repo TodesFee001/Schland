@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "15.06.2026",
+    id: "ai-sanction-advice-direct-storage-upload",
+    items: [
+      "KI-Sanktionsberater laedt Belegdateien jetzt vor dem Absenden direkt zu Supabase Storage hoch.",
+      "Der Button-Post enthaelt nur noch kleine Metadaten, damit Vercels Upload-Grenze keine Fehlerseite mehr ausloest.",
+      "Die Beratung uebernimmt die hochgeladenen Belege danach serverseitig in die Fallakte und kann direkt ausgewertet werden.",
+    ],
+    title: "Beratungs-Uploads ohne Fehlerseite",
+    type: "fix",
+    version: "0.10.11",
+  },
+  {
+    date: "15.06.2026",
     id: "ai-sanction-advice-upload-count-20",
     items: [
       "KI-Sanktionsberater erlaubt jetzt bis zu 20 Belegdateien pro Beratung.",

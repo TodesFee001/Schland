@@ -30,6 +30,7 @@ const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 const MAX_ADVICE_UPLOAD_BYTES = 20 * 1024 * 1024;
 const MAX_ADVICE_TOTAL_UPLOAD_BYTES = 45 * 1024 * 1024;
 const MAX_ADVICE_UPLOADS = 20;
+const ADVICE_STAGING_PREFIX = "moderation-advice-staging";
 const MAX_PROFILE_IMAGE_BYTES = 8 * 1024 * 1024;
 const PROFILE_IMAGE_CATEGORY_NAME = "Profilbilder";
 const PROFILE_IMAGE_CONTENT_TYPES = new Set([
@@ -57,6 +58,15 @@ const ADVICE_TEXT_CONTENT_TYPES = new Set([
   "text/markdown",
   "text/plain",
 ]);
+
+type UploadedAdviceEvidence = {
+  contentType: string;
+  evidenceType: "file" | "screenshot";
+  extractedText: string;
+  originalName: string;
+  size: number;
+  storagePath: string;
+};
 
 export async function claimFirstAdminAction() {
   if (!hasSupabasePublicEnv()) {
@@ -1468,6 +1478,46 @@ export async function runModerationAction(formData: FormData) {
   redirect("/?section=moderation&setup=moderation-action-done");
 }
 
+export async function prepareModerationAdviceEvidenceUploadAction(input: {
+  contentType?: string;
+  evidenceType?: string;
+  fileName?: string;
+  size?: number;
+}) {
+  const { actor, admin } = await getModerationAdviceActionContext("advice-error");
+  const originalName = sanitizeFileName(input.fileName || "beleg.bin");
+  const contentType = input.contentType || "application/octet-stream";
+  const evidenceType = input.evidenceType === "screenshot" ? "screenshot" : "file";
+  const size = Number(input.size);
+
+  if (
+    !Number.isFinite(size) ||
+    size <= 0 ||
+    size > MAX_ADVICE_UPLOAD_BYTES ||
+    !isAdviceUploadTypeAllowed({ contentType, fileName: originalName })
+  ) {
+    throw new Error("Diese Belegdatei ist fuer den Upload nicht erlaubt.");
+  }
+
+  const storagePath = `${ADVICE_STAGING_PREFIX}/${actor.id}/${crypto.randomUUID()}-${originalName}`;
+  const { data, error } = await admin.storage
+    .from(FILE_BUCKET)
+    .createSignedUploadUrl(storagePath);
+
+  if (error || !data?.token || !data.path) {
+    throw new Error(error?.message ?? "Upload konnte nicht vorbereitet werden.");
+  }
+
+  return {
+    contentType,
+    evidenceType,
+    originalName,
+    path: data.path,
+    size,
+    token: data.token,
+  };
+}
+
 export async function createModerationAdviceCaseAction(formData: FormData) {
   const { actor, admin } = await getModerationAdviceActionContext("advice-error");
   const targetMemberId = getFormText(formData, "targetMemberId");
@@ -1482,6 +1532,11 @@ export async function createModerationAdviceCaseAction(formData: FormData) {
   const title = getFormText(formData, "title");
   const intent = getFormText(formData, "intent") === "analyze" ? "analyze" : "create";
   const files = getAdviceUploadFiles(formData);
+  const uploadedEvidence = getUploadedAdviceEvidence(formData);
+
+  if (!uploadedEvidence) {
+    redirect("/?section=advice&setup=advice-upload-type");
+  }
 
   if (targetMemberId && !isUuidText(targetMemberId)) {
     redirect("/?section=advice&setup=advice-target");
@@ -1499,19 +1554,29 @@ export async function createModerationAdviceCaseAction(formData: FormData) {
     redirect("/?section=advice&setup=advice-description");
   }
 
-  if (files.length > MAX_ADVICE_UPLOADS) {
+  const uploadCount = files.length + uploadedEvidence.length;
+  const uploadTotalBytes =
+    files.reduce((total, file) => total + file.size, 0) +
+    uploadedEvidence.reduce((total, evidence) => total + evidence.size, 0);
+
+  if (uploadCount > MAX_ADVICE_UPLOADS) {
     redirect("/?section=advice&setup=advice-upload-count");
   }
 
-  if (files.reduce((total, file) => total + file.size, 0) > MAX_ADVICE_TOTAL_UPLOAD_BYTES) {
+  if (uploadTotalBytes > MAX_ADVICE_TOTAL_UPLOAD_BYTES) {
     redirect("/?section=advice&setup=advice-upload-total");
   }
 
-  if (files.some((file) => file.size <= 0 || file.size > MAX_ADVICE_UPLOAD_BYTES)) {
+  if (
+    files.some((file) => file.size <= 0 || file.size > MAX_ADVICE_UPLOAD_BYTES) ||
+    uploadedEvidence.some(
+      (evidence) => evidence.size <= 0 || evidence.size > MAX_ADVICE_UPLOAD_BYTES,
+    )
+  ) {
     redirect("/?section=advice&setup=advice-upload-size");
   }
 
-  if (!areAdviceUploadTypesAllowed(files)) {
+  if (!areAdviceUploadTypesAllowed(files) || !areUploadedAdviceEvidenceAllowed(uploadedEvidence)) {
     redirect("/?section=advice&setup=advice-upload-type");
   }
 
@@ -1584,6 +1649,7 @@ export async function createModerationAdviceCaseAction(formData: FormData) {
       caseId,
       files,
       formData,
+      uploadedEvidence,
     });
 
     if (intent === "analyze") {
@@ -2699,15 +2765,95 @@ function getAdviceUploadFiles(formData: FormData) {
 }
 
 function areAdviceUploadTypesAllowed(files: File[]) {
-  return files.every((file) => {
-    const contentType = file.type.toLowerCase();
-    const extension = getFileExtension(file.name);
+  return files.every((file) =>
+    isAdviceUploadTypeAllowed({
+      contentType: file.type,
+      fileName: file.name,
+    }),
+  );
+}
 
-    if (contentType && ADVICE_FILE_CONTENT_TYPES.has(contentType)) {
-      return true;
+function isAdviceUploadTypeAllowed(input: { contentType: string; fileName: string }) {
+  const contentType = input.contentType.toLowerCase();
+  const extension = getFileExtension(input.fileName);
+
+  if (contentType && ADVICE_FILE_CONTENT_TYPES.has(contentType)) {
+    return true;
+  }
+
+  return [".csv", ".json", ".md", ".pdf", ".txt"].includes(extension);
+}
+
+function getUploadedAdviceEvidence(formData: FormData) {
+  const rawValue = getFormText(formData, "uploadedEvidenceJson");
+
+  if (!rawValue) {
+    return [] as UploadedAdviceEvidence[];
+  }
+
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(rawValue);
+  } catch {
+    return null;
+  }
+
+  if (!Array.isArray(parsed)) {
+    return null;
+  }
+
+  const uploadedEvidence: UploadedAdviceEvidence[] = [];
+
+  for (const item of parsed.slice(0, MAX_ADVICE_UPLOADS + 1)) {
+    if (!isObjectRecord(item)) {
+      return null;
     }
 
-    return [".csv", ".json", ".md", ".pdf", ".txt"].includes(extension);
+    const originalName = sanitizeFileName(asActionText(item.originalName) || "beleg.bin");
+    const contentType =
+      asActionText(item.contentType) || "application/octet-stream";
+    const evidenceType =
+      asActionText(item.evidenceType) === "screenshot" ? "screenshot" : "file";
+    const storagePath = asActionText(item.storagePath);
+    const size = Number(item.size);
+
+    if (
+      !storagePath ||
+      !storagePath.startsWith(`${ADVICE_STAGING_PREFIX}/`) ||
+      !Number.isFinite(size) ||
+      size <= 0
+    ) {
+      return null;
+    }
+
+    uploadedEvidence.push({
+      contentType,
+      evidenceType,
+      extractedText: sanitizeUploadedEvidenceText(
+        asActionText(item.extractedText) ?? "",
+        contentType,
+        originalName,
+      ),
+      originalName,
+      size,
+      storagePath,
+    });
+  }
+
+  return uploadedEvidence;
+}
+
+function areUploadedAdviceEvidenceAllowed(evidenceItems: UploadedAdviceEvidence[]) {
+  return evidenceItems.every((evidence) => {
+    if (evidence.evidenceType !== "file" && evidence.evidenceType !== "screenshot") {
+      return false;
+    }
+
+    return isAdviceUploadTypeAllowed({
+      contentType: evidence.contentType,
+      fileName: evidence.originalName,
+    });
   });
 }
 
@@ -2717,6 +2863,7 @@ async function insertModerationAdviceEvidence(input: {
   caseId: string;
   files: File[];
   formData: FormData;
+  uploadedEvidence: UploadedAdviceEvidence[];
 }) {
   const messageLinks = getFormText(input.formData, "messageLinks")
     .split(/[\s,]+/)
@@ -2777,6 +2924,14 @@ async function insertModerationAdviceEvidence(input: {
       file,
     });
   }
+
+  for (const evidence of input.uploadedEvidence) {
+    await insertPreparedModerationAdviceEvidenceFile(input.admin, {
+      actorId: input.actorId,
+      caseId: input.caseId,
+      evidence,
+    });
+  }
 }
 
 async function uploadModerationAdviceEvidenceFile(
@@ -2834,14 +2989,67 @@ async function uploadModerationAdviceEvidenceFile(
   });
 }
 
-function extractSafeEvidenceText(file: File, body: Uint8Array) {
-  const contentType = file.type.toLowerCase();
-  const extension = getFileExtension(file.name);
-  const textLike =
-    ADVICE_TEXT_CONTENT_TYPES.has(contentType) ||
-    [".csv", ".json", ".md", ".txt"].includes(extension);
+async function insertPreparedModerationAdviceEvidenceFile(
+  admin: SupabaseAdminClient,
+  input: { actorId: string; caseId: string; evidence: UploadedAdviceEvidence },
+) {
+  const stagingPrefix = `${ADVICE_STAGING_PREFIX}/${input.actorId}/`;
 
-  if (!textLike || body.byteLength > 200 * 1024) {
+  if (!input.evidence.storagePath.startsWith(stagingPrefix)) {
+    throw new Error("advice evidence staging path denied");
+  }
+
+  const originalName = sanitizeFileName(input.evidence.originalName || "beleg.bin");
+  const finalStoragePath = `moderation-advice/${input.caseId}/${crypto.randomUUID()}-${originalName}`;
+  const { error: moveError } = await admin.storage
+    .from(FILE_BUCKET)
+    .move(input.evidence.storagePath, finalStoragePath);
+
+  if (moveError) {
+    throw new Error(`advice evidence storage move failed: ${moveError.message}`);
+  }
+
+  const evidenceType =
+    input.evidence.evidenceType === "screenshot" ||
+    input.evidence.contentType.toLowerCase().startsWith("image/")
+      ? "screenshot"
+      : "file";
+  const { error } = await admin.from("moderation_advice_evidence").insert({
+    advice_case_id: input.caseId,
+    evidence_type: evidenceType,
+    label: originalName,
+    metadata: {
+      contentType: input.evidence.contentType,
+      extractedText: input.evidence.extractedText,
+      originalName,
+      size: input.evidence.size,
+      storagePath: finalStoragePath,
+      uploadMode: "direct_to_supabase",
+    },
+    uploaded_by: input.actorId,
+  });
+
+  if (error) {
+    await admin.storage.from(FILE_BUCKET).remove([finalStoragePath]);
+    throw new Error(`advice evidence write failed: ${error.message}`);
+  }
+
+  await writeModerationAdviceLog(admin, {
+    action: "beleg_hinzugefuegt",
+    actorId: input.actorId,
+    caseId: input.caseId,
+    details: {
+      contentType: input.evidence.contentType,
+      evidenceType,
+      originalName,
+      size: input.evidence.size,
+      uploadMode: "direct_to_supabase",
+    },
+  });
+}
+
+function extractSafeEvidenceText(file: File, body: Uint8Array) {
+  if (!isTextLikeAdviceEvidence(file.type, file.name) || body.byteLength > 200 * 1024) {
     return "";
   }
 
@@ -2849,6 +3057,32 @@ function extractSafeEvidenceText(file: File, body: Uint8Array) {
     .decode(body)
     .replace(/\u0000/g, "")
     .slice(0, 12_000);
+}
+
+function sanitizeUploadedEvidenceText(
+  value: string,
+  contentType: string,
+  fileName: string,
+) {
+  if (!value || !isTextLikeAdviceEvidence(contentType, fileName)) {
+    return "";
+  }
+
+  return value.replace(/\u0000/g, "").slice(0, 12_000);
+}
+
+function isTextLikeAdviceEvidence(contentType: string, fileName: string) {
+  const normalizedContentType = contentType.toLowerCase();
+  const extension = getFileExtension(fileName);
+
+  return (
+    ADVICE_TEXT_CONTENT_TYPES.has(normalizedContentType) ||
+    [".csv", ".json", ".md", ".txt"].includes(extension)
+  );
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function getAdviceTargetMember(

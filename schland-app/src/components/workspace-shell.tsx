@@ -62,6 +62,7 @@ import {
   moveFileAction,
   openMemberCaseAction,
   executeModerationAdviceAction,
+  prepareModerationAdviceEvidenceUploadAction,
   runModerationAction,
   runDiscordManualSyncAction,
   runDriveManualSyncAction,
@@ -87,6 +88,7 @@ import type { AuthStatus } from "@/lib/auth";
 import type { DashboardSnapshot } from "@/lib/dashboard";
 import type { EnvironmentStatus } from "@/lib/env";
 import { patchNotes } from "@/lib/patch-notes";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type {
   MemberStatusLabel,
   WorkspaceAbsenceRepresentation,
@@ -161,6 +163,20 @@ type WorkspaceNotification = {
   section: SectionId;
   title: string;
   tone: "error" | "info" | "warning";
+};
+
+type AdviceUploadEvidenceType = "file" | "screenshot";
+
+type AdviceUploadItem = {
+  contentType: string;
+  error?: string;
+  evidenceType: AdviceUploadEvidenceType;
+  extractedText: string;
+  id: string;
+  originalName: string;
+  size: number;
+  status: "failed" | "queued" | "uploaded" | "uploading";
+  storagePath?: string;
 };
 
 const sections: Section[] = [
@@ -4959,6 +4975,7 @@ function ModerationAdviceSection({
   const [adviceSearch, setAdviceSearch] = useState("");
   const [adviceEvidenceFiles, setAdviceEvidenceFiles] = useState<File[]>([]);
   const [adviceScreenshotFiles, setAdviceScreenshotFiles] = useState<File[]>([]);
+  const [adviceUploadItems, setAdviceUploadItems] = useState<AdviceUploadItem[]>([]);
   const [statusFilter, setStatusFilter] = useState("all");
   const moderationMembers = members.filter(
     (member) => member.discordId && member.discordId !== "-",
@@ -4998,7 +5015,115 @@ function ModerationAdviceSection({
     ...adviceScreenshotFiles,
     ...adviceEvidenceFiles,
   ]);
-  const adviceUploadBlocked = Boolean(adviceUploadValidation.message);
+  const adviceUploadProgress = getAdviceUploadProgress(adviceUploadItems);
+  const adviceUploadBlocked = Boolean(
+    adviceUploadValidation.message || adviceUploadProgress.message,
+  );
+  const uploadedAdviceEvidenceJson = JSON.stringify(
+    adviceUploadItems
+      .filter((item) => item.status === "uploaded" && item.storagePath)
+      .map((item) => ({
+        contentType: item.contentType,
+        evidenceType: item.evidenceType,
+        extractedText: item.extractedText,
+        originalName: item.originalName,
+        size: item.size,
+        storagePath: item.storagePath,
+      })),
+  );
+  const adviceUploadStatusText =
+    adviceUploadValidation.message ||
+    adviceUploadProgress.message ||
+    adviceUploadProgress.summary ||
+    adviceUploadValidation.summary;
+  const uploadAdviceFiles = async (
+    files: File[],
+    evidenceType: AdviceUploadEvidenceType,
+  ) => {
+    const items = await Promise.all(
+      files.map(async (file) => ({
+        contentType: file.type || "application/octet-stream",
+        evidenceType,
+        extractedText: await readAdviceEvidenceText(file),
+        id: crypto.randomUUID(),
+        originalName: file.name || "beleg.bin",
+        size: file.size,
+        status: "queued" as const,
+      })),
+    );
+
+    setAdviceUploadItems((current) => [
+      ...current.filter((item) => item.evidenceType !== evidenceType),
+      ...items,
+    ]);
+
+    await Promise.all(
+      items.map(async (item, index) => {
+        const file = files[index];
+
+        setAdviceUploadItems((current) =>
+          current.map((currentItem) =>
+            currentItem.id === item.id
+              ? { ...currentItem, status: "uploading" }
+              : currentItem,
+          ),
+        );
+
+        try {
+          const prepared = await prepareModerationAdviceEvidenceUploadAction({
+            contentType: item.contentType,
+            evidenceType,
+            fileName: item.originalName,
+            size: item.size,
+          });
+          const supabaseBrowser = createSupabaseBrowserClient();
+          const { error } = await supabaseBrowser.storage
+            .from("schland-files")
+            .uploadToSignedUrl(prepared.path, prepared.token, file, {
+              contentType: item.contentType,
+              upsert: false,
+            });
+
+          if (error) {
+            throw new Error(error.message);
+          }
+
+          const preparedEvidenceType =
+            prepared.evidenceType === "screenshot" ? "screenshot" : "file";
+
+          setAdviceUploadItems((current) =>
+            current.map((currentItem) =>
+              currentItem.id === item.id
+                ? {
+                    ...currentItem,
+                    contentType: prepared.contentType,
+                    evidenceType: preparedEvidenceType,
+                    originalName: prepared.originalName,
+                    status: "uploaded",
+                    storagePath: prepared.path,
+                  }
+                : currentItem,
+            ),
+          );
+        } catch (error) {
+          setAdviceUploadItems((current) =>
+            current.map((currentItem) =>
+              currentItem.id === item.id
+                ? {
+                    ...currentItem,
+                    error:
+                      error instanceof Error
+                        ? error.message
+                        : "Upload fehlgeschlagen.",
+                    status: "failed",
+                  }
+                : currentItem,
+            ),
+          );
+        }
+      }),
+    );
+  };
   const canExecuteSelected =
     Boolean(selectedAdvice) &&
     mfaReady &&
@@ -5022,6 +5147,11 @@ function ModerationAdviceSection({
           }}
           className="grid gap-4 border-t border-[var(--line-strong)] p-4"
         >
+          <input
+            type="hidden"
+            name="uploadedEvidenceJson"
+            value={uploadedAdviceEvidenceJson}
+          />
           <fieldset disabled={!mfaReady} className="contents disabled:opacity-60">
             <div className="grid gap-3 lg:grid-cols-6">
               <label className="grid gap-2 lg:col-span-2">
@@ -5142,14 +5272,15 @@ function ModerationAdviceSection({
                   Screenshots
                 </span>
                 <input
-                  name="screenshots"
                   type="file"
                   multiple
                   accept="image/*"
                   aria-invalid={adviceUploadBlocked}
-                  onChange={(event) =>
-                    setAdviceScreenshotFiles(Array.from(event.currentTarget.files ?? []))
-                  }
+                  onChange={(event) => {
+                    const files = Array.from(event.currentTarget.files ?? []);
+                    setAdviceScreenshotFiles(files);
+                    void uploadAdviceFiles(files, "screenshot");
+                  }}
                   className="h-10 rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none file:mr-3 file:border-0 file:bg-[var(--surface-muted)] file:px-2 file:py-1 file:text-xs disabled:cursor-not-allowed disabled:opacity-45"
                 />
               </label>
@@ -5158,14 +5289,15 @@ function ModerationAdviceSection({
                   Dateien
                 </span>
                 <input
-                  name="evidenceFiles"
                   type="file"
                   multiple
                   accept="image/*,.pdf,.txt,.md,.csv,.json"
                   aria-invalid={adviceUploadBlocked}
-                  onChange={(event) =>
-                    setAdviceEvidenceFiles(Array.from(event.currentTarget.files ?? []))
-                  }
+                  onChange={(event) => {
+                    const files = Array.from(event.currentTarget.files ?? []);
+                    setAdviceEvidenceFiles(files);
+                    void uploadAdviceFiles(files, "file");
+                  }}
                   className="h-10 rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none file:mr-3 file:border-0 file:bg-[var(--surface-muted)] file:px-2 file:py-1 file:text-xs disabled:cursor-not-allowed disabled:opacity-45"
                 />
               </label>
@@ -5179,7 +5311,7 @@ function ModerationAdviceSection({
                   className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
                 />
               </label>
-              {adviceUploadValidation.summary ? (
+              {adviceUploadStatusText ? (
                 <div
                   className={`lg:col-span-6 flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${
                     adviceUploadBlocked
@@ -5195,7 +5327,7 @@ function ModerationAdviceSection({
                     aria-hidden="true"
                   />
                   <span>
-                    {adviceUploadValidation.message || adviceUploadValidation.summary}
+                    {adviceUploadStatusText}
                   </span>
                 </div>
               ) : null}
@@ -7220,6 +7352,73 @@ function getAdviceUploadValidation(files: File[]) {
   }
 
   return { message: "", summary };
+}
+
+function getAdviceUploadProgress(items: AdviceUploadItem[]) {
+  if (items.length === 0) {
+    return { message: "", summary: "" };
+  }
+
+  const failedItem = items.find((item) => item.status === "failed");
+  const uploadedCount = items.filter((item) => item.status === "uploaded").length;
+  const totalSize = items.reduce((total, item) => total + item.size, 0);
+  const summary = `${formatNumber(uploadedCount)}/${formatNumber(
+    items.length,
+  )} Datei(en) hochgeladen, ${formatFileSize(totalSize)} ausgewaehlt.`;
+
+  if (failedItem) {
+    return {
+      message: `${failedItem.originalName}: ${
+        failedItem.error || "Upload fehlgeschlagen."
+      }`,
+      summary,
+    };
+  }
+
+  if (uploadedCount < items.length) {
+    return {
+      message: `Belege werden direkt zu Supabase hochgeladen (${formatNumber(
+        uploadedCount,
+      )}/${formatNumber(items.length)} fertig). Bitte kurz warten.`,
+      summary,
+    };
+  }
+
+  return {
+    message: "",
+    summary: `${formatNumber(items.length)} Datei(en), ${formatFileSize(
+      totalSize,
+    )} bereit fuer die Beratung.`,
+  };
+}
+
+async function readAdviceEvidenceText(file: File) {
+  if (!isAdviceEvidenceTextFile(file) || file.size > 200 * 1024) {
+    return "";
+  }
+
+  try {
+    return (await file.text()).replace(/\u0000/g, "").slice(0, 12_000);
+  } catch {
+    return "";
+  }
+}
+
+function isAdviceEvidenceTextFile(file: File) {
+  const contentType = file.type.toLowerCase();
+  const extension = getLocalFileExtension(file.name);
+
+  return (
+    ["application/json", "text/csv", "text/markdown", "text/plain"].includes(
+      contentType,
+    ) || [".csv", ".json", ".md", ".txt"].includes(extension)
+  );
+}
+
+function getLocalFileExtension(value: string) {
+  const match = value.toLowerCase().match(/\.[a-z0-9]+$/);
+
+  return match?.[0] ?? "";
 }
 
 function formatDriveConflictType(type: string) {
