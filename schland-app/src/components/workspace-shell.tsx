@@ -178,7 +178,7 @@ const sections: Section[] = [
   { id: "settings", label: "Einstellungen", icon: Settings },
 ];
 
-const ADVICE_UPLOAD_MAX_FILES = 8;
+const ADVICE_UPLOAD_MAX_FILES = 20;
 const ADVICE_UPLOAD_MAX_FILE_BYTES = 20 * 1024 * 1024;
 const ADVICE_UPLOAD_MAX_TOTAL_BYTES = 45 * 1024 * 1024;
 

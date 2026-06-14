@@ -919,7 +919,7 @@ function getSetupNotice(setup?: string) {
   if (setup === "advice-upload-count") {
     return {
       tone: "warning" as const,
-      text: "Bitte lade maximal acht Belegdateien pro Beratung hoch.",
+      text: "Bitte lade maximal 20 Belegdateien pro Beratung hoch.",
     };
   }
 

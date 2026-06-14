@@ -10,6 +10,17 @@ export type PatchNote = {
 // Jede produktive Aenderung bekommt hier ab jetzt einen Eintrag.
 export const patchNotes: PatchNote[] = [
   {
+    date: "15.06.2026",
+    id: "ai-sanction-advice-upload-count-20",
+    items: [
+      "KI-Sanktionsberater erlaubt jetzt bis zu 20 Belegdateien pro Beratung.",
+      "Die Schutzgrenzen fuer 20 MB pro Datei und 45 MB Gesamtgroesse bleiben aktiv, damit Uploads kontrolliert abgefangen werden.",
+    ],
+    title: "Mehr Beratungs-Belege",
+    type: "fix",
+    version: "0.10.10",
+  },
+  {
     date: "14.06.2026",
     id: "ai-sanction-advice-upload-guard",
     items: [
