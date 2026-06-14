@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 
 type HomeProps = {
   searchParams: Promise<{
+    advice?: string;
     member?: string;
     section?: string;
     setup?: string;
@@ -34,6 +35,7 @@ export default async function Home({ searchParams }: HomeProps) {
       authStatus={authStatus}
       dashboardSnapshot={dashboardSnapshot}
       environmentStatus={getEnvironmentStatus()}
+      initialSelectedAdviceCaseId={params.advice}
       initialSelectedMemberId={params.member}
       initialSection={params.section}
       setupNotice={getSetupNotice(params.setup)}
@@ -848,6 +850,104 @@ function getSetupNotice(setup?: string) {
     return {
       tone: "error" as const,
       text: "Moderationsaktion konnte nicht ausgefuehrt werden. Bot-Rechte und Discord-Ziel pruefen.",
+    };
+  }
+
+  if (setup === "advice-created") {
+    return {
+      tone: "success" as const,
+      text: "Beratung wurde angelegt und mit Aktenzeichen gespeichert.",
+    };
+  }
+
+  if (setup === "advice-ready") {
+    return {
+      tone: "success" as const,
+      text: "KI-Auswertung wurde gespeichert. Die Empfehlung wartet auf menschliche Pruefung.",
+    };
+  }
+
+  if (setup === "advice-saved" || setup === "advice-title-saved") {
+    return {
+      tone: "success" as const,
+      text: "Beratungsfall wurde gespeichert.",
+    };
+  }
+
+  if (setup === "advice-queued") {
+    return {
+      tone: "success" as const,
+      text: "Bot-Auftrag wurde aus der Beratung erstellt. Der Railway-Bot meldet Erfolg oder Fehler zurueck.",
+    };
+  }
+
+  if (setup === "advice-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "KI-Beratungen und Freigaben brauchen eine aktive 2FA-Sitzung.",
+    };
+  }
+
+  if (setup === "advice-denied") {
+    return {
+      tone: "error" as const,
+      text: "Dem Account fehlt die Moderationsverwaltung.",
+    };
+  }
+
+  if (setup === "advice-target") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte waehle eine Zielperson oder gib eine gueltige Discord-ID beziehungsweise einen Namen an.",
+    };
+  }
+
+  if (setup === "advice-description") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte beschreibe Situation und konkretes Verhalten ausreichend.",
+    };
+  }
+
+  if (setup === "advice-upload-size") {
+    return {
+      tone: "warning" as const,
+      text: "Belege duerfen pro Datei maximal 20 MB gross sein.",
+    };
+  }
+
+  if (setup === "advice-upload-count") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte lade maximal acht Belegdateien pro Beratung hoch.",
+    };
+  }
+
+  if (setup === "advice-upload-type") {
+    return {
+      tone: "warning" as const,
+      text: "Erlaubt sind Bilder, PDF und einfache Textdateien.",
+    };
+  }
+
+  if (setup === "advice-title") {
+    return {
+      tone: "warning" as const,
+      text: "Der Beratungstitel muss zwischen 2 und 140 Zeichen lang sein.",
+    };
+  }
+
+  if (setup === "advice-execute-failed") {
+    return {
+      tone: "error" as const,
+      text: "Ausfuehrung wurde blockiert. Rechte, Discord-ID, Empfehlung oder bestehende Bot-Queue pruefen.",
+    };
+  }
+
+  if (setup === "advice-error" || setup === "advice-missing") {
+    return {
+      tone: "error" as const,
+      text: "Beratung konnte nicht verarbeitet werden. Details stehen im Serverprotokoll.",
     };
   }
 

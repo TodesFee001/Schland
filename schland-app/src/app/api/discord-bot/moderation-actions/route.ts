@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
 import {
+  markModerationAdviceExecutionResult,
+  MODERATION_ADVICE_COMMAND_SOURCE,
+} from "@/lib/moderation-advice";
+import {
   asInteger,
   asIsoDate,
   asRecord,
@@ -14,6 +18,7 @@ import { getSupabaseAdminClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 const COMMAND_SOURCE = "schland-web-command";
+const COMMAND_SOURCES = [COMMAND_SOURCE, MODERATION_ADVICE_COMMAND_SOURCE];
 const COMMAND_STATUSES = new Set(["executed", "failed", "running"]);
 
 export async function GET(request: Request) {
@@ -42,7 +47,7 @@ export async function GET(request: Request) {
         members(name, discord_id, discord_username, discord_display_name)
       `,
     )
-    .eq("source", COMMAND_SOURCE)
+    .in("source", COMMAND_SOURCES)
     .order("created_at", { ascending: true })
     .limit(50);
 
@@ -99,9 +104,9 @@ export async function PATCH(request: Request) {
   const supabase = getSupabaseAdminClient();
   const { data: existing, error: lookupError } = await supabase
     .from("discord_moderation_events")
-    .select("id,event_type,duration_seconds,metadata")
+    .select("id,event_type,duration_seconds,metadata,source")
     .eq("id", id)
-    .eq("source", COMMAND_SOURCE)
+    .in("source", COMMAND_SOURCES)
     .maybeSingle();
 
   if (lookupError) {
@@ -188,6 +193,14 @@ export async function PATCH(request: Request) {
       { error: "moderation_action_status_update_failed" },
       { status: 500 },
     );
+  }
+
+  if (existing.source === MODERATION_ADVICE_COMMAND_SOURCE) {
+    await markModerationAdviceExecutionResult({
+      botError,
+      commandStatus: commandStatus as "executed" | "failed" | "running",
+      eventId: id,
+    });
   }
 
   return NextResponse.json({

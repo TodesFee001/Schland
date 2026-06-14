@@ -16,12 +16,19 @@ import {
   uploadFileRecordToDrive,
 } from "@/lib/google-drive-sync";
 import {
+  analyzeModerationAdviceCase,
+  queueModerationAdviceExecution,
+  writeModerationAdviceLog,
+} from "@/lib/moderation-advice";
+import {
   createSupabaseServerClient,
   getSupabaseAdminClient,
 } from "@/lib/supabase/server";
 
 const FILE_BUCKET = "schland-files";
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MAX_ADVICE_UPLOAD_BYTES = 20 * 1024 * 1024;
+const MAX_ADVICE_UPLOADS = 8;
 const MAX_PROFILE_IMAGE_BYTES = 8 * 1024 * 1024;
 const PROFILE_IMAGE_CATEGORY_NAME = "Profilbilder";
 const PROFILE_IMAGE_CONTENT_TYPES = new Set([
@@ -30,6 +37,24 @@ const PROFILE_IMAGE_CONTENT_TYPES = new Set([
   "image/jpeg",
   "image/png",
   "image/webp",
+]);
+const ADVICE_FILE_CONTENT_TYPES = new Set([
+  "application/json",
+  "application/pdf",
+  "image/avif",
+  "image/gif",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "text/csv",
+  "text/markdown",
+  "text/plain",
+]);
+const ADVICE_TEXT_CONTENT_TYPES = new Set([
+  "application/json",
+  "text/csv",
+  "text/markdown",
+  "text/plain",
 ]);
 
 export async function claimFirstAdminAction() {
@@ -1442,6 +1467,270 @@ export async function runModerationAction(formData: FormData) {
   redirect("/?section=moderation&setup=moderation-action-done");
 }
 
+export async function createModerationAdviceCaseAction(formData: FormData) {
+  const { actor, admin } = await getModerationAdviceActionContext("advice-error");
+  const targetMemberId = getFormText(formData, "targetMemberId");
+  const discordUserId = getFormText(formData, "targetDiscordUserId");
+  const targetDiscordUsername = getFormText(formData, "targetDiscordUsername");
+  const incidentAt = getOptionalIsoDate(formData, "incidentAt");
+  const situationText = getFormText(formData, "situationText");
+  const behaviorSummary = getFormText(formData, "behaviorSummary");
+  const affectedPeople = getFormText(formData, "affectedPeople");
+  const internalNotes = getFormText(formData, "internalNotes");
+  const desiredOutcome = getFormText(formData, "desiredOutcome");
+  const title = getFormText(formData, "title");
+  const intent = getFormText(formData, "intent") === "analyze" ? "analyze" : "create";
+  const files = getAdviceUploadFiles(formData);
+
+  if (targetMemberId && !isUuidText(targetMemberId)) {
+    redirect("/?section=advice&setup=advice-target");
+  }
+
+  if (discordUserId && !isDiscordSnowflake(discordUserId)) {
+    redirect("/?section=advice&setup=advice-target");
+  }
+
+  if (!targetMemberId && !discordUserId && !targetDiscordUsername) {
+    redirect("/?section=advice&setup=advice-target");
+  }
+
+  if (situationText.length < 20 || behaviorSummary.length < 8) {
+    redirect("/?section=advice&setup=advice-description");
+  }
+
+  if (files.length > MAX_ADVICE_UPLOADS) {
+    redirect("/?section=advice&setup=advice-upload-count");
+  }
+
+  if (files.some((file) => file.size <= 0 || file.size > MAX_ADVICE_UPLOAD_BYTES)) {
+    redirect("/?section=advice&setup=advice-upload-size");
+  }
+
+  if (!areAdviceUploadTypesAllowed(files)) {
+    redirect("/?section=advice&setup=advice-upload-type");
+  }
+
+  const targetMember = targetMemberId
+    ? await getAdviceTargetMember(admin, targetMemberId)
+    : null;
+
+  if (targetMemberId && !targetMember) {
+    redirect("/?section=advice&setup=advice-target");
+  }
+
+  const targetDiscordId =
+    asActionText(targetMember?.discord_id) || discordUserId || null;
+  const resolvedTargetName =
+    targetDiscordUsername ||
+    asActionText(targetMember?.discord_display_name) ||
+    asActionText(targetMember?.discord_username) ||
+    asActionText(targetMember?.name) ||
+    targetDiscordId ||
+    "Unbekannte Zielperson";
+
+  const { data: adviceCase, error } = await admin
+    .from("moderation_advice_cases")
+    .insert({
+      affected_people: affectedPeople,
+      behavior_summary: behaviorSummary,
+      desired_outcome: desiredOutcome,
+      incident_at: incidentAt,
+      internal_notes: internalNotes,
+      situation_text: situationText,
+      status: "draft",
+      submitted_by: actor.id,
+      target_discord_user_id: targetDiscordId,
+      target_discord_username: resolvedTargetName,
+      target_member_id: targetMemberId || null,
+      title:
+        title ||
+        `Beratung ${resolvedTargetName}`.slice(0, 140) ||
+        "Neue Beratung",
+    })
+    .select("id,case_number")
+    .single();
+
+  if (error || !adviceCase?.id) {
+    console.error("moderation advice create failed", {
+      code: error?.code,
+      details: error?.details,
+      message: error?.message,
+    });
+    redirect("/?section=advice&setup=advice-error");
+  }
+
+  const caseId = String(adviceCase.id);
+  await writeModerationAdviceLog(admin, {
+    action: "beratung_erstellt",
+    actorId: actor.id,
+    caseId,
+    details: {
+      actorName: actor.name,
+      caseNumber: adviceCase.case_number,
+      targetDiscordId,
+      targetMemberId: targetMemberId || null,
+    },
+  });
+
+  try {
+    await insertModerationAdviceEvidence({
+      actorId: actor.id,
+      admin,
+      caseId,
+      files,
+      formData,
+    });
+
+    if (intent === "analyze") {
+      await analyzeModerationAdviceCase({
+        actorId: actor.id,
+        actorName: actor.name,
+        caseId,
+      });
+    }
+  } catch (error) {
+    console.error("moderation advice evidence/analyze failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    redirect(`/?section=advice&advice=${encodeURIComponent(caseId)}&setup=advice-error`);
+  }
+
+  revalidatePath("/", "layout");
+  redirect(
+    `/?section=advice&advice=${encodeURIComponent(caseId)}&setup=${
+      intent === "analyze" ? "advice-ready" : "advice-created"
+    }`,
+  );
+}
+
+export async function analyzeModerationAdviceCaseAction(formData: FormData) {
+  const { actor } = await getModerationAdviceActionContext("advice-error");
+  const caseId = getFormText(formData, "caseId");
+
+  if (!isUuidText(caseId)) {
+    redirect("/?section=advice&setup=advice-missing");
+  }
+
+  try {
+    await analyzeModerationAdviceCase({
+      actorId: actor.id,
+      actorName: actor.name,
+      caseId,
+    });
+  } catch (error) {
+    console.error("moderation advice analyze failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    redirect(`/?section=advice&advice=${encodeURIComponent(caseId)}&setup=advice-error`);
+  }
+
+  revalidatePath("/", "layout");
+  redirect(`/?section=advice&advice=${encodeURIComponent(caseId)}&setup=advice-ready`);
+}
+
+export async function saveModerationAdviceCaseAction(formData: FormData) {
+  const { actor, admin } = await getModerationAdviceActionContext("advice-error");
+  const caseId = getFormText(formData, "caseId");
+  const reason = getFormText(formData, "recommendedReason");
+
+  if (!isUuidText(caseId)) {
+    redirect("/?section=advice&setup=advice-missing");
+  }
+
+  const { error } = await admin
+    .from("moderation_advice_cases")
+    .update({
+      recommended_reason: reason || null,
+      status: "saved",
+    })
+    .eq("id", caseId)
+    .not("status", "in", "(queued,executed)");
+
+  if (error) {
+    console.error("moderation advice save failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect(`/?section=advice&advice=${encodeURIComponent(caseId)}&setup=advice-error`);
+  }
+
+  await writeModerationAdviceLog(admin, {
+    action: "beratung_gespeichert",
+    actorId: actor.id,
+    caseId,
+    details: { actorName: actor.name },
+  });
+
+  revalidatePath("/", "layout");
+  redirect(`/?section=advice&advice=${encodeURIComponent(caseId)}&setup=advice-saved`);
+}
+
+export async function updateModerationAdviceTitleAction(formData: FormData) {
+  const { actor, admin } = await getModerationAdviceActionContext("advice-error");
+  const caseId = getFormText(formData, "caseId");
+  const title = getFormText(formData, "title");
+
+  if (!isUuidText(caseId)) {
+    redirect("/?section=advice&setup=advice-missing");
+  }
+
+  if (title.length < 2 || title.length > 140) {
+    redirect(`/?section=advice&advice=${encodeURIComponent(caseId)}&setup=advice-title`);
+  }
+
+  const { error } = await admin
+    .from("moderation_advice_cases")
+    .update({ title })
+    .eq("id", caseId);
+
+  if (error) {
+    console.error("moderation advice title failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect(`/?section=advice&advice=${encodeURIComponent(caseId)}&setup=advice-error`);
+  }
+
+  await writeModerationAdviceLog(admin, {
+    action: "titel_geaendert",
+    actorId: actor.id,
+    caseId,
+    details: { actorName: actor.name, title },
+  });
+
+  revalidatePath("/", "layout");
+  redirect(`/?section=advice&advice=${encodeURIComponent(caseId)}&setup=advice-title-saved`);
+}
+
+export async function executeModerationAdviceAction(formData: FormData) {
+  const { actor } = await getModerationAdviceActionContext("advice-error");
+  const caseId = getFormText(formData, "caseId");
+  const reasonOverride = getFormText(formData, "reasonOverride");
+
+  if (!isUuidText(caseId)) {
+    redirect("/?section=advice&setup=advice-missing");
+  }
+
+  try {
+    await queueModerationAdviceExecution({
+      actorId: actor.id,
+      actorName: actor.name,
+      caseId,
+      reasonOverride,
+    });
+  } catch (error) {
+    console.error("moderation advice execute failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    redirect(`/?section=advice&advice=${encodeURIComponent(caseId)}&setup=advice-execute-failed`);
+  }
+
+  revalidatePath("/", "layout");
+  redirect(`/?section=advice&advice=${encodeURIComponent(caseId)}&setup=advice-queued`);
+}
+
 export async function activateLockdownAction(formData: FormData) {
   if (!hasSupabasePublicEnv()) {
     redirect("/?section=settings&setup=missing-supabase");
@@ -2362,6 +2651,242 @@ function getFormList(formData: FormData, key: string) {
     .getAll(key)
     .map((value) => String(value ?? "").trim())
     .filter(Boolean);
+}
+
+async function getModerationAdviceActionContext(errorSetup: string) {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
+    redirect("/?section=advice&setup=missing-supabase");
+  }
+
+  const supabase = await createSupabaseServerClient();
+
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect("/?section=advice&setup=advice-aal2");
+  }
+
+  if (!(await hasPermission(supabase, "moderation.manage"))) {
+    redirect("/?section=advice&setup=advice-denied");
+  }
+
+  try {
+    const actor = await getActionActor(supabase);
+
+    return {
+      actor,
+      admin: getSupabaseAdminClient(),
+      supabase,
+    };
+  } catch (error) {
+    console.error("moderation advice actor lookup failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    redirect(`/?section=advice&setup=${errorSetup}`);
+  }
+}
+
+function getAdviceUploadFiles(formData: FormData) {
+  return [
+    ...formData.getAll("screenshots"),
+    ...formData.getAll("screenshot"),
+    ...formData.getAll("evidenceFiles"),
+    ...formData.getAll("evidenceFile"),
+  ].filter((value): value is File => value instanceof File && value.size > 0);
+}
+
+function areAdviceUploadTypesAllowed(files: File[]) {
+  return files.every((file) => {
+    const contentType = file.type.toLowerCase();
+    const extension = getFileExtension(file.name);
+
+    if (contentType && ADVICE_FILE_CONTENT_TYPES.has(contentType)) {
+      return true;
+    }
+
+    return [".csv", ".json", ".md", ".pdf", ".txt"].includes(extension);
+  });
+}
+
+async function insertModerationAdviceEvidence(input: {
+  actorId: string;
+  admin: SupabaseAdminClient;
+  caseId: string;
+  files: File[];
+  formData: FormData;
+}) {
+  const messageLinks = getFormText(input.formData, "messageLinks")
+    .split(/[\s,]+/)
+    .map((link) => link.trim())
+    .filter(Boolean)
+    .filter(isHttpUrl)
+    .slice(0, 20);
+  const evidenceNotes = getFormText(input.formData, "evidenceNotes");
+
+  for (const link of messageLinks) {
+    const { error } = await input.admin.from("moderation_advice_evidence").insert({
+      advice_case_id: input.caseId,
+      evidence_type: "message_link",
+      external_url: link,
+      label: "Discord Message-Link",
+      metadata: { source: "form" },
+      uploaded_by: input.actorId,
+    });
+
+    if (error) {
+      throw new Error(`message link evidence failed: ${error.message}`);
+    }
+
+    await writeModerationAdviceLog(input.admin, {
+      action: "beleg_hinzugefuegt",
+      actorId: input.actorId,
+      caseId: input.caseId,
+      details: { evidenceType: "message_link", link },
+    });
+  }
+
+  if (evidenceNotes) {
+    const { error } = await input.admin.from("moderation_advice_evidence").insert({
+      advice_case_id: input.caseId,
+      description: evidenceNotes,
+      evidence_type: "note",
+      label: "Belegnotiz",
+      metadata: { note: evidenceNotes, source: "form" },
+      uploaded_by: input.actorId,
+    });
+
+    if (error) {
+      throw new Error(`note evidence failed: ${error.message}`);
+    }
+
+    await writeModerationAdviceLog(input.admin, {
+      action: "beleg_hinzugefuegt",
+      actorId: input.actorId,
+      caseId: input.caseId,
+      details: { evidenceType: "note" },
+    });
+  }
+
+  for (const file of input.files) {
+    await uploadModerationAdviceEvidenceFile(input.admin, {
+      actorId: input.actorId,
+      caseId: input.caseId,
+      file,
+    });
+  }
+}
+
+async function uploadModerationAdviceEvidenceFile(
+  admin: SupabaseAdminClient,
+  input: { actorId: string; caseId: string; file: File },
+) {
+  const originalName = sanitizeFileName(input.file.name || "beleg.bin");
+  const contentType = input.file.type || "application/octet-stream";
+  const storagePath = `moderation-advice/${input.caseId}/${crypto.randomUUID()}-${originalName}`;
+  const fileBody = new Uint8Array(await input.file.arrayBuffer());
+  const extractedText = extractSafeEvidenceText(input.file, fileBody);
+  const { error: uploadError } = await admin.storage
+    .from(FILE_BUCKET)
+    .upload(storagePath, fileBody, {
+      contentType,
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw new Error(`advice evidence storage failed: ${uploadError.message}`);
+  }
+
+  const evidenceType = contentType.toLowerCase().startsWith("image/")
+    ? "screenshot"
+    : "file";
+  const { error } = await admin.from("moderation_advice_evidence").insert({
+    advice_case_id: input.caseId,
+    evidence_type: evidenceType,
+    label: originalName,
+    metadata: {
+      contentType,
+      extractedText,
+      originalName,
+      size: input.file.size,
+      storagePath,
+    },
+    uploaded_by: input.actorId,
+  });
+
+  if (error) {
+    await admin.storage.from(FILE_BUCKET).remove([storagePath]);
+    throw new Error(`advice evidence write failed: ${error.message}`);
+  }
+
+  await writeModerationAdviceLog(admin, {
+    action: "beleg_hinzugefuegt",
+    actorId: input.actorId,
+    caseId: input.caseId,
+    details: {
+      contentType,
+      evidenceType,
+      originalName,
+      size: input.file.size,
+    },
+  });
+}
+
+function extractSafeEvidenceText(file: File, body: Uint8Array) {
+  const contentType = file.type.toLowerCase();
+  const extension = getFileExtension(file.name);
+  const textLike =
+    ADVICE_TEXT_CONTENT_TYPES.has(contentType) ||
+    [".csv", ".json", ".md", ".txt"].includes(extension);
+
+  if (!textLike || body.byteLength > 200 * 1024) {
+    return "";
+  }
+
+  return new TextDecoder("utf-8", { fatal: false })
+    .decode(body)
+    .replace(/\u0000/g, "")
+    .slice(0, 12_000);
+}
+
+async function getAdviceTargetMember(
+  admin: SupabaseAdminClient,
+  memberId: string,
+) {
+  const { data, error } = await admin
+    .from("members")
+    .select("id,name,discord_id,discord_username,discord_display_name")
+    .eq("id", memberId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data ? asActionObject(data) : null;
+}
+
+function isHttpUrl(value: string) {
+  try {
+    const url = new URL(value);
+
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeFileName(value: string) {
+  const sanitized = value
+    .normalize("NFKD")
+    .replace(/[^\w.\-]+/g, "_")
+    .replace(/_+/g, "_")
+    .slice(0, 120);
+
+  return sanitized || "beleg.bin";
+}
+
+function getFileExtension(value: string) {
+  const match = value.toLowerCase().match(/\.[a-z0-9]+$/);
+
+  return match?.[0] ?? "";
 }
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;

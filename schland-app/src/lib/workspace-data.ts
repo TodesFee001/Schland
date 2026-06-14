@@ -275,6 +275,61 @@ export type WorkspaceModerationEvent = {
   totalDuration: string;
 };
 
+export type WorkspaceModerationAdviceEvidence = {
+  createdAt: string;
+  description: string;
+  evidenceType: string;
+  externalUrl: string;
+  id: string;
+  label: string;
+  metadata: Record<string, unknown>;
+  signedUrl: string;
+};
+
+export type WorkspaceModerationAdviceLog = {
+  action: string;
+  createdAt: string;
+  details: Record<string, unknown>;
+  id: string;
+};
+
+export type WorkspaceModerationAdviceCase = {
+  affectedPeople: string;
+  aiOutput: Record<string, unknown>;
+  archivedAt: string;
+  behaviorSummary: string;
+  caseNumber: string;
+  confidence: number | null;
+  createdAt: string;
+  desiredOutcome: string;
+  evidence: WorkspaceModerationAdviceEvidence[];
+  evidenceSummary: Record<string, unknown>;
+  executed: boolean;
+  executedAt: string;
+  executionEventId: string;
+  id: string;
+  incidentAt: string;
+  internalNotes: string;
+  legalBasisSnapshot: Record<string, unknown>;
+  logs: WorkspaceModerationAdviceLog[];
+  modelName: string;
+  modelProvider: string;
+  priorHistorySnapshot: Record<string, unknown>;
+  recommendedAction: string;
+  recommendedEventType: string;
+  recommendedReason: string;
+  severityScore: number | null;
+  situationText: string;
+  status: string;
+  statusLabel: string;
+  targetDiscordId: string;
+  targetDiscordUsername: string;
+  targetMemberId: string;
+  targetName: string;
+  title: string;
+  updatedAt: string;
+};
+
 export type WorkspaceLogRow = {
   action: string;
   id: string;
@@ -358,6 +413,7 @@ export type WorkspaceData = {
   lockdown: LockdownStatus;
   members: WorkspaceMember[];
   ministryRoles: WorkspaceRepresentationMinistryRole[];
+  moderationAdviceCases: WorkspaceModerationAdviceCase[];
   moderationEvents: WorkspaceModerationEvent[];
   permissions: WorkspacePermissionOption[];
   representationEligibilities: WorkspaceRepresentationEligibility[];
@@ -851,6 +907,85 @@ export const demoWorkspaceData: WorkspaceData = {
       remainingDuration: "-",
     },
   ],
+  moderationAdviceCases: [
+    {
+      affectedPeople: "Textkanal Allgemein",
+      aiOutput: {
+        alternatives: ["Warn mit manueller Nachkontrolle", "Weitere Screenshots nachfordern"],
+        confidence: 0.71,
+        humanExplanation:
+          "Der Vorfall wirkt wie ein klarer leichter Regelverstoss, die Belege sind aber nur teilweise vollstaendig.",
+        legalBasis: [
+          {
+            reason: "Chatverhalten und respektvoller Umgang betroffen.",
+            section: "Regelwerk Schland § 3",
+            source: "Regelwerk Schland",
+          },
+        ],
+        recommendedAction: "warn",
+        riskFlags: ["Belege nur auszugsweise vorhanden"],
+      },
+      archivedAt: "",
+      behaviorSummary: "Wiederholte Provokation und leichter Spam",
+      caseNumber: "SANK-20260614-0001",
+      confidence: 0.71,
+      createdAt: "Heute, 13:45",
+      desiredOutcome: "Warn pruefen",
+      evidence: [
+        {
+          createdAt: "Heute, 13:45",
+          description: "",
+          evidenceType: "message_link",
+          externalUrl: "https://discord.com/channels/demo/demo/demo",
+          id: "advice-evidence-demo-1",
+          label: "Discord Message-Link",
+          metadata: {},
+          signedUrl: "",
+        },
+      ],
+      evidenceSummary: {},
+      executed: false,
+      executedAt: "",
+      executionEventId: "",
+      id: "advice-demo-1",
+      incidentAt: "Heute, 13:20",
+      internalNotes: "Demo-Fall",
+      legalBasisSnapshot: {},
+      logs: [
+        {
+          action: "beratung_erstellt",
+          createdAt: "Heute, 13:45",
+          details: {},
+          id: "advice-log-demo-1",
+        },
+      ],
+      modelName: "demo",
+      modelProvider: "demo",
+      priorHistorySnapshot: {
+        rows: [
+          {
+            eventType: "warn",
+            reason: "Leichte Stoerung",
+            startedAt: "2026-06-10T12:00:00.000Z",
+          },
+        ],
+      },
+      recommendedAction: "warn",
+      recommendedEventType: "warn",
+      recommendedReason: "Warn wegen wiederholter leichter Stoerung",
+      severityScore: 32,
+      situationText:
+        "Nutzer hat trotz Hinweis mehrfach im falschen Kanal provoziert.",
+      status: "advice_ready",
+      statusLabel: "Empfehlung bereit",
+      targetDiscordId: "842109348219",
+      targetDiscordUsername: "elyx",
+      targetMemberId: "MEM-1007",
+      targetName: "Elias Kramer",
+      title: "Provokation im Textkanal",
+      updatedAt: "Heute, 13:48",
+    },
+  ],
   logs: [
     {
       id: "log-demo-1",
@@ -1012,6 +1147,7 @@ export async function getWorkspaceData(
       permissionsResult,
       discordInvitesResult,
       moderationEventsResult,
+      moderationAdviceCasesResult,
       profilesResult,
       intakeLogsResult,
       logsResult,
@@ -1192,6 +1328,67 @@ export async function getWorkspaceData(
         )
         .order("started_at", { ascending: false }),
       supabase
+        .from("moderation_advice_cases")
+        .select(
+          `
+            id,
+            case_number,
+            title,
+            status,
+            target_member_id,
+            target_discord_user_id,
+            target_discord_username,
+            submitted_by,
+            created_at,
+            updated_at,
+            incident_at,
+            situation_text,
+            behavior_summary,
+            affected_people,
+            desired_outcome,
+            internal_notes,
+            prior_history_snapshot,
+            legal_basis_snapshot,
+            evidence_summary,
+            ai_output,
+            model_provider,
+            model_name,
+            recommended_action,
+            recommended_event_type,
+            recommended_reason,
+            confidence,
+            severity_score,
+            execution_event_id,
+            executed_by,
+            executed_at,
+            archived_at,
+            target_member:members!moderation_advice_cases_target_member_id_fkey(
+              id,
+              name,
+              discord_id,
+              discord_username,
+              discord_display_name
+            ),
+            moderation_advice_evidence(
+              id,
+              evidence_type,
+              label,
+              description,
+              external_url,
+              metadata,
+              created_at
+            ),
+            moderation_advice_logs(
+              id,
+              action,
+              details,
+              created_at
+            )
+          `,
+        )
+        .order("updated_at", { ascending: false })
+        .limit(120),
+      supabase
         .from("profiles")
         .select(
           `
@@ -1331,6 +1528,7 @@ export async function getWorkspaceData(
     collectWarning(warnings, permissionsResult.error?.message);
     collectWarning(warnings, discordInvitesResult.error?.message);
     collectWarning(warnings, moderationEventsResult.error?.message);
+    collectWarningIfActionable(warnings, moderationAdviceCasesResult.error?.message);
     collectWarning(warnings, profilesResult.error?.message);
     collectWarning(warnings, intakeLogsResult.error?.message);
     collectWarning(warnings, logsResult.error?.message);
@@ -1371,6 +1569,9 @@ export async function getWorkspaceData(
         representationEligibilitiesResult.data ?? [],
       ),
       discordInvites: mapDiscordInvites(discordInvitesResult.data ?? []),
+      moderationAdviceCases: mapModerationAdviceCases(
+        moderationAdviceCasesResult.data ?? [],
+      ),
       moderationEvents: mapModerationEvents(moderationEventsResult.data ?? []),
       users: mapUsers(profilesResult.data ?? []),
       logs: mapLogs(logsResult.data ?? []),
@@ -2026,6 +2227,89 @@ function mapModerationEvents(rows: Record<string, unknown>[]): WorkspaceModerati
   .filter((event): event is WorkspaceModerationEvent => Boolean(event));
 }
 
+function mapModerationAdviceCases(
+  rows: Record<string, unknown>[],
+): WorkspaceModerationAdviceCase[] {
+  return rows.map((row) => {
+    const targetMember = asObject(row.target_member);
+    const aiOutput = asObject(row.ai_output);
+    const evidenceRows = asArray(row.moderation_advice_evidence);
+    const logRows = asArray(row.moderation_advice_logs);
+    const status = String(row.status ?? "draft");
+    const recommendedAction = String(
+      row.recommended_action ?? aiOutput.recommendedAction ?? "",
+    );
+
+    return {
+      affectedPeople: String(row.affected_people ?? ""),
+      aiOutput,
+      archivedAt: formatDate(String(row.archived_at ?? "")),
+      behaviorSummary: String(row.behavior_summary ?? ""),
+      caseNumber: String(row.case_number ?? "-"),
+      confidence: readOptionalNumber(row.confidence),
+      createdAt: formatDate(String(row.created_at ?? "")),
+      desiredOutcome: String(row.desired_outcome ?? ""),
+      evidence: evidenceRows
+        .map((evidence) => ({
+          createdAt: formatDate(String(evidence.created_at ?? "")),
+          description: String(evidence.description ?? ""),
+          evidenceType: String(evidence.evidence_type ?? "other"),
+          externalUrl: String(evidence.external_url ?? ""),
+          id: String(evidence.id ?? ""),
+          label: String(evidence.label ?? "Beleg"),
+          metadata: asObject(evidence.metadata),
+          signedUrl: "",
+        }))
+        .sort((left, right) => left.createdAt.localeCompare(right.createdAt)),
+      evidenceSummary: asObject(row.evidence_summary),
+      executed: Boolean(row.execution_event_id || row.executed_at || status === "executed"),
+      executedAt: formatDate(String(row.executed_at ?? "")),
+      executionEventId: String(row.execution_event_id ?? ""),
+      id: String(row.id ?? ""),
+      incidentAt: formatDate(String(row.incident_at ?? "")),
+      internalNotes: String(row.internal_notes ?? ""),
+      legalBasisSnapshot: asObject(row.legal_basis_snapshot),
+      logs: logRows
+        .map((log) => ({
+          action: String(log.action ?? ""),
+          createdAt: formatDate(String(log.created_at ?? "")),
+          details: asObject(log.details),
+          id: String(log.id ?? ""),
+        }))
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
+      modelName: String(row.model_name ?? ""),
+      modelProvider: String(row.model_provider ?? ""),
+      priorHistorySnapshot: asObject(row.prior_history_snapshot),
+      recommendedAction,
+      recommendedEventType: String(row.recommended_event_type ?? ""),
+      recommendedReason: String(row.recommended_reason ?? ""),
+      severityScore: readOptionalNumber(row.severity_score),
+      situationText: String(row.situation_text ?? ""),
+      status,
+      statusLabel: mapAdviceStatus(status),
+      targetDiscordId: String(
+        targetMember.discord_id ?? row.target_discord_user_id ?? "-",
+      ),
+      targetDiscordUsername: String(
+        targetMember.discord_display_name ??
+          targetMember.discord_username ??
+          row.target_discord_username ??
+          "-",
+      ),
+      targetMemberId: String(targetMember.id ?? row.target_member_id ?? ""),
+      targetName: String(
+        targetMember.name ??
+          targetMember.discord_display_name ??
+          row.target_discord_username ??
+          row.target_discord_user_id ??
+          "Unbekannt",
+      ),
+      title: String(row.title ?? "Neue Beratung"),
+      updatedAt: formatDate(String(row.updated_at ?? "")),
+    };
+  });
+}
+
 function mapUsers(rows: Record<string, unknown>[]): WorkspaceUserSummary {
   return rows.reduce<WorkspaceUserSummary>(
     (summary, row) => {
@@ -2480,6 +2764,21 @@ function mapModerationStatus(status: string) {
     pending: "Wartet",
     recorded: "Erfasst",
     running: "Laeuft",
+  };
+
+  return labels[status] ?? status;
+}
+
+function mapAdviceStatus(status: string) {
+  const labels: Record<string, string> = {
+    advice_ready: "Empfehlung bereit",
+    analyzing: "KI prueft",
+    cancelled: "Abgebrochen",
+    draft: "Entwurf",
+    executed: "Ausgefuehrt",
+    failed: "Fehler",
+    queued: "Bot wartet",
+    saved: "Gespeichert",
   };
 
   return labels[status] ?? status;

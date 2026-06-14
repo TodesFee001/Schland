@@ -12,6 +12,8 @@ export type EnvironmentStatus = {
   googleDrivePrivateKey: boolean;
   googleDriveRootFolderId: boolean;
   googleDocsTemplateId: boolean;
+  openAiApiKey: boolean;
+  openAiModel: boolean;
   supabaseUrl: boolean;
   supabasePublishableKey: boolean;
   supabaseServiceRole: boolean;
@@ -42,6 +44,8 @@ export function getEnvironmentStatus(): EnvironmentStatus {
       process.env.GOOGLE_DOCS_TEMPLATE_ID ??
         process.env.GOOGLE_DRIVE_DOCS_TEMPLATE_ID,
     ),
+    openAiApiKey: Boolean(process.env.OPENAI_API_KEY),
+    openAiModel: Boolean(process.env.OPENAI_MODEL),
     supabaseUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
     supabasePublishableKey: Boolean(getSupabasePublishableKey()),
     supabaseServiceRole: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),

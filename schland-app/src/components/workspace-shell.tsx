@@ -4,9 +4,11 @@ import {
   Activity,
   Bell,
   Bot,
+  BrainCircuit,
   CalendarOff,
   CheckCircle2,
   Clock,
+  Copy,
   Database,
   Download,
   Flame,
@@ -25,6 +27,7 @@ import {
   Server,
   Settings,
   Shield,
+  Sparkles,
   RefreshCw,
   Siren,
   Trash2,
@@ -41,11 +44,13 @@ import { useRouter } from "next/navigation";
 
 import {
   activateLockdownAction,
+  analyzeModerationAdviceCaseAction,
   createGoogleDocAction,
   createDiscordInviteRequestAction,
   createFolderAction,
   deactivateLockdownAction,
   deleteDiscordInviteRequestAction,
+  createModerationAdviceCaseAction,
   createMemberAction,
   deleteFileAction,
   deleteFolderAction,
@@ -56,10 +61,12 @@ import {
   linkMemberFileAction,
   moveFileAction,
   openMemberCaseAction,
+  executeModerationAdviceAction,
   runModerationAction,
   runDiscordManualSyncAction,
   runDriveManualSyncAction,
   saveCategoryAction,
+  saveModerationAdviceCaseAction,
   saveRepresentationEligibilityAction,
   saveRepresentationMinistryRoleAction,
   saveRoleAction,
@@ -71,6 +78,7 @@ import {
   setUserRoleAction,
   unlinkMemberFileAction,
   updateMemberCaseAction,
+  updateModerationAdviceTitleAction,
   updateModerationEventAction,
   uploadMemberProfileImageAction,
   uploadFileAction,
@@ -93,6 +101,7 @@ import type {
   WorkspaceLogRow,
   WorkspaceMember,
   WorkspaceMemberAbsence,
+  WorkspaceModerationAdviceCase,
   WorkspaceModerationEvent,
   WorkspacePermissionOption,
   WorkspaceRepresentationEligibility,
@@ -113,6 +122,7 @@ type SectionId =
   | "representation"
   | "activity"
   | "moderation"
+  | "advice"
   | "sync"
   | "settings";
 
@@ -126,6 +136,7 @@ type WorkspaceShellProps = {
   authStatus: AuthStatus;
   dashboardSnapshot: DashboardSnapshot;
   environmentStatus: EnvironmentStatus;
+  initialSelectedAdviceCaseId?: string;
   initialSelectedMemberId?: string;
   initialSection?: string;
   setupNotice?: SetupNotice;
@@ -162,6 +173,7 @@ const sections: Section[] = [
   { id: "representation", label: "Amtsvertretung", icon: UserCheck },
   { id: "activity", label: "Aktivitaet", icon: Activity },
   { id: "moderation", label: "Moderation", icon: Shield },
+  { id: "advice", label: "KI-Sanktionsberater", icon: BrainCircuit },
   { id: "sync", label: "Synchronisation", icon: Bot },
   { id: "settings", label: "Einstellungen", icon: Settings },
 ];
@@ -186,6 +198,7 @@ export function WorkspaceShell({
   authStatus,
   dashboardSnapshot,
   environmentStatus,
+  initialSelectedAdviceCaseId,
   initialSelectedMemberId,
   initialSection,
   setupNotice,
@@ -196,6 +209,12 @@ export function WorkspaceShell({
   const [activeSection, setActiveSection] = useState<SectionId>(
     isSectionId(initialSection) ? initialSection : "dashboard",
   );
+  const openedAdviceCaseId = workspaceData.moderationAdviceCases.some(
+    (adviceCase) => adviceCase.id === initialSelectedAdviceCaseId,
+  )
+    ? String(initialSelectedAdviceCaseId)
+    : "";
+  const [selectedAdviceCaseId, setSelectedAdviceCaseId] = useState("");
   const openedMemberId = members.some((member) => member.id === initialSelectedMemberId)
     ? String(initialSelectedMemberId)
     : "";
@@ -214,6 +233,11 @@ export function WorkspaceShell({
   )
     ? selectedMemberOverride
     : openedMemberId || members[0]?.id || "";
+  const selectedAdviceId = workspaceData.moderationAdviceCases.some(
+    (adviceCase) => adviceCase.id === selectedAdviceCaseId,
+  )
+    ? selectedAdviceCaseId
+    : openedAdviceCaseId || workspaceData.moderationAdviceCases[0]?.id || "";
 
   const filteredMembers = useMemo(() => {
     const query = memberSearch.trim().toLowerCase();
@@ -676,6 +700,16 @@ export function WorkspaceShell({
             members={members}
             mfaReady={mfaReady}
             moderationEvents={workspaceData.moderationEvents}
+          />
+        );
+      case "advice":
+        return (
+          <ModerationAdviceSection
+            adviceCases={workspaceData.moderationAdviceCases}
+            members={members}
+            mfaReady={mfaReady}
+            selectedAdviceId={selectedAdviceId}
+            setSelectedAdviceId={setSelectedAdviceCaseId}
           />
         );
       case "sync":
@@ -4905,6 +4939,686 @@ function ModerationSection({
   );
 }
 
+function ModerationAdviceSection({
+  adviceCases,
+  members,
+  mfaReady,
+  selectedAdviceId,
+  setSelectedAdviceId,
+}: {
+  adviceCases: WorkspaceModerationAdviceCase[];
+  members: WorkspaceMember[];
+  mfaReady: boolean;
+  selectedAdviceId: string;
+  setSelectedAdviceId: (id: string) => void;
+}) {
+  const [adviceSearch, setAdviceSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const moderationMembers = members.filter(
+    (member) => member.discordId && member.discordId !== "-",
+  );
+  const selectedAdvice =
+    adviceCases.find((adviceCase) => adviceCase.id === selectedAdviceId) ??
+    adviceCases[0] ??
+    null;
+  const query = adviceSearch.trim().toLowerCase();
+  const filteredAdviceCases = adviceCases.filter((adviceCase) => {
+    const matchesStatus =
+      statusFilter === "all" || adviceCase.status === statusFilter;
+    const matchesQuery =
+      !query ||
+      [
+        adviceCase.caseNumber,
+        adviceCase.title,
+        adviceCase.targetName,
+        adviceCase.targetDiscordId,
+        adviceCase.recommendedAction,
+        adviceCase.statusLabel,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(query);
+
+    return matchesStatus && matchesQuery;
+  });
+  const adviceReadyCount = adviceCases.filter(
+    (adviceCase) => adviceCase.status === "advice_ready",
+  ).length;
+  const queuedCount = adviceCases.filter(
+    (adviceCase) => adviceCase.status === "queued",
+  ).length;
+  const executedCount = adviceCases.filter((adviceCase) => adviceCase.executed).length;
+  const canExecuteSelected =
+    Boolean(selectedAdvice) &&
+    mfaReady &&
+    ["warn", "kick", "ban"].includes(selectedAdvice?.recommendedAction ?? "") &&
+    Boolean(selectedAdvice?.targetDiscordId && selectedAdvice.targetDiscordId !== "-") &&
+    !selectedAdvice?.executionEventId &&
+    selectedAdvice?.status !== "queued" &&
+    selectedAdvice?.status !== "executed";
+
+  return (
+    <div className="grid gap-5">
+      <section className="border border-[var(--line-strong)] bg-[var(--surface)]">
+        <SectionHeader icon={BrainCircuit} title="KI-Sanktionsberater" />
+        <form
+          action={createModerationAdviceCaseAction}
+          encType="multipart/form-data"
+          className="grid gap-4 border-t border-[var(--line-strong)] p-4"
+        >
+          <fieldset disabled={!mfaReady} className="contents disabled:opacity-60">
+            <div className="grid gap-3 lg:grid-cols-6">
+              <label className="grid gap-2 lg:col-span-2">
+                <span className="text-xs font-medium uppercase text-neutral-500">
+                  Titel
+                </span>
+                <input
+                  name="title"
+                  placeholder="Optionaler Arbeitstitel"
+                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                />
+              </label>
+              <label className="grid gap-2 lg:col-span-2">
+                <span className="text-xs font-medium uppercase text-neutral-500">
+                  Zielperson
+                </span>
+                <select
+                  name="targetMemberId"
+                  defaultValue=""
+                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <option value="">Aus Akte waehlen</option>
+                  {moderationMembers.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.name} ({member.discordId})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-2 lg:col-span-1">
+                <span className="text-xs font-medium uppercase text-neutral-500">
+                  Discord-ID
+                </span>
+                <input
+                  name="targetDiscordUserId"
+                  inputMode="numeric"
+                  placeholder="Falls vorhanden"
+                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                />
+              </label>
+              <label className="grid gap-2 lg:col-span-1">
+                <span className="text-xs font-medium uppercase text-neutral-500">
+                  Anzeigename
+                </span>
+                <input
+                  name="targetDiscordUsername"
+                  placeholder="Fallback"
+                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                />
+              </label>
+              <label className="grid gap-2 lg:col-span-2">
+                <span className="text-xs font-medium uppercase text-neutral-500">
+                  Vorfallszeitpunkt
+                </span>
+                <input
+                  name="incidentAt"
+                  type="datetime-local"
+                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                />
+              </label>
+              <label className="grid gap-2 lg:col-span-4">
+                <span className="text-xs font-medium uppercase text-neutral-500">
+                  Betroffene Personen
+                </span>
+                <input
+                  name="affectedPeople"
+                  placeholder="Personen, Rollen, Kanaele"
+                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                />
+              </label>
+              <label className="grid gap-2 lg:col-span-3">
+                <span className="text-xs font-medium uppercase text-neutral-500">
+                  Situationsbeschreibung
+                </span>
+                <textarea
+                  name="situationText"
+                  required
+                  minLength={20}
+                  rows={5}
+                  className="min-h-32 rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                />
+              </label>
+              <label className="grid gap-2 lg:col-span-3">
+                <span className="text-xs font-medium uppercase text-neutral-500">
+                  Konkretes Verhalten
+                </span>
+                <textarea
+                  name="behaviorSummary"
+                  required
+                  minLength={8}
+                  rows={5}
+                  className="min-h-32 rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                />
+              </label>
+              <label className="grid gap-2 lg:col-span-3">
+                <span className="text-xs font-medium uppercase text-neutral-500">
+                  Message-Links
+                </span>
+                <textarea
+                  name="messageLinks"
+                  rows={4}
+                  placeholder="Ein Link pro Zeile"
+                  className="min-h-24 rounded-md border border-[var(--line)] bg-white px-3 py-2 font-mono text-xs outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                />
+              </label>
+              <label className="grid gap-2 lg:col-span-3">
+                <span className="text-xs font-medium uppercase text-neutral-500">
+                  Belegnotiz
+                </span>
+                <textarea
+                  name="evidenceNotes"
+                  rows={4}
+                  className="min-h-24 rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                />
+              </label>
+              <label className="grid gap-2 lg:col-span-2">
+                <span className="text-xs font-medium uppercase text-neutral-500">
+                  Screenshots
+                </span>
+                <input
+                  name="screenshots"
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none file:mr-3 file:border-0 file:bg-[var(--surface-muted)] file:px-2 file:py-1 file:text-xs disabled:cursor-not-allowed disabled:opacity-45"
+                />
+              </label>
+              <label className="grid gap-2 lg:col-span-2">
+                <span className="text-xs font-medium uppercase text-neutral-500">
+                  Dateien
+                </span>
+                <input
+                  name="evidenceFiles"
+                  type="file"
+                  multiple
+                  accept="image/*,.pdf,.txt,.md,.csv,.json"
+                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none file:mr-3 file:border-0 file:bg-[var(--surface-muted)] file:px-2 file:py-1 file:text-xs disabled:cursor-not-allowed disabled:opacity-45"
+                />
+              </label>
+              <label className="grid gap-2 lg:col-span-2">
+                <span className="text-xs font-medium uppercase text-neutral-500">
+                  Gewuenschter Ausgang
+                </span>
+                <input
+                  name="desiredOutcome"
+                  placeholder="Optional, nicht bindend"
+                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                />
+              </label>
+              <label className="grid gap-2 lg:col-span-6">
+                <span className="text-xs font-medium uppercase text-neutral-500">
+                  Interne Notizen
+                </span>
+                <textarea
+                  name="internalNotes"
+                  rows={3}
+                  className="min-h-20 rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                />
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="submit"
+                name="intent"
+                value="create"
+                disabled={!mfaReady}
+                className="flex h-10 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-4 text-sm font-medium text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <Save className="size-4" aria-hidden="true" />
+                <span>Beratung erstellen</span>
+              </button>
+              <button
+                type="submit"
+                name="intent"
+                value="analyze"
+                disabled={!mfaReady}
+                className="flex h-10 items-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <Sparkles className="size-4" aria-hidden="true" />
+                <span>KI auswerten</span>
+              </button>
+            </div>
+          </fieldset>
+        </form>
+      </section>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_440px]">
+        <section className="border border-[var(--line-strong)] bg-[var(--surface)]">
+          <SectionHeader
+            icon={Sparkles}
+            title="KI-Ergebnis"
+            action={
+              selectedAdvice ? (
+                <span className="rounded-md bg-[var(--surface-muted)] px-2 py-1 font-mono text-xs font-medium text-neutral-600">
+                  {selectedAdvice.caseNumber}
+                </span>
+              ) : null
+            }
+          />
+          {selectedAdvice ? (
+            <div className="grid gap-4 border-t border-[var(--line)] p-4">
+              <div className="grid gap-3 md:grid-cols-4">
+                <DetailBox label="Status" value={selectedAdvice.statusLabel} />
+                <DetailBox
+                  label="Empfehlung"
+                  value={mapAdviceActionLabel(selectedAdvice.recommendedAction)}
+                />
+                <DetailBox
+                  label="Schwere"
+                  value={
+                    selectedAdvice.severityScore === null
+                      ? "-"
+                      : `${selectedAdvice.severityScore}/100`
+                  }
+                />
+                <DetailBox
+                  label="Vertrauen"
+                  value={formatAdviceConfidence(selectedAdvice.confidence)}
+                />
+              </div>
+
+              <form
+                action={updateModerationAdviceTitleAction}
+                className="grid gap-2 md:grid-cols-[1fr_auto]"
+              >
+                <input type="hidden" name="caseId" value={selectedAdvice.id} />
+                <input
+                  name="title"
+                  defaultValue={selectedAdvice.title}
+                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+                />
+                <button
+                  type="submit"
+                  disabled={!mfaReady}
+                  className="flex h-10 items-center justify-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <Pencil className="size-4" aria-hidden="true" />
+                  <span>Titel aendern</span>
+                </button>
+              </form>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <article className="border border-[var(--line)] bg-[var(--surface-muted)] p-3">
+                  <p className="text-xs font-medium uppercase text-neutral-500">
+                    Discord-Grund
+                  </p>
+                  <p className="mt-2 text-sm">{selectedAdvice.recommendedReason || "-"}</p>
+                </article>
+                <article className="border border-[var(--line)] bg-[var(--surface-muted)] p-3">
+                  <p className="text-xs font-medium uppercase text-neutral-500">
+                    Zielperson
+                  </p>
+                  <p className="mt-2 text-sm font-medium">{selectedAdvice.targetName}</p>
+                  <p className="font-mono text-xs text-neutral-500">
+                    {selectedAdvice.targetDiscordUsername} {"-"} {selectedAdvice.targetDiscordId}
+                  </p>
+                </article>
+              </div>
+
+              <AdviceTextBlock
+                label="Begruendung"
+                value={readAdviceText(selectedAdvice.aiOutput, "humanExplanation")}
+              />
+              <AdviceListBlock
+                label="Erkannte Verstoesse"
+                items={readAdviceObjectList(selectedAdvice.aiOutput, "ruleViolations").map(
+                  (item) =>
+                    `${readAdviceText(item, "ruleOrLaw")} - ${readAdviceText(
+                      item,
+                      "whyItApplies",
+                    )}`,
+                )}
+              />
+              <AdviceListBlock
+                label="Rechtsgrundlagen"
+                items={readAdviceObjectList(selectedAdvice.aiOutput, "legalBasis").map(
+                  (item) =>
+                    `${readAdviceText(item, "source")} ${readAdviceText(
+                      item,
+                      "section",
+                    )}: ${readAdviceText(item, "reason")}`,
+                )}
+              />
+              <AdviceListBlock
+                label="Fehlende Informationen"
+                items={readAdviceStringList(selectedAdvice.aiOutput, "missingInformation")}
+              />
+              <AdviceListBlock
+                label="Risikohinweise"
+                items={readAdviceStringList(selectedAdvice.aiOutput, "riskFlags")}
+              />
+              <AdviceListBlock
+                label="Alternativen"
+                items={readAdviceStringList(selectedAdvice.aiOutput, "alternatives")}
+              />
+
+              <div className="grid gap-3 border-t border-[var(--line)] pt-4 lg:grid-cols-3">
+                <form action={analyzeModerationAdviceCaseAction}>
+                  <input type="hidden" name="caseId" value={selectedAdvice.id} />
+                  <button
+                    type="submit"
+                    disabled={!mfaReady || selectedAdvice.status === "queued"}
+                    className="flex h-10 w-full items-center justify-center gap-2 rounded-md border border-[var(--line)] bg-white px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <RefreshCw className="size-4" aria-hidden="true" />
+                    <span>Neu auswerten</span>
+                  </button>
+                </form>
+                <form action={saveModerationAdviceCaseAction} className="grid gap-2">
+                  <input type="hidden" name="caseId" value={selectedAdvice.id} />
+                  <input
+                    type="hidden"
+                    name="recommendedReason"
+                    value={selectedAdvice.recommendedReason}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!mfaReady}
+                    className="flex h-10 w-full items-center justify-center gap-2 rounded-md border border-[var(--line)] bg-white px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <Save className="size-4" aria-hidden="true" />
+                    <span>Nur speichern</span>
+                  </button>
+                </form>
+                <form action={executeModerationAdviceAction} className="grid gap-2">
+                  <input type="hidden" name="caseId" value={selectedAdvice.id} />
+                  <textarea
+                    name="reasonOverride"
+                    defaultValue={selectedAdvice.recommendedReason}
+                    rows={2}
+                    className="min-h-16 rounded-md border border-[var(--line)] bg-white px-3 py-2 text-xs outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!canExecuteSelected}
+                    className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <Shield className="size-4" aria-hidden="true" />
+                    <span>Ausfuehren</span>
+                  </button>
+                </form>
+              </div>
+            </div>
+          ) : (
+            <div className="border-t border-[var(--line)] p-4 text-sm text-neutral-500">
+              Noch keine Beratung gespeichert.
+            </div>
+          )}
+        </section>
+
+        <section className="border border-[var(--line-strong)] bg-[var(--surface)]">
+          <SectionHeader icon={FileText} title="Detailansicht" />
+          {selectedAdvice ? (
+            <div className="grid gap-4 border-t border-[var(--line)] p-4 text-sm">
+              <AdviceTextBlock label="Situation" value={selectedAdvice.situationText} />
+              <AdviceTextBlock
+                label="Konkretes Verhalten"
+                value={selectedAdvice.behaviorSummary}
+              />
+              <AdviceListBlock
+                label="Verwendete Belege"
+                items={selectedAdvice.evidence.map((evidence) =>
+                  [
+                    mapEvidenceTypeLabel(evidence.evidenceType),
+                    evidence.label,
+                    evidence.externalUrl || readAdviceText(evidence.metadata, "originalName"),
+                  ]
+                    .filter(Boolean)
+                    .join(" - "),
+                )}
+              />
+              <AdviceListBlock
+                label="Fruehere Warns, Bans und Kicks"
+                items={readSnapshotRows(selectedAdvice.priorHistorySnapshot).map((row) =>
+                  [
+                    readAdviceText(row, "eventType"),
+                    readAdviceText(row, "startedAt"),
+                    readAdviceText(row, "reason"),
+                  ]
+                    .filter(Boolean)
+                    .join(" - "),
+                )}
+              />
+              <AdviceListBlock
+                label="Geladene Regelwerke"
+                items={readSnapshotDocuments(selectedAdvice.legalBasisSnapshot).map((doc) =>
+                  [
+                    readAdviceText(doc, "source"),
+                    readAdviceText(doc, "documentName"),
+                    readAdviceText(doc, "revision") || readAdviceText(doc, "modifiedTime"),
+                  ]
+                    .filter(Boolean)
+                    .join(" - "),
+                )}
+              />
+              <div className="grid gap-2">
+                <p className="text-xs font-medium uppercase text-neutral-500">
+                  Ereignisprotokoll
+                </p>
+                <div className="grid gap-2">
+                  {selectedAdvice.logs.length > 0 ? (
+                    selectedAdvice.logs.slice(0, 8).map((log) => (
+                      <div
+                        key={log.id}
+                        className="border border-[var(--line)] bg-[var(--surface-muted)] p-2"
+                      >
+                        <div className="font-medium">
+                          {mapAdviceLogAction(log.action)}
+                        </div>
+                        <div className="text-xs text-neutral-500">{log.createdAt}</div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-neutral-500">Noch kein Protokoll.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="border-t border-[var(--line)] p-4 text-sm text-neutral-500">
+              Keine Fallakte ausgewaehlt.
+            </div>
+          )}
+        </section>
+      </div>
+
+      <section className="border border-[var(--line-strong)] bg-[var(--surface)]">
+        <SectionHeader
+          icon={FileText}
+          title="Gespeicherte Beratungen"
+          action={
+            <span className="rounded-md bg-[var(--surface-muted)] px-2 py-1 text-xs font-medium text-neutral-600">
+              {formatNumber(adviceCases.length)}
+            </span>
+          }
+        />
+        <div className="grid gap-3 border-t border-[var(--line)] p-4 md:grid-cols-4">
+          {[
+            ["Bereit", adviceReadyCount],
+            ["Queue", queuedCount],
+            ["Ausgefuehrt", executedCount],
+            ["Gesamt", adviceCases.length],
+          ].map(([label, value]) => (
+            <article
+              key={label}
+              className="border border-[var(--line)] bg-[var(--surface-muted)] p-3"
+            >
+              <p className="text-sm text-neutral-500">{label}</p>
+              <p className="mt-1 font-mono text-2xl font-bold">
+                {formatNumber(Number(value))}
+              </p>
+            </article>
+          ))}
+        </div>
+        <div className="grid gap-3 border-t border-[var(--line)] p-4 md:grid-cols-[1fr_220px]">
+          <label className="grid gap-2">
+            <span className="text-xs font-medium uppercase text-neutral-500">
+              Suche
+            </span>
+            <div className="flex h-10 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3">
+              <Search className="size-4 text-neutral-500" aria-hidden="true" />
+              <input
+                value={adviceSearch}
+                onChange={(event) => setAdviceSearch(event.target.value)}
+                placeholder="Aktenzeichen, Titel, Zielperson"
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+              />
+            </div>
+          </label>
+          <label className="grid gap-2">
+            <span className="text-xs font-medium uppercase text-neutral-500">
+              Status
+            </span>
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+            >
+              <option value="all">Alle</option>
+              <option value="draft">Entwurf</option>
+              <option value="analyzing">KI prueft</option>
+              <option value="advice_ready">Empfehlung bereit</option>
+              <option value="saved">Gespeichert</option>
+              <option value="queued">Bot wartet</option>
+              <option value="executed">Ausgefuehrt</option>
+              <option value="failed">Fehler</option>
+              <option value="cancelled">Abgebrochen</option>
+            </select>
+          </label>
+        </div>
+        <div className="overflow-x-auto border-t border-[var(--line)]">
+          <table className="w-full min-w-[1120px] text-sm">
+            <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">Aktenzeichen</th>
+                <th className="px-4 py-3 font-medium">Titel</th>
+                <th className="px-4 py-3 font-medium">Zielperson</th>
+                <th className="px-4 py-3 font-medium">Empfehlung</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Erstellt</th>
+                <th className="px-4 py-3 font-medium">Aktualisiert</th>
+                <th className="px-4 py-3 font-medium">Ausgefuehrt</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredAdviceCases.length > 0 ? (
+                filteredAdviceCases.map((adviceCase) => (
+                  <tr
+                    key={adviceCase.id}
+                    className="border-t border-[var(--line)]"
+                  >
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void navigator.clipboard?.writeText(adviceCase.caseNumber);
+                        }}
+                        className="flex items-center gap-2 font-mono text-xs font-bold text-[var(--foreground)]"
+                      >
+                        <Copy className="size-3.5" aria-hidden="true" />
+                        <span>{adviceCase.caseNumber}</span>
+                      </button>
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAdviceId(adviceCase.id)}
+                        className="text-left font-medium text-[var(--foreground)] underline-offset-2 hover:underline"
+                      >
+                        {adviceCase.title}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div>{adviceCase.targetName}</div>
+                      <div className="font-mono text-xs text-neutral-500">
+                        {adviceCase.targetDiscordId}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={[
+                          "rounded-md px-2 py-1 text-xs font-medium",
+                          getAdviceActionClass(adviceCase.recommendedAction),
+                        ].join(" ")}
+                      >
+                        {mapAdviceActionLabel(adviceCase.recommendedAction)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={[
+                          "rounded-md px-2 py-1 text-xs font-medium",
+                          getAdviceStatusClass(adviceCase.status),
+                        ].join(" ")}
+                      >
+                        {adviceCase.statusLabel}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">{adviceCase.createdAt}</td>
+                    <td className="px-4 py-3">{adviceCase.updatedAt}</td>
+                    <td className="px-4 py-3">
+                      {adviceCase.executed ? "Ja" : "Nein"}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <TableEmpty colSpan={8} label="Keine Beratungen gefunden." />
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function AdviceTextBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid gap-2">
+      <p className="text-xs font-medium uppercase text-neutral-500">{label}</p>
+      <p className="whitespace-pre-wrap rounded-md border border-[var(--line)] bg-[var(--surface-muted)] p-3 text-sm leading-6">
+        {value || "-"}
+      </p>
+    </div>
+  );
+}
+
+function AdviceListBlock({ label, items }: { label: string; items: string[] }) {
+  const visibleItems = items.map((item) => item.trim()).filter(Boolean);
+
+  return (
+    <div className="grid gap-2">
+      <p className="text-xs font-medium uppercase text-neutral-500">{label}</p>
+      {visibleItems.length > 0 ? (
+        <ul className="grid gap-2">
+          {visibleItems.map((item, index) => (
+            <li
+              key={`${label}-${index}-${item}`}
+              className="rounded-md border border-[var(--line)] bg-[var(--surface-muted)] p-3 text-sm leading-6"
+            >
+              {item}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="rounded-md border border-[var(--line)] bg-[var(--surface-muted)] p-3 text-sm text-neutral-500">
+          -
+        </p>
+      )}
+    </div>
+  );
+}
+
 function SyncSection({
   discordInvites,
   mfaReady,
@@ -5627,6 +6341,15 @@ function SettingsSection({
       </section>
 
       <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+        <SectionHeader icon={Bot} title="KI-Auswertung" />
+        <div className="grid gap-3 border-t border-[var(--line)] p-4 text-sm">
+          <StatusLine active={environmentStatus.openAiApiKey} label="OPENAI_API_KEY" />
+          <StatusLine active={environmentStatus.openAiModel} label="OPENAI_MODEL" />
+          <StatusLine active label="Regelwerke serverseitig" />
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)]">
         <SectionHeader icon={Database} title="Datenhaltung" />
         <div className="grid gap-3 border-t border-[var(--line)] p-4 text-sm">
           <StatusLine active label="Mitgliederakten per Discord-ID" />
@@ -5837,6 +6560,152 @@ function getModerationStatusClass(status: string) {
   return "bg-[var(--surface-muted)] text-neutral-600";
 }
 
+function mapAdviceActionLabel(action: string) {
+  const labels: Record<string, string> = {
+    ban: "Ban",
+    kick: "Kick",
+    manual_review: "Manuelle Pruefung",
+    no_action: "Keine Aktion",
+    warn: "Warn",
+  };
+
+  return labels[action] ?? (action || "-");
+}
+
+function getAdviceActionClass(action: string) {
+  if (action === "ban" || action === "kick") {
+    return "bg-red-50 text-[var(--danger)]";
+  }
+
+  if (action === "warn") {
+    return "bg-[#fff4d6] text-[var(--warning)]";
+  }
+
+  if (action === "manual_review") {
+    return "bg-blue-100 text-blue-800";
+  }
+
+  if (action === "no_action") {
+    return "bg-[var(--accent-soft)] text-[var(--accent-strong)]";
+  }
+
+  return "bg-[var(--surface-muted)] text-neutral-600";
+}
+
+function getAdviceStatusClass(status: string) {
+  if (status === "executed" || status === "advice_ready" || status === "saved") {
+    return "bg-[var(--accent-soft)] text-[var(--accent-strong)]";
+  }
+
+  if (status === "failed" || status === "cancelled") {
+    return "bg-red-50 text-[var(--danger)]";
+  }
+
+  if (status === "queued" || status === "analyzing") {
+    return "bg-[#fff4d6] text-[var(--warning)]";
+  }
+
+  return "bg-[var(--surface-muted)] text-neutral-600";
+}
+
+function formatAdviceConfidence(value: number | null) {
+  if (value === null || !Number.isFinite(value)) {
+    return "-";
+  }
+
+  return `${Math.round(value * 100)}%`;
+}
+
+function mapEvidenceTypeLabel(type: string) {
+  const labels: Record<string, string> = {
+    file: "Datei",
+    message_link: "Message-Link",
+    note: "Notiz",
+    other: "Nachweis",
+    screenshot: "Screenshot",
+  };
+
+  return labels[type] ?? type;
+}
+
+function mapAdviceLogAction(action: string) {
+  const labels: Record<string, string> = {
+    alte_sanktionen_abgefragt: "Alte Sanktionen abgefragt",
+    beleg_hinzugefuegt: "Beleg hinzugefuegt",
+    beratung_erstellt: "Beratung erstellt",
+    beratung_gespeichert: "Beratung gespeichert",
+    bot_befehl_erstellt: "Bot-Befehl erstellt",
+    bot_befehl_laeuft: "Bot-Befehl laeuft",
+    bot_erfolgreich_ausgefuehrt: "Bot erfolgreich ausgefuehrt",
+    bot_fehlgeschlagen: "Bot fehlgeschlagen",
+    ki_auswertung_abgeschlossen: "KI-Auswertung abgeschlossen",
+    ki_auswertung_gestartet: "KI-Auswertung gestartet",
+    rechtsgrundlagen_geladen: "Rechtsgrundlagen geladen",
+    titel_geaendert: "Titel geaendert",
+  };
+
+  return labels[action] ?? action;
+}
+
+function readAdviceText(source: unknown, key: string) {
+  if (typeof source !== "object" || source === null || Array.isArray(source)) {
+    return "";
+  }
+
+  return String((source as Record<string, unknown>)[key] ?? "").trim();
+}
+
+function readAdviceStringList(source: unknown, key: string) {
+  if (typeof source !== "object" || source === null || Array.isArray(source)) {
+    return [];
+  }
+
+  const value = (source as Record<string, unknown>)[key];
+
+  return Array.isArray(value)
+    ? value.map((item) => String(item ?? "").trim()).filter(Boolean)
+    : [];
+}
+
+function readAdviceObjectList(source: unknown, key: string) {
+  if (typeof source !== "object" || source === null || Array.isArray(source)) {
+    return [];
+  }
+
+  const value = (source as Record<string, unknown>)[key];
+
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is Record<string, unknown> =>
+          typeof item === "object" && item !== null && !Array.isArray(item),
+      )
+    : [];
+}
+
+function readSnapshotRows(source: Record<string, unknown>) {
+  const rows = source.rows;
+
+  return Array.isArray(rows)
+    ? rows.filter(
+        (row): row is Record<string, unknown> =>
+          typeof row === "object" && row !== null && !Array.isArray(row),
+      )
+    : [];
+}
+
+function readSnapshotDocuments(source: Record<string, unknown>) {
+  const documents = source.documents;
+
+  return Array.isArray(documents)
+    ? documents.filter(
+        (document): document is Record<string, unknown> =>
+          typeof document === "object" &&
+          document !== null &&
+          !Array.isArray(document),
+      )
+    : [];
+}
+
 function getRepresentationStatusClass(status: string) {
   if (status === "active") {
     return "bg-[var(--accent-soft)] text-[var(--accent-strong)]";
@@ -5915,6 +6784,7 @@ function buildWorkspaceNotifications({
       "Google Drive Service",
       environmentStatus.googleDriveClientEmail && environmentStatus.googleDrivePrivateKey,
     ],
+    ["OpenAI API", environmentStatus.openAiApiKey],
   ].filter(([, active]) => !active);
 
   if (missingEnvironment.length > 0) {

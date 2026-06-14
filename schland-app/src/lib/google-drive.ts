@@ -12,7 +12,9 @@ export type DriveFile = {
   thumbnailLink: string;
   modifiedTime: string;
   createdTime: string;
+  headRevisionId?: string;
   trashed: boolean;
+  version?: string;
 };
 
 export type DriveTreeChunk = {
@@ -37,7 +39,7 @@ const driveScope = "https://www.googleapis.com/auth/drive";
 const defaultDriveRootFolderId = "1FPOUB-Uj_mX5X26asct7KS06Ulwj5V4Z";
 const defaultDocsTemplateId = "1xRbjl9ue0Ve6s4WYX_pJ81BMvmXAuEiP";
 const fileFields =
-  "id,name,mimeType,parents,size,webViewLink,webContentLink,iconLink,thumbnailLink,modifiedTime,createdTime,trashed";
+  "id,name,mimeType,parents,size,webViewLink,webContentLink,iconLink,thumbnailLink,modifiedTime,createdTime,headRevisionId,version,trashed";
 
 let cachedToken: { accessToken: string; expiresAt: number } | null = null;
 
@@ -121,6 +123,12 @@ export class GoogleDriveClient {
   async getFile(fileId: string) {
     return this.request<DriveFile>(
       `/files/${encodeURIComponent(fileId)}?fields=${encodeURIComponent(fileFields)}&supportsAllDrives=true`,
+    );
+  }
+
+  async exportGoogleDocText(fileId: string) {
+    return this.requestText(
+      `/files/${encodeURIComponent(fileId)}/export?mimeType=${encodeURIComponent("text/plain")}`,
     );
   }
 
@@ -363,6 +371,27 @@ export class GoogleDriveClient {
     }
 
     return (await response.json()) as T;
+  }
+
+  private async requestText(
+    path: string,
+    init: RequestInit = {},
+    baseUrl = driveApiBaseUrl,
+  ): Promise<string> {
+    const token = await getAccessToken(this.config);
+    const response = await fetch(`${baseUrl}${path}`, {
+      ...init,
+      headers: {
+        authorization: `Bearer ${token}`,
+        ...(init.headers ?? {}),
+      },
+    });
+
+    if (!response.ok) {
+      throw new DriveApiError(response.status, await response.text());
+    }
+
+    return response.text();
   }
 }
 
