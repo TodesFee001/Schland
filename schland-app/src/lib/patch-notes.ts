@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "15.06.2026",
+    id: "temporary-design-system",
+    items: [
+      "Neues Feature Temporaere Designs mit automatischer Datumslogik, manueller Aktivierung und Admin-Vorschau ergaenzt.",
+      "Design-Vorlagen fuer Frauentag, Maennertag, WM 2026, Weihnachten, Ostern, Neujahr, Halloween, Valentinstag und Black Friday vorbereitet.",
+      "Designs aendern ausschliesslich visuelle Variablen, Banner und Theme-Klassen; Funktionen und Datenablaeufe bleiben unveraendert.",
+    ],
+    title: "Temporaere Designs",
+    type: "feature",
+    version: "0.10.12",
+  },
+  {
+    date: "15.06.2026",
     id: "ai-sanction-advice-direct-storage-upload",
     items: [
       "KI-Sanktionsberater laedt Belegdateien jetzt vor dem Absenden direkt zu Supabase Storage hoch.",

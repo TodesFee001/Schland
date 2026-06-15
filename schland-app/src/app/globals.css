@@ -36,6 +36,120 @@ body {
   font-family: Arial, Verdana, Helvetica, sans-serif;
 }
 
+.theme-default {
+  --background: #c7cbc8;
+  --surface: #eeeeee;
+  --surface-muted: #dcdedc;
+  --line: #8a8f8b;
+  --line-strong: #2f3330;
+}
+
+.theme-frauentag,
+.theme-valentinstag,
+.theme-weihnachten,
+.theme-ostern,
+.theme-maennertag,
+.theme-wm-2026,
+.theme-neujahr,
+.theme-halloween,
+.theme-black-friday {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--background) 82%, white), var(--background));
+}
+
+.theme-frauentag {
+  --surface: #fff5fb;
+  --surface-muted: #f7d8eb;
+  --line: #bd8aae;
+  --line-strong: #7a174f;
+}
+
+.theme-maennertag {
+  --surface: #f3f8ff;
+  --surface-muted: #dbeafe;
+  --line: #8aa8da;
+  --line-strong: #1e3a8a;
+}
+
+.theme-wm-2026 {
+  --surface: #f5fff7;
+  --surface-muted: #dcfce7;
+  --line: #86bc99;
+  --line-strong: #14532d;
+}
+
+.theme-weihnachten {
+  --surface: #fff7f5;
+  --surface-muted: #f5dddd;
+  --line: #bb8d8d;
+  --line-strong: #7f1d1d;
+}
+
+.theme-ostern {
+  --surface: #fbf7ff;
+  --surface-muted: #ede9fe;
+  --line: #ad9ad3;
+  --line-strong: #4c1d95;
+}
+
+.theme-neujahr {
+  --surface: #f8f7ff;
+  --surface-muted: #e9e2ff;
+  --line: #a69bd6;
+  --line-strong: #581c87;
+}
+
+.theme-halloween {
+  --surface: #fff7ed;
+  --surface-muted: #ffedd5;
+  --line: #c29363;
+  --line-strong: #431407;
+}
+
+.theme-valentinstag {
+  --surface: #fff5f7;
+  --surface-muted: #ffe4e6;
+  --line: #d99aaa;
+  --line-strong: #881337;
+}
+
+.theme-black-friday {
+  --background: #d4d4d4;
+  --surface: #f4f4f5;
+  --surface-muted: #e4e4e7;
+  --line: #71717a;
+  --line-strong: #18181b;
+}
+
+.temporary-design-banner {
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.theme-weihnachten .temporary-design-banner,
+.theme-neujahr .temporary-design-banner,
+.theme-wm-2026 .temporary-design-banner {
+  animation: temporary-design-sheen 8s ease-in-out infinite;
+}
+
+@keyframes temporary-design-sheen {
+  0%,
+  100% {
+    filter: saturate(1);
+  }
+
+  50% {
+    filter: saturate(1.15) brightness(1.03);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-weihnachten .temporary-design-banner,
+  .theme-neujahr .temporary-design-banner,
+  .theme-wm-2026 .temporary-design-banner {
+    animation: none;
+  }
+}
+
 button,
 input,
 textarea,

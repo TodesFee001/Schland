@@ -279,6 +279,62 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "temporary-design-saved") {
+    return {
+      tone: "success" as const,
+      text: "Temporaere Design-Einstellungen wurden gespeichert.",
+    };
+  }
+
+  if (setup === "temporary-design-template-saved") {
+    return {
+      tone: "success" as const,
+      text: "Design-Vorlage wurde gespeichert.",
+    };
+  }
+
+  if (setup === "temporary-design-reset") {
+    return {
+      tone: "success" as const,
+      text: "Manuelles temporaeres Design wurde zurueckgesetzt.",
+    };
+  }
+
+  if (setup === "temporary-design-aal2") {
+    return {
+      tone: "warning" as const,
+      text: "Temporaere Designs koennen nur mit aktiver 2FA-Sitzung verwaltet werden.",
+    };
+  }
+
+  if (setup === "temporary-design-denied") {
+    return {
+      tone: "error" as const,
+      text: "Dem Account fehlt die Berechtigung zum Verwalten temporaerer Designs.",
+    };
+  }
+
+  if (setup === "temporary-design-range") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte pruefe Start- und Enddatum des temporaeren Designs.",
+    };
+  }
+
+  if (setup === "temporary-design-template") {
+    return {
+      tone: "warning" as const,
+      text: "Bitte gib mindestens einen gueltigen Template-Key und Namen an.",
+    };
+  }
+
+  if (setup === "temporary-design-error") {
+    return {
+      tone: "error" as const,
+      text: "Temporaeres Design konnte nicht gespeichert werden. Details wurden protokolliert.",
+    };
+  }
+
   if (setup === "member-created") {
     return {
       tone: "success" as const,

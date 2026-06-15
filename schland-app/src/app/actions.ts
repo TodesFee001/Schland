@@ -1899,6 +1899,143 @@ export async function deactivateLockdownAction(formData: FormData) {
   redirect("/?section=settings&setup=lockdown-deactivated");
 }
 
+export async function saveTemporaryDesignSettingsAction(formData: FormData) {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=settings&setup=missing-supabase");
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const actor = await requireTemporaryDesignManager(supabase);
+  const manualTemplateKey = getFormText(formData, "manualTemplateKey");
+  const manualStartDate = getOptionalDateText(formData, "manualStartDate");
+  const manualEndDate = getOptionalDateText(formData, "manualEndDate");
+
+  if (manualStartDate && manualEndDate && manualStartDate > manualEndDate) {
+    redirect("/?section=settings&setup=temporary-design-range");
+  }
+
+  const { error } = await supabase.from("temporary_design_settings").upsert({
+    automatic_enabled: formData.get("automaticEnabled") === "on",
+    enabled: formData.get("enabled") === "on",
+    id: true,
+    manual_enabled: formData.get("manualEnabled") === "on",
+    manual_end_date: manualEndDate || null,
+    manual_priority: clampInteger(getOptionalFormNumber(formData, "manualPriority"), 0, 999, 100),
+    manual_start_date: manualStartDate || null,
+    manual_template_key: manualTemplateKey || null,
+    updated_by: actor.id,
+  });
+
+  if (error) {
+    console.error("temporary design settings save failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect("/?section=settings&setup=temporary-design-error");
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/?section=settings&setup=temporary-design-saved");
+}
+
+export async function resetTemporaryDesignSettingsAction() {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=settings&setup=missing-supabase");
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const actor = await requireTemporaryDesignManager(supabase);
+  const { error } = await supabase.from("temporary_design_settings").upsert({
+    automatic_enabled: true,
+    enabled: true,
+    id: true,
+    manual_enabled: false,
+    manual_end_date: null,
+    manual_priority: 100,
+    manual_start_date: null,
+    manual_template_key: null,
+    updated_by: actor.id,
+  });
+
+  if (error) {
+    console.error("temporary design settings reset failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect("/?section=settings&setup=temporary-design-error");
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/?section=settings&setup=temporary-design-reset");
+}
+
+export async function saveTemporaryDesignTemplateAction(formData: FormData) {
+  if (!hasSupabasePublicEnv()) {
+    redirect("/?section=settings&setup=missing-supabase");
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const actor = await requireTemporaryDesignManager(supabase);
+  const key = getFormText(formData, "templateKey").toLowerCase();
+  const name = getFormText(formData, "templateName");
+  const eventName = getFormText(formData, "eventName") || name;
+  const startDate = getFlexibleDateText(formData, "startDate");
+  const endDate = getFlexibleDateText(formData, "endDate");
+  const dynamicDate = getAllowedDynamicDate(getFormText(formData, "dynamicDate"));
+  const backgroundClass =
+    getThemeClassText(formData, "backgroundClass") || `theme-${key}`;
+
+  if (!/^[a-z0-9][a-z0-9-]{1,80}$/.test(key) || name.length < 2) {
+    redirect("/?section=settings&setup=temporary-design-template");
+  }
+
+  if (startDate && endDate && startDate.length === 10 && endDate.length === 10 && startDate > endDate) {
+    redirect("/?section=settings&setup=temporary-design-range");
+  }
+
+  const { error } = await supabase.from("temporary_design_templates").upsert({
+    dynamic_date: dynamicDate || null,
+    enabled: formData.get("templateEnabled") === "on",
+    end_date: endDate || null,
+    end_offset_days: clampInteger(getOptionalFormNumber(formData, "endOffsetDays"), -14, 14, 0),
+    event_name: eventName,
+    key,
+    manual_only: formData.get("manualOnly") === "on",
+    name,
+    priority: clampInteger(getOptionalFormNumber(formData, "priority"), 0, 999, 0),
+    recurring: formData.get("recurring") === "on",
+    start_date: startDate || null,
+    start_offset_days: clampInteger(getOptionalFormNumber(formData, "startOffsetDays"), -14, 14, 0),
+    theme: {
+      accentColor: getColorText(formData, "accentColor", "#263f72"),
+      accentSoftColor: getColorText(formData, "accentSoftColor", "#d7dfed"),
+      accentStrongColor: getColorText(formData, "accentStrongColor", "#14284d"),
+      backgroundClass,
+      backgroundColor: getColorText(formData, "backgroundColor", "#c7cbc8"),
+      bannerEnabled: formData.get("bannerEnabled") === "on",
+      bannerLabel: getFormText(formData, "bannerLabel"),
+      buttonColor: getColorText(formData, "buttonColor", "#111111"),
+      decoration: getSafeTokenText(formData, "decoration"),
+      headerStyle: getSafeTokenText(formData, "headerStyle") || "default",
+    },
+    updated_by: actor.id,
+  });
+
+  if (error) {
+    console.error("temporary design template save failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect("/?section=settings&setup=temporary-design-error");
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/?section=settings&setup=temporary-design-template-saved");
+}
+
 export async function updateModerationEventAction(formData: FormData) {
   if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
     redirect("/?section=members&setup=moderation-event-failed");
@@ -2722,6 +2859,60 @@ function getFormList(formData: FormData, key: string) {
     .getAll(key)
     .map((value) => String(value ?? "").trim())
     .filter(Boolean);
+}
+
+async function requireTemporaryDesignManager(supabase: SupabaseServerClient) {
+  if (!(await hasMfaLevel2(supabase))) {
+    redirect("/?section=settings&setup=temporary-design-aal2");
+  }
+
+  if (!(await hasPermission(supabase, "design.manage"))) {
+    redirect("/?section=settings&setup=temporary-design-denied");
+  }
+
+  return getActionActor(supabase);
+}
+
+function getOptionalDateText(formData: FormData, key: string) {
+  const value = getFormText(formData, key);
+
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "";
+}
+
+function getFlexibleDateText(formData: FormData, key: string) {
+  const value = getFormText(formData, key);
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value) || /^\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+
+  return "";
+}
+
+function getColorText(formData: FormData, key: string, fallback: string) {
+  const value = getFormText(formData, key);
+
+  return /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
+}
+
+function getThemeClassText(formData: FormData, key: string) {
+  const value = getFormText(formData, key);
+
+  return /^theme-[a-z0-9-]{2,80}$/.test(value) ? value : "";
+}
+
+function getSafeTokenText(formData: FormData, key: string) {
+  return getFormText(formData, key)
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+}
+
+function getAllowedDynamicDate(value: string) {
+  return ["", "black_friday", "christi_himmelfahrt", "easter_sunday", "pfingsten"].includes(value)
+    ? value
+    : "";
 }
 
 async function getModerationAdviceActionContext(errorSetup: string) {
@@ -3811,6 +4002,19 @@ function getOptionalFormNumber(formData: FormData, key: string) {
   const parsed = Number(value);
 
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function clampInteger(
+  value: number | null,
+  min: number,
+  max: number,
+  fallback: number,
+) {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, Math.trunc(Number(value))));
 }
 
 function getOptionalIsoDate(formData: FormData, key: string) {

@@ -3,6 +3,16 @@ import { hasSupabasePublicEnv } from "@/lib/env";
 import { hasGoogleDriveServerConfig } from "@/lib/google-drive";
 import { mapLockdownStatusRow, type LockdownStatus } from "@/lib/lockdown";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  defaultTemporaryDesignSettings,
+  defaultTemporaryDesignTemplates,
+  getActiveTemporaryDesign,
+  normalizeTemporaryDesignTemplates,
+  normalizeTemporaryDesignTheme,
+  type TemporaryDesignSettings,
+  type TemporaryDesignState,
+  type TemporaryDesignTemplate,
+} from "@/lib/temporary-designs";
 
 export type MemberStatusLabel = "Aktiv" | "Pruefung" | "Archiv";
 
@@ -420,6 +430,7 @@ export type WorkspaceData = {
   roles: WorkspaceRoleRow[];
   source: "demo" | "supabase";
   sync: WorkspaceSyncStatus;
+  temporaryDesigns: TemporaryDesignState;
   users: WorkspaceUserSummary;
   warning?: string;
 };
@@ -439,6 +450,15 @@ const inactiveLockdownStatus: LockdownStatus = {
   canManage: false,
   importantChannelIds: [],
   reason: "",
+};
+
+const demoTemporaryDesigns: TemporaryDesignState = {
+  activeDesign: getActiveTemporaryDesign({
+    settings: defaultTemporaryDesignSettings,
+    templates: defaultTemporaryDesignTemplates,
+  }),
+  settings: defaultTemporaryDesignSettings,
+  templates: defaultTemporaryDesignTemplates,
 };
 
 function emptyMemberIntake(): WorkspaceMemberIntake {
@@ -479,6 +499,7 @@ function emptyDriveSyncStatus(): WorkspaceDriveSync {
 export const demoWorkspaceData: WorkspaceData = {
   source: "demo",
   lockdown: inactiveLockdownStatus,
+  temporaryDesigns: demoTemporaryDesigns,
   driveSync: emptyDriveSyncStatus(),
   absences: [],
   discordRoles: [],
@@ -1161,6 +1182,8 @@ export async function getWorkspaceData(
       ministryRolesResult,
       representationEligibilitiesResult,
       absencesResult,
+      temporaryDesignSettingsResult,
+      temporaryDesignTemplatesResult,
     ] = await Promise.all([
       supabase
         .from("members")
@@ -1518,6 +1541,20 @@ export async function getWorkspaceData(
         )
         .order("started_at", { ascending: false })
         .limit(100),
+      supabase
+        .from("temporary_design_settings")
+        .select(
+          "enabled, automatic_enabled, manual_enabled, manual_template_key, manual_start_date, manual_end_date, manual_priority",
+        )
+        .eq("id", true)
+        .maybeSingle(),
+      supabase
+        .from("temporary_design_templates")
+        .select(
+          "key, name, event_name, enabled, manual_only, recurring, start_date, end_date, dynamic_date, start_offset_days, end_offset_days, priority, theme",
+        )
+        .order("priority", { ascending: false })
+        .order("name", { ascending: true }),
     ]);
 
     collectWarning(warnings, membersResult.error?.message);
@@ -1540,6 +1577,13 @@ export async function getWorkspaceData(
     collectWarning(warnings, ministryRolesResult.error?.message);
     collectWarning(warnings, representationEligibilitiesResult.error?.message);
     collectWarning(warnings, absencesResult.error?.message);
+    collectWarningIfActionable(warnings, temporaryDesignSettingsResult.error?.message);
+    collectWarningIfActionable(warnings, temporaryDesignTemplatesResult.error?.message);
+
+    const temporaryDesigns = mapTemporaryDesignState(
+      temporaryDesignSettingsResult.data ?? null,
+      temporaryDesignTemplatesResult.data ?? [],
+    );
 
     return {
       source: "supabase",
@@ -1581,6 +1625,7 @@ export async function getWorkspaceData(
           : null,
       ),
       sync: mapSync(syncResult.data ?? []),
+      temporaryDesigns,
       warning: warnings[0],
     };
   } catch (error) {
@@ -1624,6 +1669,58 @@ function mapRowsById(rows: Record<string, unknown>[]) {
       .map((row) => [String(row.id ?? ""), row] as const)
       .filter(([id]) => Boolean(id)),
   );
+}
+
+function mapTemporaryDesignState(
+  settingsRow: Record<string, unknown> | null,
+  templateRows: Record<string, unknown>[],
+): TemporaryDesignState {
+  const settings = mapTemporaryDesignSettings(settingsRow);
+  const templates = normalizeTemporaryDesignTemplates(
+    templateRows.map(mapTemporaryDesignTemplate),
+  );
+
+  return {
+    activeDesign: getActiveTemporaryDesign({ settings, templates }),
+    settings,
+    templates,
+  };
+}
+
+function mapTemporaryDesignSettings(
+  row: Record<string, unknown> | null,
+): TemporaryDesignSettings {
+  if (!row) {
+    return defaultTemporaryDesignSettings;
+  }
+
+  return {
+    automaticEnabled: row.automatic_enabled !== false,
+    enabled: row.enabled !== false,
+    manualEnabled: row.manual_enabled === true,
+    manualEndDate: String(row.manual_end_date ?? ""),
+    manualPriority: Number(row.manual_priority ?? 100),
+    manualStartDate: String(row.manual_start_date ?? ""),
+    manualTemplateKey: String(row.manual_template_key ?? ""),
+  };
+}
+
+function mapTemporaryDesignTemplate(row: Record<string, unknown>): TemporaryDesignTemplate {
+  return {
+    dynamicDate: String(row.dynamic_date ?? ""),
+    enabled: row.enabled !== false,
+    endDate: String(row.end_date ?? ""),
+    endOffsetDays: Number(row.end_offset_days ?? 0),
+    eventName: String(row.event_name ?? row.name ?? ""),
+    key: String(row.key ?? ""),
+    manualOnly: row.manual_only === true,
+    name: String(row.name ?? row.key ?? "Design"),
+    priority: Number(row.priority ?? 0),
+    recurring: row.recurring === true,
+    startDate: String(row.start_date ?? ""),
+    startOffsetDays: Number(row.start_offset_days ?? 0),
+    theme: normalizeTemporaryDesignTheme(asObject(row.theme)),
+  };
 }
 
 function mapMembers(
