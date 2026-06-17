@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "17.06.2026",
+    id: "world-cup-2026-design",
+    items: [
+      "WM-2026-Design fertig vorkonfiguriert: Zeitraum 11.06.2026 bis 19.07.2026, hohe Prioritaet und automatische Aktivierung.",
+      "Theme nutzt Spielfeld-Hintergrund, WM-Banner und Gruen/Gold/Rot-Akzente fuer eine fertige Turnieroptik.",
+      "Supabase-Migration aktualisiert auch bereits vorhandene alte WM-Vorlagen, statt nur neue Installationen zu befuellen.",
+    ],
+    title: "WM 2026 Design",
+    type: "feature",
+    version: "0.10.14",
+  },
+  {
+    date: "17.06.2026",
     id: "temporary-design-admin-repair",
     items: [
       "Design-Einstellungen neu geordnet: Status, Vorschau, Aktivierung und Vorlagenbearbeitung sind getrennte Bereiche.",
