@@ -300,6 +300,13 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "temporary-design-activated") {
+    return {
+      tone: "success" as const,
+      text: "Design wurde als manuelles aktives Design gespeichert.",
+    };
+  }
+
   if (setup === "temporary-design-aal2") {
     return {
       tone: "warning" as const,
@@ -325,6 +332,13 @@ function getSetupNotice(setup?: string) {
     return {
       tone: "warning" as const,
       text: "Bitte gib mindestens einen gueltigen Template-Key und Namen an.",
+    };
+  }
+
+  if (setup === "temporary-design-migration") {
+    return {
+      tone: "warning" as const,
+      text: "Supabase kennt die Tabellen fuer temporaere Designs noch nicht. Bitte Migration 20260615001000_add_temporary_designs.sql ausfuehren.",
     };
   }
 

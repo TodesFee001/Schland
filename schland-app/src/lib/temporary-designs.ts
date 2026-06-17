@@ -46,6 +46,8 @@ export type ActiveTemporaryDesign = {
 
 export type TemporaryDesignState = {
   activeDesign: ActiveTemporaryDesign;
+  storageMessage: string;
+  storageReady: boolean;
   settings: TemporaryDesignSettings;
   templates: TemporaryDesignTemplate[];
 };

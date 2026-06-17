@@ -1900,12 +1900,13 @@ export async function deactivateLockdownAction(formData: FormData) {
 }
 
 export async function saveTemporaryDesignSettingsAction(formData: FormData) {
-  if (!hasSupabasePublicEnv()) {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
     redirect("/?section=settings&setup=missing-supabase");
   }
 
   const supabase = await createSupabaseServerClient();
   const actor = await requireTemporaryDesignManager(supabase);
+  const admin = getSupabaseAdminClient();
   const manualTemplateKey = getFormText(formData, "manualTemplateKey");
   const manualStartDate = getOptionalDateText(formData, "manualStartDate");
   const manualEndDate = getOptionalDateText(formData, "manualEndDate");
@@ -1914,7 +1915,7 @@ export async function saveTemporaryDesignSettingsAction(formData: FormData) {
     redirect("/?section=settings&setup=temporary-design-range");
   }
 
-  const { error } = await supabase.from("temporary_design_settings").upsert({
+  const { error } = await admin.from("temporary_design_settings").upsert({
     automatic_enabled: formData.get("automaticEnabled") === "on",
     enabled: formData.get("enabled") === "on",
     id: true,
@@ -1932,7 +1933,7 @@ export async function saveTemporaryDesignSettingsAction(formData: FormData) {
       details: error.details,
       message: error.message,
     });
-    redirect("/?section=settings&setup=temporary-design-error");
+    redirect(getTemporaryDesignErrorRedirect(error.message));
   }
 
   revalidatePath("/", "layout");
@@ -1940,13 +1941,14 @@ export async function saveTemporaryDesignSettingsAction(formData: FormData) {
 }
 
 export async function resetTemporaryDesignSettingsAction() {
-  if (!hasSupabasePublicEnv()) {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
     redirect("/?section=settings&setup=missing-supabase");
   }
 
   const supabase = await createSupabaseServerClient();
   const actor = await requireTemporaryDesignManager(supabase);
-  const { error } = await supabase.from("temporary_design_settings").upsert({
+  const admin = getSupabaseAdminClient();
+  const { error } = await admin.from("temporary_design_settings").upsert({
     automatic_enabled: true,
     enabled: true,
     id: true,
@@ -1964,7 +1966,7 @@ export async function resetTemporaryDesignSettingsAction() {
       details: error.details,
       message: error.message,
     });
-    redirect("/?section=settings&setup=temporary-design-error");
+    redirect(getTemporaryDesignErrorRedirect(error.message));
   }
 
   revalidatePath("/", "layout");
@@ -1972,12 +1974,13 @@ export async function resetTemporaryDesignSettingsAction() {
 }
 
 export async function saveTemporaryDesignTemplateAction(formData: FormData) {
-  if (!hasSupabasePublicEnv()) {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
     redirect("/?section=settings&setup=missing-supabase");
   }
 
   const supabase = await createSupabaseServerClient();
   const actor = await requireTemporaryDesignManager(supabase);
+  const admin = getSupabaseAdminClient();
   const key = getFormText(formData, "templateKey").toLowerCase();
   const name = getFormText(formData, "templateName");
   const eventName = getFormText(formData, "eventName") || name;
@@ -1995,7 +1998,7 @@ export async function saveTemporaryDesignTemplateAction(formData: FormData) {
     redirect("/?section=settings&setup=temporary-design-range");
   }
 
-  const { error } = await supabase.from("temporary_design_templates").upsert({
+  const { error } = await admin.from("temporary_design_templates").upsert({
     dynamic_date: dynamicDate || null,
     enabled: formData.get("templateEnabled") === "on",
     end_date: endDate || null,
@@ -2029,11 +2032,50 @@ export async function saveTemporaryDesignTemplateAction(formData: FormData) {
       details: error.details,
       message: error.message,
     });
-    redirect("/?section=settings&setup=temporary-design-error");
+    redirect(getTemporaryDesignErrorRedirect(error.message));
   }
 
   revalidatePath("/", "layout");
   redirect("/?section=settings&setup=temporary-design-template-saved");
+}
+
+export async function activateTemporaryDesignTemplateAction(formData: FormData) {
+  if (!hasSupabasePublicEnv() || !hasSupabaseServerEnv()) {
+    redirect("/?section=settings&setup=missing-supabase");
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const actor = await requireTemporaryDesignManager(supabase);
+  const admin = getSupabaseAdminClient();
+  const templateKey = getFormText(formData, "templateKey");
+
+  if (!/^[a-z0-9][a-z0-9-]{1,80}$/.test(templateKey)) {
+    redirect("/?section=settings&setup=temporary-design-template");
+  }
+
+  const { error } = await admin.from("temporary_design_settings").upsert({
+    automatic_enabled: true,
+    enabled: true,
+    id: true,
+    manual_enabled: true,
+    manual_end_date: null,
+    manual_priority: 900,
+    manual_start_date: null,
+    manual_template_key: templateKey,
+    updated_by: actor.id,
+  });
+
+  if (error) {
+    console.error("temporary design activation failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+    redirect(getTemporaryDesignErrorRedirect(error.message));
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/?section=settings&setup=temporary-design-activated");
 }
 
 export async function updateModerationEventAction(formData: FormData) {
@@ -2866,7 +2908,12 @@ async function requireTemporaryDesignManager(supabase: SupabaseServerClient) {
     redirect("/?section=settings&setup=temporary-design-aal2");
   }
 
-  if (!(await hasPermission(supabase, "design.manage"))) {
+  const canManageDesigns =
+    (await hasPermission(supabase, "design.manage")) ||
+    (await hasPermission(supabase, "roles.manage")) ||
+    (await hasPermission(supabase, "users.manage"));
+
+  if (!canManageDesigns) {
     redirect("/?section=settings&setup=temporary-design-denied");
   }
 
@@ -2913,6 +2960,21 @@ function getAllowedDynamicDate(value: string) {
   return ["", "black_friday", "christi_himmelfahrt", "easter_sunday", "pfingsten"].includes(value)
     ? value
     : "";
+}
+
+function getTemporaryDesignErrorRedirect(message?: string) {
+  const normalized = String(message ?? "").toLowerCase();
+
+  if (
+    normalized.includes("temporary_design_settings") ||
+    normalized.includes("temporary_design_templates") ||
+    normalized.includes("schema cache") ||
+    normalized.includes("does not exist")
+  ) {
+    return "/?section=settings&setup=temporary-design-migration";
+  }
+
+  return "/?section=settings&setup=temporary-design-error";
 }
 
 async function getModerationAdviceActionContext(errorSetup: string) {

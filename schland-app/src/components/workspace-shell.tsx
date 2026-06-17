@@ -44,6 +44,7 @@ import { useRouter } from "next/navigation";
 
 import {
   activateLockdownAction,
+  activateTemporaryDesignTemplateAction,
   analyzeModerationAdviceCaseAction,
   createGoogleDocAction,
   createDiscordInviteRequestAction,
@@ -6295,6 +6296,41 @@ function SettingsSection({
   setPreviewKey: (key: string) => void;
   temporaryDesigns: TemporaryDesignState;
 }) {
+  const templateOptions = temporaryDesigns.templates;
+  const firstEditableTemplate =
+    templateOptions.find((template) => template.key !== "default") ?? templateOptions[0];
+  const [previewDraftKey, setPreviewDraftKey] = useState(
+    previewKey || temporaryDesigns.activeDesign.key,
+  );
+  const [editKey, setEditKey] = useState(
+    temporaryDesigns.settings.manualTemplateKey || firstEditableTemplate?.key || "",
+  );
+  const activeTemplate =
+    templateOptions.find((template) => template.key === temporaryDesigns.activeDesign.key) ??
+    templateOptions.find((template) => template.key === "default") ??
+    templateOptions[0];
+  const previewDraftTemplate =
+    templateOptions.find((template) => template.key === previewDraftKey) ??
+    activeTemplate ??
+    templateOptions[0];
+  const renderedPreviewTemplate =
+    templateOptions.find((template) => template.key === previewKey) ??
+    activeTemplate ??
+    templateOptions[0];
+  const editableTemplate =
+    templateOptions.find((template) => template.key === editKey) ??
+    firstEditableTemplate ??
+    templateOptions[0];
+  const canPersistTemporaryDesign = mfaReady && temporaryDesigns.storageReady;
+  const renderedPreviewStyle = renderedPreviewTemplate
+    ? ({
+        "--accent": renderedPreviewTemplate.theme.accentColor,
+        "--accent-soft": renderedPreviewTemplate.theme.accentSoftColor,
+        "--accent-strong": renderedPreviewTemplate.theme.accentStrongColor,
+        "--background": renderedPreviewTemplate.theme.backgroundColor,
+      } as CSSProperties)
+    : undefined;
+
   const lockdownRecipients = members
     .filter((member) => member.discordId && member.discordOnServer)
     .sort((left, right) => {
@@ -6303,258 +6339,126 @@ function SettingsSection({
 
       return leftName.localeCompare(rightName, "de");
     });
-  const editableTemplate =
-    temporaryDesigns.templates.find((template) => template.key === previewKey) ??
-    temporaryDesigns.templates.find((template) => template.key !== "default") ??
-    temporaryDesigns.templates[0];
 
   return (
     <div className="grid gap-5 xl:grid-cols-2">
       <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)] xl:col-span-2">
         <SectionHeader
           icon={Sparkles}
-          title="Design - Temporaere Designs"
+          title="Designs"
           action={
-            <span className="rounded-md bg-[var(--accent-soft)] px-2 py-1 text-xs font-bold text-[var(--accent-strong)]">
-              {temporaryDesigns.activeDesign.name}
+            <span
+              className={[
+                "rounded-md px-2 py-1 text-xs font-bold uppercase",
+                temporaryDesigns.storageReady
+                  ? "bg-[var(--accent-soft)] text-[var(--accent-strong)]"
+                  : "bg-amber-100 text-amber-900",
+              ].join(" ")}
+            >
+              {temporaryDesigns.storageReady ? "Supabase aktiv" : "Migration fehlt"}
             </span>
           }
         />
-        <div className="grid gap-4 border-t border-[var(--line)] p-4 xl:grid-cols-[1.1fr_0.9fr]">
-          <form
-            action={saveTemporaryDesignSettingsAction}
-            className="grid gap-3 rounded-md border border-[var(--line)] bg-white p-3"
-          >
-            <div className="grid gap-3 md:grid-cols-3">
-              <label className="flex items-center gap-2 text-sm font-medium">
-                <input
-                  name="enabled"
-                  type="checkbox"
-                  defaultChecked={temporaryDesigns.settings.enabled}
-                  className="size-4 accent-[var(--accent)]"
-                />
-                <span>Temporaere Designs aktiv</span>
-              </label>
-              <label className="flex items-center gap-2 text-sm font-medium">
-                <input
-                  name="automaticEnabled"
-                  type="checkbox"
-                  defaultChecked={temporaryDesigns.settings.automaticEnabled}
-                  className="size-4 accent-[var(--accent)]"
-                />
-                <span>Automatik aktiv</span>
-              </label>
-              <label className="flex items-center gap-2 text-sm font-medium">
-                <input
-                  name="manualEnabled"
-                  type="checkbox"
-                  defaultChecked={temporaryDesigns.settings.manualEnabled}
-                  className="size-4 accent-[var(--accent)]"
-                />
-                <span>Manuell aktiv</span>
-              </label>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-4">
-              <label className="grid gap-2 md:col-span-2">
-                <span className="text-xs font-medium uppercase text-neutral-500">
-                  Vorlage
-                </span>
-                <select
-                  name="manualTemplateKey"
-                  defaultValue={temporaryDesigns.settings.manualTemplateKey}
-                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
-                >
-                  <option value="">Keine manuelle Vorlage</option>
-                  {temporaryDesigns.templates.map((template) => (
-                    <option key={template.key} value={template.key}>
-                      {template.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="grid gap-2">
-                <span className="text-xs font-medium uppercase text-neutral-500">
-                  Startdatum
-                </span>
-                <input
-                  name="manualStartDate"
-                  type="date"
-                  defaultValue={temporaryDesigns.settings.manualStartDate}
-                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
-                />
-              </label>
-              <label className="grid gap-2">
-                <span className="text-xs font-medium uppercase text-neutral-500">
-                  Enddatum
-                </span>
-                <input
-                  name="manualEndDate"
-                  type="date"
-                  defaultValue={temporaryDesigns.settings.manualEndDate}
-                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
-                />
-              </label>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-[180px_1fr_auto_auto] md:items-end">
-              <label className="grid gap-2">
-                <span className="text-xs font-medium uppercase text-neutral-500">
-                  Prioritaet
-                </span>
-                <input
-                  name="manualPriority"
-                  type="number"
-                  min={0}
-                  max={999}
-                  defaultValue={temporaryDesigns.settings.manualPriority}
-                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
-                />
-              </label>
-              <div className="grid gap-1 text-sm text-neutral-600">
-                <span>
-                  Aktiv: {temporaryDesigns.activeDesign.name} (
-                  {mapTemporaryDesignSource(temporaryDesigns.activeDesign.source)})
-                </span>
-                <span>Manuell ueberschreibt Automatik und Feiertage.</span>
-              </div>
-              <button
-                type="submit"
-                disabled={!mfaReady}
-                className="flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
-              >
-                <Save className="size-4" aria-hidden="true" />
-                <span>Design speichern</span>
-              </button>
-            </div>
-          </form>
-
-          <div className="grid gap-3 rounded-md border border-[var(--line)] bg-[var(--surface-muted)] p-3">
-            <div className="grid gap-2">
-              <span className="text-xs font-medium uppercase text-neutral-500">
-                Vorschau
-              </span>
-              <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                <select
-                  value={previewKey}
-                  onChange={(event) => setPreviewKey(event.target.value)}
-                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
-                >
-                  <option value="">Aktives Design anzeigen</option>
-                  {temporaryDesigns.templates.map((template) => (
-                    <option key={template.key} value={template.key}>
-                      {template.name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => setPreviewKey("")}
-                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm font-medium"
-                >
-                  Zuruecksetzen
-                </button>
-              </div>
-            </div>
-
-            <form action={resetTemporaryDesignSettingsAction}>
-              <button
-                type="submit"
-                disabled={!mfaReady}
-                className="flex h-10 w-full items-center justify-center gap-2 rounded-md border border-[var(--line)] bg-white px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-45"
-              >
-                <RefreshCw className="size-4" aria-hidden="true" />
-                <span>Aktives Design zuruecksetzen</span>
-              </button>
-            </form>
-
-            <div className="overflow-x-auto border border-[var(--line)] bg-white">
-              <table className="w-full min-w-[560px] text-sm">
-                <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">Name</th>
-                    <th className="px-3 py-2 font-medium">Zeitraum</th>
-                    <th className="px-3 py-2 font-medium">Status</th>
-                    <th className="px-3 py-2 font-medium">Prioritaet</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {temporaryDesigns.templates.map((template) => (
-                    <tr key={template.key} className="border-t border-[var(--line)]">
-                      <td className="px-3 py-2 font-medium">{template.name}</td>
-                      <td className="px-3 py-2">{formatTemporaryDesignPeriod(template)}</td>
-                      <td className="px-3 py-2">
-                        {template.enabled ? "Aktiv" : "Inaktiv"}
-                      </td>
-                      <td className="px-3 py-2 font-mono">{template.priority}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+        <div className="grid gap-4 border-t border-[var(--line)] p-4">
+          <div className="grid gap-3 md:grid-cols-3">
+            <StatusTile
+              label="Aktiv"
+              value={temporaryDesigns.activeDesign.name}
+              detail={mapTemporaryDesignSource(temporaryDesigns.activeDesign.source)}
+            />
+            <StatusTile
+              label="Vorschau"
+              value={previewKey ? renderedPreviewTemplate?.name ?? "-" : "Aus"}
+              detail={previewKey ? "lokal sichtbar" : "Live-Design"}
+            />
+            <StatusTile
+              label="Supabase"
+              value={temporaryDesigns.storageReady ? "Verbunden" : "Nicht bereit"}
+              detail={temporaryDesigns.storageMessage}
+              tone={temporaryDesigns.storageReady ? "default" : "warning"}
+            />
           </div>
 
-          {editableTemplate ? (
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
             <form
-              key={editableTemplate.key}
-              action={saveTemporaryDesignTemplateAction}
-              className="grid gap-3 rounded-md border border-[var(--line)] bg-white p-3 xl:col-span-2"
+              action={saveTemporaryDesignSettingsAction}
+              className="grid gap-4 rounded-md border border-[var(--line)] bg-white p-3"
             >
-              <div className="grid gap-3 md:grid-cols-4">
-                <label className="grid gap-2">
-                  <span className="text-xs font-medium uppercase text-neutral-500">
-                    Template-Key
-                  </span>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-bold uppercase">Aktivierung</p>
+                  <p className="text-xs text-neutral-500">
+                    {temporaryDesigns.storageReady
+                      ? "gespeichert in Supabase"
+                      : temporaryDesigns.storageMessage}
+                  </p>
+                </div>
+                <button
+                  type="submit"
+                  disabled={!canPersistTemporaryDesign}
+                  className="flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <Save className="size-4" aria-hidden="true" />
+                  <span>Speichern</span>
+                </button>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <label className="flex min-h-10 items-center gap-2 border border-[var(--line)] px-3 text-sm font-medium">
                   <input
-                    name="templateKey"
-                    defaultValue={editableTemplate.key}
-                    className="h-10 rounded-md border border-[var(--line)] bg-white px-3 font-mono text-sm outline-none focus:border-[var(--accent)]"
+                    name="enabled"
+                    type="checkbox"
+                    defaultChecked={temporaryDesigns.settings.enabled}
+                    className="size-4 accent-[var(--accent)]"
                   />
+                  <span>Designs aktiv</span>
                 </label>
-                <label className="grid gap-2">
-                  <span className="text-xs font-medium uppercase text-neutral-500">
-                    Name
-                  </span>
+                <label className="flex min-h-10 items-center gap-2 border border-[var(--line)] px-3 text-sm font-medium">
                   <input
-                    name="templateName"
-                    defaultValue={editableTemplate.name}
-                    className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+                    name="automaticEnabled"
+                    type="checkbox"
+                    defaultChecked={temporaryDesigns.settings.automaticEnabled}
+                    className="size-4 accent-[var(--accent)]"
                   />
+                  <span>Automatik</span>
                 </label>
-                <label className="grid gap-2">
-                  <span className="text-xs font-medium uppercase text-neutral-500">
-                    Event
-                  </span>
+                <label className="flex min-h-10 items-center gap-2 border border-[var(--line)] px-3 text-sm font-medium">
                   <input
-                    name="eventName"
-                    defaultValue={editableTemplate.eventName}
-                    className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+                    name="manualEnabled"
+                    type="checkbox"
+                    defaultChecked={temporaryDesigns.settings.manualEnabled}
+                    className="size-4 accent-[var(--accent)]"
                   />
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-xs font-medium uppercase text-neutral-500">
-                    Prioritaet
-                  </span>
-                  <input
-                    name="priority"
-                    type="number"
-                    min={0}
-                    max={999}
-                    defaultValue={editableTemplate.priority}
-                    className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
-                  />
+                  <span>Manuell</span>
                 </label>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-4">
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_160px_160px_120px]">
+                <label className="grid gap-2">
+                  <span className="text-xs font-medium uppercase text-neutral-500">
+                    Manuelles Design
+                  </span>
+                  <select
+                    name="manualTemplateKey"
+                    defaultValue={temporaryDesigns.settings.manualTemplateKey}
+                    className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+                  >
+                    <option value="">Kein manuelles Design</option>
+                    {templateOptions.map((template) => (
+                      <option key={template.key} value={template.key}>
+                        {template.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <label className="grid gap-2">
                   <span className="text-xs font-medium uppercase text-neutral-500">
                     Start
                   </span>
                   <input
-                    name="startDate"
-                    placeholder="YYYY-MM-DD oder MM-DD"
-                    defaultValue={editableTemplate.startDate}
+                    name="manualStartDate"
+                    type="date"
+                    defaultValue={temporaryDesigns.settings.manualStartDate}
                     className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
                   />
                 </label>
@@ -6563,98 +6467,371 @@ function SettingsSection({
                     Ende
                   </span>
                   <input
-                    name="endDate"
-                    placeholder="YYYY-MM-DD oder MM-DD"
-                    defaultValue={editableTemplate.endDate}
+                    name="manualEndDate"
+                    type="date"
+                    defaultValue={temporaryDesigns.settings.manualEndDate}
                     className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
                   />
                 </label>
                 <label className="grid gap-2">
                   <span className="text-xs font-medium uppercase text-neutral-500">
-                    Dynamik
+                    Prioritaet
                   </span>
-                  <select
-                    name="dynamicDate"
-                    defaultValue={editableTemplate.dynamicDate}
+                  <input
+                    name="manualPriority"
+                    type="number"
+                    min={0}
+                    max={999}
+                    defaultValue={temporaryDesigns.settings.manualPriority}
                     className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
-                  >
-                    <option value="">Keine</option>
-                    <option value="easter_sunday">Ostern</option>
-                    <option value="christi_himmelfahrt">Christi Himmelfahrt</option>
-                    <option value="pfingsten">Pfingsten</option>
-                    <option value="black_friday">Black Friday</option>
-                  </select>
+                  />
                 </label>
-                <div className="grid grid-cols-2 gap-2">
+              </div>
+            </form>
+
+            <div className="grid gap-3 rounded-md border border-[var(--line)] bg-white p-3">
+              <div
+                className={[
+                  "grid min-h-[180px] content-between gap-3 border border-[var(--line-strong)] bg-[var(--background)] p-3",
+                  renderedPreviewTemplate?.theme.backgroundClass ?? "theme-default",
+                ].join(" ")}
+                style={renderedPreviewStyle}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold uppercase text-[var(--accent-strong)]">
+                      Vorschau
+                    </p>
+                    <p className="mt-1 text-xl font-black">
+                      {renderedPreviewTemplate?.name ?? "Standard"}
+                    </p>
+                    <p className="text-sm text-neutral-700">
+                      {formatTemporaryDesignPeriod(renderedPreviewTemplate)}
+                    </p>
+                  </div>
+                  <span className="rounded-md bg-[var(--accent)] px-2 py-1 text-xs font-bold uppercase text-white">
+                    {renderedPreviewTemplate?.theme.bannerLabel || "Theme"}
+                  </span>
+                </div>
+                <div className="grid gap-2">
+                  <div className="h-3 bg-[var(--accent)]" />
+                  <div className="grid grid-cols-3 gap-2">
+                    <span className="h-8 border border-[var(--line)] bg-[var(--surface)]" />
+                    <span className="h-8 border border-[var(--line)] bg-[var(--accent-soft)]" />
+                    <span className="h-8 border border-[var(--line)] bg-[var(--accent-strong)]" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-2">
+                <select
+                  value={previewDraftKey}
+                  onChange={(event) => setPreviewDraftKey(event.target.value)}
+                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+                >
+                  {templateOptions.map((template) => (
+                    <option key={template.key} value={template.key}>
+                      {template.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewKey(previewDraftTemplate?.key ?? "")}
+                    className="flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-3 text-sm font-medium text-white"
+                  >
+                    <Eye className="size-4" aria-hidden="true" />
+                    <span>Vorschau anzeigen</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPreviewKey("");
+                      setPreviewDraftKey(activeTemplate?.key ?? "");
+                    }}
+                    className="flex h-10 items-center justify-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm font-medium"
+                  >
+                    <RefreshCw className="size-4" aria-hidden="true" />
+                    <span>Live anzeigen</span>
+                  </button>
+                </div>
+              </div>
+
+              {renderedPreviewTemplate ? (
+                <form action={activateTemporaryDesignTemplateAction}>
+                  <input
+                    type="hidden"
+                    name="templateKey"
+                    value={renderedPreviewTemplate.key}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!canPersistTemporaryDesign}
+                    className="flex h-10 w-full items-center justify-center gap-2 rounded-md border border-[var(--line)] bg-[var(--accent-soft)] px-3 text-sm font-bold text-[var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <Sparkles className="size-4" aria-hidden="true" />
+                    <span>Als aktives Design speichern</span>
+                  </button>
+                </form>
+              ) : null}
+
+              <form action={resetTemporaryDesignSettingsAction}>
+                <button
+                  type="submit"
+                  disabled={!canPersistTemporaryDesign}
+                  className="flex h-10 w-full items-center justify-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <RefreshCw className="size-4" aria-hidden="true" />
+                  <span>Manuelle Aktivierung entfernen</span>
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+            <div className="overflow-x-auto rounded-md border border-[var(--line)] bg-white">
+              <table className="w-full min-w-[620px] text-sm">
+                <thead className="bg-[var(--surface-muted)] text-left text-xs uppercase text-neutral-500">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Vorlage</th>
+                    <th className="px-3 py-2 font-medium">Zeitraum</th>
+                    <th className="px-3 py-2 font-medium">Status</th>
+                    <th className="px-3 py-2 font-medium">Aktion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {templateOptions.map((template) => (
+                    <tr key={template.key} className="border-t border-[var(--line)]">
+                      <td className="px-3 py-2">
+                        <div className="font-medium">{template.name}</div>
+                        <div className="font-mono text-xs text-neutral-500">
+                          {template.key}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2">{formatTemporaryDesignPeriod(template)}</td>
+                      <td className="px-3 py-2">
+                        {template.enabled ? "Aktiv" : "Inaktiv"}
+                        {template.manualOnly ? " / manuell" : ""}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPreviewDraftKey(template.key);
+                              setPreviewKey(template.key);
+                            }}
+                            className="h-8 border border-[var(--line)] bg-white px-2 text-xs font-medium"
+                          >
+                            Vorschau
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditKey(template.key)}
+                            className="h-8 border border-[var(--line)] bg-white px-2 text-xs font-medium"
+                          >
+                            Bearbeiten
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {editableTemplate ? (
+              <form
+                key={editableTemplate.key}
+                action={saveTemporaryDesignTemplateAction}
+                className="grid gap-3 rounded-md border border-[var(--line)] bg-white p-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold uppercase">Vorlage bearbeiten</p>
+                    <p className="font-mono text-xs text-neutral-500">
+                      {editableTemplate.key}
+                    </p>
+                  </div>
+                  <select
+                    value={editKey}
+                    onChange={(event) => setEditKey(event.target.value)}
+                    className="h-10 min-w-[220px] rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+                  >
+                    {templateOptions.map((template) => (
+                      <option key={template.key} value={template.key}>
+                        {template.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-4">
                   <label className="grid gap-2">
                     <span className="text-xs font-medium uppercase text-neutral-500">
-                      Von
+                      Template-Key
                     </span>
                     <input
-                      name="startOffsetDays"
-                      type="number"
-                      defaultValue={editableTemplate.startOffsetDays}
+                      name="templateKey"
+                      defaultValue={editableTemplate.key}
+                      className="h-10 rounded-md border border-[var(--line)] bg-white px-3 font-mono text-sm outline-none focus:border-[var(--accent)]"
+                    />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-xs font-medium uppercase text-neutral-500">
+                      Name
+                    </span>
+                    <input
+                      name="templateName"
+                      defaultValue={editableTemplate.name}
                       className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
                     />
                   </label>
                   <label className="grid gap-2">
                     <span className="text-xs font-medium uppercase text-neutral-500">
-                      Bis
+                      Event
                     </span>
                     <input
-                      name="endOffsetDays"
+                      name="eventName"
+                      defaultValue={editableTemplate.eventName}
+                      className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+                    />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-xs font-medium uppercase text-neutral-500">
+                      Prioritaet
+                    </span>
+                    <input
+                      name="priority"
                       type="number"
-                      defaultValue={editableTemplate.endOffsetDays}
+                      min={0}
+                      max={999}
+                      defaultValue={editableTemplate.priority}
                       className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
                     />
                   </label>
                 </div>
-              </div>
 
-              <div className="grid gap-3 md:grid-cols-5">
-                {[
-                  ["backgroundColor", "Hintergrund", editableTemplate.theme.backgroundColor],
-                  ["accentColor", "Akzent", editableTemplate.theme.accentColor],
-                  ["accentSoftColor", "Akzent hell", editableTemplate.theme.accentSoftColor],
-                  ["accentStrongColor", "Akzent dunkel", editableTemplate.theme.accentStrongColor],
-                  ["buttonColor", "Button", editableTemplate.theme.buttonColor],
-                ].map(([name, label, value]) => (
-                  <label key={name} className="grid gap-2">
+                <div className="grid gap-3 md:grid-cols-4">
+                  <label className="grid gap-2">
                     <span className="text-xs font-medium uppercase text-neutral-500">
-                      {label}
+                      Start
                     </span>
                     <input
-                      name={name}
-                      type="color"
-                      defaultValue={value}
-                      className="h-10 rounded-md border border-[var(--line)] bg-white px-2 py-1"
+                      name="startDate"
+                      placeholder="YYYY-MM-DD oder MM-DD"
+                      defaultValue={editableTemplate.startDate}
+                      className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
                     />
                   </label>
-                ))}
-              </div>
+                  <label className="grid gap-2">
+                    <span className="text-xs font-medium uppercase text-neutral-500">
+                      Ende
+                    </span>
+                    <input
+                      name="endDate"
+                      placeholder="YYYY-MM-DD oder MM-DD"
+                      defaultValue={editableTemplate.endDate}
+                      className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+                    />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-xs font-medium uppercase text-neutral-500">
+                      Dynamik
+                    </span>
+                    <select
+                      name="dynamicDate"
+                      defaultValue={editableTemplate.dynamicDate}
+                      className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+                    >
+                      <option value="">Keine</option>
+                      <option value="easter_sunday">Ostern</option>
+                      <option value="christi_himmelfahrt">Christi Himmelfahrt</option>
+                      <option value="pfingsten">Pfingsten</option>
+                      <option value="black_friday">Black Friday</option>
+                    </select>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="grid gap-2">
+                      <span className="text-xs font-medium uppercase text-neutral-500">
+                        Von
+                      </span>
+                      <input
+                        name="startOffsetDays"
+                        type="number"
+                        defaultValue={editableTemplate.startOffsetDays}
+                        className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+                      />
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-xs font-medium uppercase text-neutral-500">
+                        Bis
+                      </span>
+                      <input
+                        name="endOffsetDays"
+                        type="number"
+                        defaultValue={editableTemplate.endOffsetDays}
+                        className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+                      />
+                    </label>
+                  </div>
+                </div>
 
-              <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end">
-                <label className="grid gap-2">
-                  <span className="text-xs font-medium uppercase text-neutral-500">
-                    CSS-Klasse
-                  </span>
-                  <input
-                    name="backgroundClass"
-                    defaultValue={editableTemplate.theme.backgroundClass}
-                    className="h-10 rounded-md border border-[var(--line)] bg-white px-3 font-mono text-sm outline-none focus:border-[var(--accent)]"
-                  />
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-xs font-medium uppercase text-neutral-500">
-                    Banner
-                  </span>
-                  <input
-                    name="bannerLabel"
-                    defaultValue={editableTemplate.theme.bannerLabel}
-                    className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
-                  />
-                </label>
-                <div className="grid gap-2">
+                <div className="grid gap-3 md:grid-cols-5">
+                  {[
+                    ["backgroundColor", "Hintergrund", editableTemplate.theme.backgroundColor],
+                    ["accentColor", "Akzent", editableTemplate.theme.accentColor],
+                    ["accentSoftColor", "Akzent hell", editableTemplate.theme.accentSoftColor],
+                    ["accentStrongColor", "Akzent dunkel", editableTemplate.theme.accentStrongColor],
+                    ["buttonColor", "Button", editableTemplate.theme.buttonColor],
+                  ].map(([name, label, value]) => (
+                    <label key={name} className="grid gap-2">
+                      <span className="text-xs font-medium uppercase text-neutral-500">
+                        {label}
+                      </span>
+                      <input
+                        name={name}
+                        type="color"
+                        defaultValue={value}
+                        className="h-10 rounded-md border border-[var(--line)] bg-white px-2 py-1"
+                      />
+                    </label>
+                  ))}
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
+                  <label className="grid gap-2">
+                    <span className="text-xs font-medium uppercase text-neutral-500">
+                      CSS-Klasse
+                    </span>
+                    <input
+                      name="backgroundClass"
+                      defaultValue={editableTemplate.theme.backgroundClass}
+                      className="h-10 rounded-md border border-[var(--line)] bg-white px-3 font-mono text-sm outline-none focus:border-[var(--accent)]"
+                    />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-xs font-medium uppercase text-neutral-500">
+                      Banner
+                    </span>
+                    <input
+                      name="bannerLabel"
+                      defaultValue={editableTemplate.theme.bannerLabel}
+                      className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={!canPersistTemporaryDesign}
+                    className="flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <Save className="size-4" aria-hidden="true" />
+                    <span>Vorlage speichern</span>
+                  </button>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-4">
                   <label className="flex items-center gap-2 text-sm">
                     <input
                       name="templateEnabled"
@@ -6662,7 +6839,7 @@ function SettingsSection({
                       defaultChecked={editableTemplate.enabled}
                       className="size-4 accent-[var(--accent)]"
                     />
-                    <span>Vorlage aktiv</span>
+                    <span>Aktiv</span>
                   </label>
                   <label className="flex items-center gap-2 text-sm">
                     <input
@@ -6689,20 +6866,12 @@ function SettingsSection({
                       defaultChecked={editableTemplate.theme.bannerEnabled}
                       className="size-4 accent-[var(--accent)]"
                     />
-                    <span>Banner anzeigen</span>
+                    <span>Banner</span>
                   </label>
                 </div>
-                <button
-                  type="submit"
-                  disabled={!mfaReady}
-                  className="flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--foreground)] px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  <Save className="size-4" aria-hidden="true" />
-                  <span>Vorlage speichern</span>
-                </button>
-              </div>
-            </form>
-          ) : null}
+              </form>
+            ) : null}
+          </div>
         </div>
       </section>
 
@@ -7032,6 +7201,33 @@ function SectionHeader({
   );
 }
 
+function StatusTile({
+  detail,
+  label,
+  tone = "default",
+  value,
+}: {
+  detail: string;
+  label: string;
+  tone?: "default" | "warning";
+  value: string;
+}) {
+  return (
+    <article
+      className={[
+        "border p-3",
+        tone === "warning"
+          ? "border-amber-300 bg-amber-50 text-amber-950"
+          : "border-[var(--line)] bg-white",
+      ].join(" ")}
+    >
+      <p className="text-xs font-medium uppercase text-neutral-500">{label}</p>
+      <p className="mt-1 truncate text-lg font-black">{value || "-"}</p>
+      <p className="mt-1 truncate text-xs text-neutral-600">{detail || "-"}</p>
+    </article>
+  );
+}
+
 function StatusLine({ active, label }: { active: boolean; label: string }) {
   return (
     <div className="flex items-center justify-between gap-3">
@@ -7055,7 +7251,11 @@ function mapTemporaryDesignSource(source: ActiveTemporaryDesign["source"]) {
   return labels[source];
 }
 
-function formatTemporaryDesignPeriod(template: TemporaryDesignTemplate) {
+function formatTemporaryDesignPeriod(template?: TemporaryDesignTemplate | null) {
+  if (!template) {
+    return "-";
+  }
+
   if (template.dynamicDate) {
     return `${mapTemporaryDesignDynamicDate(template.dynamicDate)} ${
       template.startOffsetDays || template.endOffsetDays

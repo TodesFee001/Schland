@@ -2,7 +2,10 @@ import type { AuthStatus } from "@/lib/auth";
 import { hasSupabasePublicEnv } from "@/lib/env";
 import { hasGoogleDriveServerConfig } from "@/lib/google-drive";
 import { mapLockdownStatusRow, type LockdownStatus } from "@/lib/lockdown";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  createSupabaseServerClient,
+  getSupabaseAdminClient,
+} from "@/lib/supabase/server";
 import {
   defaultTemporaryDesignSettings,
   defaultTemporaryDesignTemplates,
@@ -457,6 +460,8 @@ const demoTemporaryDesigns: TemporaryDesignState = {
     settings: defaultTemporaryDesignSettings,
     templates: defaultTemporaryDesignTemplates,
   }),
+  storageMessage: "Demo-Modus: Supabase ist nicht verbunden.",
+  storageReady: false,
   settings: defaultTemporaryDesignSettings,
   templates: defaultTemporaryDesignTemplates,
 };
@@ -1182,8 +1187,6 @@ export async function getWorkspaceData(
       ministryRolesResult,
       representationEligibilitiesResult,
       absencesResult,
-      temporaryDesignSettingsResult,
-      temporaryDesignTemplatesResult,
     ] = await Promise.all([
       supabase
         .from("members")
@@ -1541,20 +1544,6 @@ export async function getWorkspaceData(
         )
         .order("started_at", { ascending: false })
         .limit(100),
-      supabase
-        .from("temporary_design_settings")
-        .select(
-          "enabled, automatic_enabled, manual_enabled, manual_template_key, manual_start_date, manual_end_date, manual_priority",
-        )
-        .eq("id", true)
-        .maybeSingle(),
-      supabase
-        .from("temporary_design_templates")
-        .select(
-          "key, name, event_name, enabled, manual_only, recurring, start_date, end_date, dynamic_date, start_offset_days, end_offset_days, priority, theme",
-        )
-        .order("priority", { ascending: false })
-        .order("name", { ascending: true }),
     ]);
 
     collectWarning(warnings, membersResult.error?.message);
@@ -1577,13 +1566,8 @@ export async function getWorkspaceData(
     collectWarning(warnings, ministryRolesResult.error?.message);
     collectWarning(warnings, representationEligibilitiesResult.error?.message);
     collectWarning(warnings, absencesResult.error?.message);
-    collectWarningIfActionable(warnings, temporaryDesignSettingsResult.error?.message);
-    collectWarningIfActionable(warnings, temporaryDesignTemplatesResult.error?.message);
 
-    const temporaryDesigns = mapTemporaryDesignState(
-      temporaryDesignSettingsResult.data ?? null,
-      temporaryDesignTemplatesResult.data ?? [],
-    );
+    const temporaryDesigns = await loadTemporaryDesignState(warnings);
 
     return {
       source: "supabase",
@@ -1663,6 +1647,65 @@ function isOptionalDriveSchemaWarning(message: string) {
   );
 }
 
+async function loadTemporaryDesignState(warnings: string[]) {
+  try {
+    const admin = getSupabaseAdminClient();
+    const [settingsResult, templatesResult] = await Promise.all([
+      admin
+        .from("temporary_design_settings")
+        .select(
+          "enabled, automatic_enabled, manual_enabled, manual_template_key, manual_start_date, manual_end_date, manual_priority",
+        )
+        .eq("id", true)
+        .maybeSingle(),
+      admin
+        .from("temporary_design_templates")
+        .select(
+          "key, name, event_name, enabled, manual_only, recurring, start_date, end_date, dynamic_date, start_offset_days, end_offset_days, priority, theme",
+        )
+        .order("priority", { ascending: false })
+        .order("name", { ascending: true }),
+    ]);
+
+    const errorMessage =
+      settingsResult.error?.message ?? templatesResult.error?.message ?? "";
+
+    if (errorMessage) {
+      const state = mapTemporaryDesignState(null, [], false, getTemporaryDesignStorageMessage(errorMessage));
+      collectWarningIfActionable(warnings, errorMessage);
+
+      return state;
+    }
+
+    return mapTemporaryDesignState(
+      settingsResult.data ?? null,
+      templatesResult.data ?? [],
+      true,
+      "Supabase-Speicher ist verbunden.",
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Supabase Fehler";
+    collectWarningIfActionable(warnings, message);
+
+    return mapTemporaryDesignState(null, [], false, getTemporaryDesignStorageMessage(message));
+  }
+}
+
+function getTemporaryDesignStorageMessage(message: string) {
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes("temporary_design_settings") ||
+    normalized.includes("temporary_design_templates") ||
+    normalized.includes("schema cache") ||
+    normalized.includes("does not exist")
+  ) {
+    return "Supabase-Migration fuer temporaere Designs fehlt noch.";
+  }
+
+  return message || "Supabase-Speicher fuer temporaere Designs ist nicht erreichbar.";
+}
+
 function mapRowsById(rows: Record<string, unknown>[]) {
   return new Map(
     rows
@@ -1674,6 +1717,8 @@ function mapRowsById(rows: Record<string, unknown>[]) {
 function mapTemporaryDesignState(
   settingsRow: Record<string, unknown> | null,
   templateRows: Record<string, unknown>[],
+  storageReady = true,
+  storageMessage = "Supabase-Speicher ist verbunden.",
 ): TemporaryDesignState {
   const settings = mapTemporaryDesignSettings(settingsRow);
   const templates = normalizeTemporaryDesignTemplates(
@@ -1682,6 +1727,8 @@ function mapTemporaryDesignState(
 
   return {
     activeDesign: getActiveTemporaryDesign({ settings, templates }),
+    storageMessage,
+    storageReady,
     settings,
     templates,
   };

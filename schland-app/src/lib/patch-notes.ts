@@ -10,6 +10,18 @@ export type PatchNote = {
 // Jede produktive Aenderung bekommt hier ab jetzt einen Eintrag.
 export const patchNotes: PatchNote[] = [
   {
+    date: "17.06.2026",
+    id: "temporary-design-admin-repair",
+    items: [
+      "Design-Einstellungen neu geordnet: Status, Vorschau, Aktivierung und Vorlagenbearbeitung sind getrennte Bereiche.",
+      "Vorschau hat jetzt einen expliziten Button und eine eigene Mini-Ansicht, damit Theme-Wechsel sofort sichtbar sind.",
+      "Supabase-Anbindung fuer temporaere Designs schreibt serverseitig robuster und bringt eine idempotente Reparatur-Migration mit.",
+    ],
+    title: "Temporaere Designs repariert",
+    type: "fix",
+    version: "0.10.13",
+  },
+  {
     date: "15.06.2026",
     id: "temporary-design-system",
     items: [
