@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "17.06.2026",
+    id: "temporary-design-event-overlays",
+    items: [
+      "Event-Designs haben jetzt eigene animierte Atmosphaeren-Layer mit mehreren Motivteilen statt nur dezenter Farbverlaeufe.",
+      "WM, Weihnachten, Ostern, Neujahr, Halloween, Valentinstag, Frauentag, Maennertag und Black Friday wirken in Live-App und Vorschau deutlich eigenstaendiger.",
+      "Die Vorschau in den Design-Einstellungen zeigt die neuen animierten Motive direkt mit an und respektiert Reduced-Motion.",
+    ],
+    title: "Event-Overlays ueberarbeitet",
+    type: "feature",
+    version: "0.10.18",
+  },
+  {
+    date: "17.06.2026",
     id: "discord-age-role-sync",
     items: [
       "Der Discord-Bot vergibt nach dem normalen Mitgliederaktenbogen automatisch genau eine passende Altersrolle fuer 14+, 16+, 18+ oder 20+.",

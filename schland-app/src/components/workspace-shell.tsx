@@ -418,6 +418,7 @@ export function WorkspaceShell({
       ].join(" ")}
       style={temporaryDesignStyle}
     >
+      <TemporaryDesignAtmosphere design={renderedTemporaryDesign} />
       <TemporaryDesignBanner
         design={renderedTemporaryDesign}
         preview={Boolean(previewTemplate)}
@@ -844,6 +845,23 @@ function TemporaryDesignBanner({
           {preview ? "nur lokal sichtbar" : design.source}
         </span>
       </div>
+    </div>
+  );
+}
+
+function TemporaryDesignAtmosphere({ design }: { design: ActiveTemporaryDesign }) {
+  if (design.source === "default" || design.theme.backgroundClass === "theme-default") {
+    return null;
+  }
+
+  return (
+    <div className="temporary-design-atmosphere" aria-hidden="true">
+      <span />
+      <span />
+      <span />
+      <span />
+      <span />
+      <span />
     </div>
   );
 }
@@ -6522,6 +6540,12 @@ function SettingsSection({
                 ].join(" ")}
                 style={renderedPreviewStyle}
               >
+                <span className="temporary-design-preview-atmosphere" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </span>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
                     <span
