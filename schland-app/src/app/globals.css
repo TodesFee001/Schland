@@ -10,6 +10,7 @@
   --accent: #263f72;
   --accent-strong: #14284d;
   --accent-soft: #d7dfed;
+  --button: #111111;
   --info: #1f4f8f;
   --warning: #755800;
   --danger: #8f1f18;
@@ -53,8 +54,42 @@ body {
 .theme-neujahr,
 .theme-halloween,
 .theme-black-friday {
+  position: relative;
+  overflow-x: clip;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--background) 82%, white), var(--background));
+}
+
+.temporary-design-shell.theme-frauentag > *,
+.temporary-design-shell.theme-valentinstag > *,
+.temporary-design-shell.theme-weihnachten > *,
+.temporary-design-shell.theme-ostern > *,
+.temporary-design-shell.theme-maennertag > *,
+.temporary-design-shell.theme-wm-2026 > *,
+.temporary-design-shell.theme-neujahr > *,
+.temporary-design-shell.theme-halloween > *,
+.temporary-design-shell.theme-black-friday > * {
+  position: relative;
+  z-index: 1;
+}
+
+.temporary-design-shell.theme-frauentag::before,
+.temporary-design-shell.theme-valentinstag::before,
+.temporary-design-shell.theme-weihnachten::before,
+.temporary-design-shell.theme-ostern::before,
+.temporary-design-shell.theme-maennertag::before,
+.temporary-design-shell.theme-wm-2026::before,
+.temporary-design-shell.theme-neujahr::before,
+.temporary-design-shell.theme-halloween::before,
+.temporary-design-shell.theme-black-friday::before,
+.temporary-design-shell.theme-wm-2026::after,
+.temporary-design-shell.theme-neujahr::after,
+.temporary-design-shell.theme-halloween::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
 }
 
 .theme-frauentag {
@@ -64,11 +99,29 @@ body {
   --line-strong: #7a174f;
 }
 
+.temporary-design-shell.theme-frauentag::before {
+  opacity: 0.58;
+  background-image:
+    radial-gradient(circle at 14% 22%, rgba(184, 50, 128, 0.2) 0 18px, transparent 19px),
+    radial-gradient(circle at 18% 27%, rgba(255, 255, 255, 0.58) 0 9px, transparent 10px),
+    radial-gradient(circle at 82% 18%, rgba(184, 50, 128, 0.16) 0 22px, transparent 23px),
+    radial-gradient(circle at 76% 78%, rgba(122, 23, 79, 0.12) 0 28px, transparent 29px);
+  background-size: 240px 210px, 240px 210px, 280px 240px, 320px 260px;
+}
+
 .theme-maennertag {
   --surface: #f3f8ff;
   --surface-muted: #dbeafe;
   --line: #8aa8da;
   --line-strong: #1e3a8a;
+}
+
+.temporary-design-shell.theme-maennertag::before {
+  opacity: 0.5;
+  background:
+    radial-gradient(circle at 18% 20%, rgba(29, 78, 216, 0.22) 0 28px, transparent 29px),
+    radial-gradient(circle at 82% 78%, rgba(30, 58, 138, 0.16) 0 42px, transparent 43px),
+    repeating-linear-gradient(135deg, rgba(29, 78, 216, 0.09) 0 16px, transparent 16px 42px);
 }
 
 .theme-wm-2026 {
@@ -86,11 +139,38 @@ body {
     linear-gradient(180deg, #e9f8e8 0%, var(--background) 52%, #bfe7ca 100%);
 }
 
+.temporary-design-shell.theme-wm-2026::before {
+  opacity: 0.42;
+  background-image:
+    radial-gradient(circle at 18% 16%, rgba(255, 255, 255, 0.96) 0 9px, transparent 10px),
+    radial-gradient(circle at 18% 16%, rgba(11, 47, 26, 0.28) 0 13px, transparent 14px),
+    radial-gradient(circle at 84% 74%, rgba(255, 255, 255, 0.9) 0 10px, transparent 11px),
+    radial-gradient(circle at 84% 74%, rgba(11, 47, 26, 0.25) 0 15px, transparent 16px);
+  background-size: 260px 220px, 260px 220px, 320px 260px, 320px 260px;
+}
+
+.temporary-design-shell.theme-wm-2026::after {
+  opacity: 0.32;
+  background:
+    radial-gradient(ellipse at 50% -8%, rgba(255, 207, 51, 0.42), transparent 42%),
+    radial-gradient(ellipse at 10% 5%, rgba(217, 4, 41, 0.22), transparent 28%),
+    radial-gradient(ellipse at 90% 5%, rgba(17, 122, 55, 0.26), transparent 30%);
+}
+
 .theme-weihnachten {
   --surface: #fff7f5;
   --surface-muted: #f5dddd;
   --line: #bb8d8d;
   --line-strong: #7f1d1d;
+}
+
+.temporary-design-shell.theme-weihnachten::before {
+  opacity: 0.6;
+  background-image:
+    radial-gradient(circle, rgba(255, 255, 255, 0.9) 0 2px, transparent 3px),
+    radial-gradient(circle, rgba(185, 28, 28, 0.16) 0 8px, transparent 9px),
+    linear-gradient(120deg, transparent 0 44%, rgba(127, 29, 29, 0.1) 44% 46%, transparent 46% 100%);
+  background-size: 44px 44px, 220px 180px, 260px 260px;
 }
 
 .theme-ostern {
@@ -100,11 +180,38 @@ body {
   --line-strong: #4c1d95;
 }
 
+.temporary-design-shell.theme-ostern::before {
+  opacity: 0.5;
+  background-image:
+    radial-gradient(ellipse at 20% 24%, rgba(124, 58, 237, 0.2) 0 16px, transparent 17px),
+    radial-gradient(ellipse at 24% 30%, rgba(255, 255, 255, 0.7) 0 7px, transparent 8px),
+    radial-gradient(ellipse at 82% 72%, rgba(76, 29, 149, 0.14) 0 22px, transparent 23px),
+    repeating-linear-gradient(90deg, rgba(124, 58, 237, 0.08) 0 9px, transparent 9px 24px);
+  background-size: 220px 190px, 220px 190px, 260px 220px, 180px 180px;
+}
+
 .theme-neujahr {
   --surface: #f8f7ff;
   --surface-muted: #e9e2ff;
   --line: #a69bd6;
   --line-strong: #581c87;
+}
+
+.temporary-design-shell.theme-neujahr::before {
+  opacity: 0.5;
+  background:
+    radial-gradient(circle at 18% 22%, transparent 0 14px, rgba(109, 40, 217, 0.28) 15px 16px, transparent 17px 100%),
+    radial-gradient(circle at 80% 24%, transparent 0 10px, rgba(255, 207, 51, 0.34) 11px 12px, transparent 13px 100%),
+    radial-gradient(circle at 72% 78%, transparent 0 16px, rgba(88, 28, 135, 0.22) 17px 18px, transparent 19px 100%);
+  background-size: 260px 220px, 300px 240px, 330px 260px;
+}
+
+.temporary-design-shell.theme-neujahr::after {
+  opacity: 0.38;
+  background:
+    conic-gradient(from 0deg at 18% 22%, transparent 0 11deg, rgba(109, 40, 217, 0.34) 11deg 15deg, transparent 15deg 45deg),
+    conic-gradient(from 10deg at 80% 24%, transparent 0 10deg, rgba(255, 207, 51, 0.38) 10deg 14deg, transparent 14deg 42deg);
+  background-size: 280px 240px, 320px 260px;
 }
 
 .theme-halloween {
@@ -114,11 +221,38 @@ body {
   --line-strong: #431407;
 }
 
+.temporary-design-shell.theme-halloween::before {
+  opacity: 0.52;
+  background:
+    radial-gradient(circle at 78% 18%, rgba(255, 237, 213, 0.94) 0 34px, transparent 35px),
+    radial-gradient(circle at 76% 16%, rgba(255, 247, 237, 0.9) 0 30px, transparent 31px),
+    repeating-linear-gradient(135deg, rgba(67, 20, 7, 0.08) 0 12px, transparent 12px 38px);
+}
+
+.temporary-design-shell.theme-halloween::after {
+  opacity: 0.38;
+  background-image:
+    radial-gradient(ellipse at 20% 30%, rgba(67, 20, 7, 0.22) 0 10px, transparent 11px),
+    radial-gradient(ellipse at 24% 31%, rgba(67, 20, 7, 0.18) 0 7px, transparent 8px),
+    radial-gradient(ellipse at 70% 68%, rgba(67, 20, 7, 0.18) 0 9px, transparent 10px);
+  background-size: 240px 180px, 240px 180px, 260px 220px;
+}
+
 .theme-valentinstag {
   --surface: #fff5f7;
   --surface-muted: #ffe4e6;
   --line: #d99aaa;
   --line-strong: #881337;
+}
+
+.temporary-design-shell.theme-valentinstag::before {
+  opacity: 0.48;
+  background-image:
+    radial-gradient(circle at 20% 20%, rgba(190, 18, 60, 0.18) 0 16px, transparent 17px),
+    radial-gradient(circle at 28% 20%, rgba(190, 18, 60, 0.18) 0 16px, transparent 17px),
+    radial-gradient(circle at 76% 76%, rgba(136, 19, 55, 0.13) 0 24px, transparent 25px),
+    linear-gradient(45deg, transparent 0 48%, rgba(190, 18, 60, 0.08) 48% 51%, transparent 51% 100%);
+  background-size: 220px 190px, 220px 190px, 300px 260px, 260px 260px;
 }
 
 .theme-black-friday {
@@ -129,8 +263,194 @@ body {
   --line-strong: #18181b;
 }
 
+.temporary-design-shell.theme-black-friday::before {
+  opacity: 0.46;
+  background:
+    repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.12) 0 22px, transparent 22px 54px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.42), transparent 24%, transparent 76%, rgba(0, 0, 0, 0.12));
+}
+
 .temporary-design-banner {
+  position: relative;
+  overflow: hidden;
   box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.temporary-design-banner::before,
+.temporary-design-banner::after {
+  content: "";
+  position: absolute;
+  inset-block: -40px;
+  width: 180px;
+  pointer-events: none;
+  opacity: 0.28;
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.9) 0 7px, transparent 8px),
+    radial-gradient(circle, rgba(255, 255, 255, 0.52) 0 2px, transparent 3px);
+  background-size: 54px 54px, 24px 24px;
+}
+
+.temporary-design-banner::before {
+  left: -32px;
+}
+
+.temporary-design-banner::after {
+  right: -32px;
+}
+
+.temporary-design-banner-copy {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.temporary-design-emblem {
+  position: relative;
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32), 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.temporary-design-emblem-mark,
+.temporary-design-emblem::before,
+.temporary-design-emblem::after {
+  content: "";
+  position: absolute;
+  display: block;
+}
+
+.temporary-design-emblem-floral .temporary-design-emblem-mark,
+.temporary-design-emblem-heart .temporary-design-emblem-mark {
+  width: 14px;
+  height: 14px;
+  background: #ffffff;
+  transform: rotate(45deg);
+}
+
+.temporary-design-emblem-default .temporary-design-emblem-mark {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #ffffff;
+  box-shadow: 6px 6px 0 rgba(255, 255, 255, 0.42);
+}
+
+.temporary-design-emblem-floral::before,
+.temporary-design-emblem-floral::after {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.temporary-design-emblem-floral::before {
+  transform: translate(-8px, -7px);
+}
+
+.temporary-design-emblem-floral::after {
+  transform: translate(8px, 7px);
+}
+
+.temporary-design-emblem-badge .temporary-design-emblem-mark {
+  width: 18px;
+  height: 22px;
+  background: linear-gradient(180deg, #ffffff 0 58%, transparent 58% 100%);
+  clip-path: polygon(50% 0, 94% 24%, 82% 100%, 50% 78%, 18% 100%, 6% 24%);
+}
+
+.temporary-design-emblem-pitch .temporary-design-emblem-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 50% 50%, #111111 0 3px, transparent 4px),
+    linear-gradient(90deg, transparent 0 45%, #111111 45% 55%, transparent 55%),
+    linear-gradient(0deg, transparent 0 45%, #111111 45% 55%, transparent 55%),
+    #ffffff;
+}
+
+.temporary-design-emblem-stars .temporary-design-emblem-mark,
+.temporary-design-emblem-spark .temporary-design-emblem-mark {
+  width: 24px;
+  height: 24px;
+  background: #ffffff;
+  clip-path: polygon(50% 0, 60% 36%, 98% 36%, 67% 58%, 78% 96%, 50% 72%, 22% 96%, 33% 58%, 2% 36%, 40% 36%);
+}
+
+.temporary-design-emblem-eggs .temporary-design-emblem-mark {
+  width: 16px;
+  height: 22px;
+  border-radius: 50% 50% 46% 46%;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 4px, rgba(76, 29, 149, 0.28) 4px 6px),
+    #ffffff;
+}
+
+.temporary-design-emblem-moon .temporary-design-emblem-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #fff7ed;
+  box-shadow: inset -8px 0 0 rgba(67, 20, 7, 0.35);
+}
+
+.temporary-design-emblem-heart .temporary-design-emblem-mark::before,
+.temporary-design-emblem-heart .temporary-design-emblem-mark::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #ffffff;
+}
+
+.temporary-design-emblem-heart .temporary-design-emblem-mark::before {
+  transform: translate(-7px, 0);
+}
+
+.temporary-design-emblem-heart .temporary-design-emblem-mark::after {
+  transform: translate(0, -7px);
+}
+
+.temporary-design-emblem-contrast .temporary-design-emblem-mark {
+  width: 24px;
+  height: 18px;
+  background:
+    linear-gradient(135deg, #ffffff 0 50%, #111111 50% 100%);
+  border: 2px solid #ffffff;
+}
+
+.theme-frauentag button:not(:disabled),
+.theme-valentinstag button:not(:disabled),
+.theme-weihnachten button:not(:disabled),
+.theme-ostern button:not(:disabled),
+.theme-maennertag button:not(:disabled),
+.theme-wm-2026 button:not(:disabled),
+.theme-neujahr button:not(:disabled),
+.theme-halloween button:not(:disabled),
+.theme-black-friday button:not(:disabled) {
+  box-shadow:
+    inset 0 -2px 0 color-mix(in srgb, var(--button) 34%, black),
+    0 1px 0 rgba(255, 255, 255, 0.36);
+}
+
+.theme-frauentag button:not(:disabled):hover,
+.theme-valentinstag button:not(:disabled):hover,
+.theme-weihnachten button:not(:disabled):hover,
+.theme-ostern button:not(:disabled):hover,
+.theme-maennertag button:not(:disabled):hover,
+.theme-wm-2026 button:not(:disabled):hover,
+.theme-neujahr button:not(:disabled):hover,
+.theme-halloween button:not(:disabled):hover,
+.theme-black-friday button:not(:disabled):hover {
+  filter: saturate(1.08) brightness(1.02);
+  transform: translateY(-1px);
 }
 
 .theme-wm-2026 .temporary-design-banner {
@@ -140,10 +460,151 @@ body {
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
 }
 
+.temporary-design-banner-default {
+  background: var(--accent);
+}
+
+.temporary-design-banner-soft {
+  background:
+    radial-gradient(circle at 18% 20%, rgba(255, 255, 255, 0.28), transparent 22%),
+    linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 72%, white));
+}
+
+.temporary-design-banner-clear,
+.temporary-design-banner-sport {
+  background:
+    linear-gradient(135deg, transparent 0 14px, rgba(255, 255, 255, 0.18) 14px 28px, transparent 28px 48px),
+    linear-gradient(90deg, var(--accent-strong), var(--accent));
+}
+
+.temporary-design-banner-stadium {
+  background:
+    radial-gradient(ellipse at 50% -40%, rgba(255, 255, 255, 0.62), transparent 42%),
+    linear-gradient(90deg, #111111 0 18%, #d90429 18% 52%, #ffcf33 52% 70%, #117a37 70% 100%);
+}
+
+.temporary-design-banner-festive {
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.95) 0 3px, transparent 4px) 0 0 / 34px 34px,
+    linear-gradient(90deg, var(--accent-strong), var(--accent));
+}
+
+.temporary-design-banner-spring {
+  background:
+    radial-gradient(ellipse at 12% 42%, rgba(255, 255, 255, 0.3), transparent 20%),
+    radial-gradient(ellipse at 82% 35%, rgba(255, 255, 255, 0.25), transparent 24%),
+    linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent-soft) 42%, var(--accent)));
+}
+
+.temporary-design-banner-celebration {
+  background:
+    conic-gradient(from 25deg at 14% 50%, transparent 0 12deg, rgba(255, 255, 255, 0.36) 12deg 16deg, transparent 16deg 40deg),
+    conic-gradient(from 5deg at 86% 50%, transparent 0 12deg, rgba(255, 207, 51, 0.45) 12deg 16deg, transparent 16deg 40deg),
+    linear-gradient(90deg, var(--accent-strong), var(--accent));
+}
+
+.temporary-design-banner-seasonal {
+  background:
+    radial-gradient(circle at 82% 30%, rgba(255, 247, 237, 0.42) 0 22px, transparent 23px),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0 12px, transparent 12px 34px),
+    linear-gradient(90deg, var(--accent-strong), var(--accent));
+}
+
+.temporary-design-banner-contrast {
+  background:
+    repeating-linear-gradient(135deg, #111111 0 18px, #2f2f2f 18px 34px),
+    #111111;
+  color: #ffffff;
+}
+
+.temporary-design-preview-soft {
+  box-shadow: inset 0 0 0 4px color-mix(in srgb, var(--accent-soft) 68%, white);
+}
+
+.temporary-design-preview-clear,
+.temporary-design-preview-sport {
+  box-shadow: inset 0 -8px 0 color-mix(in srgb, var(--accent) 78%, white);
+}
+
+.temporary-design-preview-stadium {
+  box-shadow:
+    inset 0 0 0 2px rgba(17, 17, 17, 0.24),
+    inset 0 -10px 0 #117a37;
+}
+
+.temporary-design-preview-festive,
+.temporary-design-preview-celebration {
+  box-shadow:
+    inset 0 5px 0 color-mix(in srgb, var(--accent-soft) 60%, white),
+    inset 0 -5px 0 color-mix(in srgb, var(--accent) 52%, black);
+}
+
+.temporary-design-preview-spring {
+  box-shadow:
+    inset 0 0 0 3px color-mix(in srgb, var(--accent-soft) 75%, white),
+    inset 0 -8px 0 color-mix(in srgb, var(--accent) 38%, white);
+}
+
+.temporary-design-preview-seasonal,
+.temporary-design-preview-contrast {
+  box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--accent-strong) 62%, black),
+    inset 0 -9px 0 color-mix(in srgb, var(--button) 72%, black);
+}
+
 .theme-weihnachten .temporary-design-banner,
 .theme-neujahr .temporary-design-banner,
-.theme-wm-2026 .temporary-design-banner {
+.theme-wm-2026 .temporary-design-banner,
+.temporary-design-shell.theme-frauentag::before,
+.temporary-design-shell.theme-neujahr::after {
   animation: temporary-design-sheen 8s ease-in-out infinite;
+}
+
+.temporary-design-preview {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.temporary-design-preview > * {
+  position: relative;
+  z-index: 1;
+}
+
+.temporary-design-preview::before,
+.temporary-design-preview::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.temporary-design-preview::before {
+  inset: 0;
+  opacity: 0.28;
+  background:
+    radial-gradient(circle at 18% 18%, color-mix(in srgb, var(--accent) 28%, white) 0 18px, transparent 19px),
+    radial-gradient(circle at 86% 76%, color-mix(in srgb, var(--accent-strong) 24%, white) 0 28px, transparent 29px),
+    repeating-linear-gradient(135deg, transparent 0 22px, rgba(255, 255, 255, 0.3) 22px 28px, transparent 28px 52px);
+}
+
+.temporary-design-preview::after {
+  inset-inline: -20%;
+  bottom: -44px;
+  height: 82px;
+  opacity: 0.38;
+  background:
+    radial-gradient(ellipse at 50% 100%, color-mix(in srgb, var(--accent) 38%, white), transparent 64%);
+}
+
+.temporary-design-preview .temporary-design-emblem {
+  border-color: rgba(255, 255, 255, 0.9);
+  background: color-mix(in srgb, var(--accent) 88%, black);
+}
+
+.temporary-design-preview button,
+.temporary-design-preview .temporary-design-preview-button {
+  background: var(--button);
 }
 
 @keyframes temporary-design-sheen {
@@ -160,8 +621,22 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .theme-weihnachten .temporary-design-banner,
   .theme-neujahr .temporary-design-banner,
-  .theme-wm-2026 .temporary-design-banner {
+  .theme-wm-2026 .temporary-design-banner,
+  .temporary-design-shell.theme-frauentag::before,
+  .temporary-design-shell.theme-neujahr::after {
     animation: none;
+  }
+
+  .theme-frauentag button:not(:disabled):hover,
+  .theme-valentinstag button:not(:disabled):hover,
+  .theme-weihnachten button:not(:disabled):hover,
+  .theme-ostern button:not(:disabled):hover,
+  .theme-maennertag button:not(:disabled):hover,
+  .theme-wm-2026 button:not(:disabled):hover,
+  .theme-neujahr button:not(:disabled):hover,
+  .theme-halloween button:not(:disabled):hover,
+  .theme-black-friday button:not(:disabled):hover {
+    transform: none;
   }
 }
 

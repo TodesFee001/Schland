@@ -407,12 +407,13 @@ export function WorkspaceShell({
     "--accent-soft": renderedTemporaryDesign.theme.accentSoftColor,
     "--accent-strong": renderedTemporaryDesign.theme.accentStrongColor,
     "--background": renderedTemporaryDesign.theme.backgroundColor,
+    "--button": renderedTemporaryDesign.theme.buttonColor,
   } as CSSProperties;
 
   return (
     <main
       className={[
-        "min-h-screen bg-[var(--background)] text-[var(--foreground)]",
+        "temporary-design-shell min-h-screen bg-[var(--background)] text-[var(--foreground)]",
         renderedTemporaryDesign.theme.backgroundClass,
       ].join(" ")}
       style={temporaryDesignStyle}
@@ -816,12 +817,28 @@ function TemporaryDesignBanner({
     return null;
   }
 
+  const decorationClass = getTemporaryDesignDecorationClass(design.theme.decoration);
+  const headerStyleClass = getTemporaryDesignHeaderStyleClass(design.theme.headerStyle);
+
   return (
-    <div className="temporary-design-banner border-b border-[var(--line-strong)] bg-[var(--accent)] px-4 py-2 text-sm font-bold text-white">
+    <div
+      className={[
+        "temporary-design-banner border-b border-[var(--line-strong)] bg-[var(--accent)] px-4 py-2 text-sm font-bold text-white",
+        `temporary-design-banner-${headerStyleClass}`,
+      ].join(" ")}
+    >
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2">
-        <span>
-          {preview ? "Vorschau" : "Temporaeres Design"}:{" "}
-          {design.theme.bannerLabel || design.name}
+        <span className="temporary-design-banner-copy">
+          <span
+            className={`temporary-design-emblem temporary-design-emblem-${decorationClass}`}
+            aria-hidden="true"
+          >
+            <span className="temporary-design-emblem-mark" />
+          </span>
+          <span>
+            {preview ? "Vorschau" : "Temporaeres Design"}:{" "}
+            {design.theme.bannerLabel || design.name}
+          </span>
         </span>
         <span className="font-mono text-xs uppercase opacity-85">
           {preview ? "nur lokal sichtbar" : design.source}
@@ -6328,8 +6345,15 @@ function SettingsSection({
         "--accent-soft": renderedPreviewTemplate.theme.accentSoftColor,
         "--accent-strong": renderedPreviewTemplate.theme.accentStrongColor,
         "--background": renderedPreviewTemplate.theme.backgroundColor,
+        "--button": renderedPreviewTemplate.theme.buttonColor,
       } as CSSProperties)
     : undefined;
+  const renderedPreviewDecorationClass = getTemporaryDesignDecorationClass(
+    renderedPreviewTemplate?.theme.decoration,
+  );
+  const renderedPreviewHeaderStyleClass = getTemporaryDesignHeaderStyleClass(
+    renderedPreviewTemplate?.theme.headerStyle,
+  );
 
   const lockdownRecipients = members
     .filter((member) => member.discordId && member.discordOnServer)
@@ -6492,22 +6516,31 @@ function SettingsSection({
             <div className="grid gap-3 rounded-md border border-[var(--line)] bg-white p-3">
               <div
                 className={[
-                  "grid min-h-[180px] content-between gap-3 border border-[var(--line-strong)] bg-[var(--background)] p-3",
+                  "temporary-design-preview grid min-h-[190px] content-between gap-3 border border-[var(--line-strong)] bg-[var(--background)] p-3",
                   renderedPreviewTemplate?.theme.backgroundClass ?? "theme-default",
+                  `temporary-design-preview-${renderedPreviewHeaderStyleClass}`,
                 ].join(" ")}
                 style={renderedPreviewStyle}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-bold uppercase text-[var(--accent-strong)]">
-                      Vorschau
-                    </p>
-                    <p className="mt-1 text-xl font-black">
-                      {renderedPreviewTemplate?.name ?? "Standard"}
-                    </p>
-                    <p className="text-sm text-neutral-700">
-                      {formatTemporaryDesignPeriod(renderedPreviewTemplate)}
-                    </p>
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span
+                      className={`temporary-design-emblem temporary-design-emblem-${renderedPreviewDecorationClass}`}
+                      aria-hidden="true"
+                    >
+                      <span className="temporary-design-emblem-mark" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold uppercase text-[var(--accent-strong)]">
+                        Vorschau
+                      </p>
+                      <p className="mt-1 truncate text-xl font-black">
+                        {renderedPreviewTemplate?.name ?? "Standard"}
+                      </p>
+                      <p className="text-sm text-neutral-700">
+                        {formatTemporaryDesignPeriod(renderedPreviewTemplate)}
+                      </p>
+                    </div>
                   </div>
                   <span className="rounded-md bg-[var(--accent)] px-2 py-1 text-xs font-bold uppercase text-white">
                     {renderedPreviewTemplate?.theme.bannerLabel || "Theme"}
@@ -6520,6 +6553,9 @@ function SettingsSection({
                     <span className="h-8 border border-[var(--line)] bg-[var(--accent-soft)]" />
                     <span className="h-8 border border-[var(--line)] bg-[var(--accent-strong)]" />
                   </div>
+                  <span className="temporary-design-preview-button flex h-9 items-center justify-center border border-[var(--line-strong)] px-3 text-xs font-black uppercase text-white">
+                    Aktion
+                  </span>
                 </div>
               </div>
 
@@ -6829,6 +6865,41 @@ function SettingsSection({
                     <Save className="size-4" aria-hidden="true" />
                     <span>Vorlage speichern</span>
                   </button>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="grid gap-2">
+                    <span className="text-xs font-medium uppercase text-neutral-500">
+                      Designmotiv
+                    </span>
+                    <select
+                      name="decoration"
+                      defaultValue={editableTemplate.theme.decoration}
+                      className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+                    >
+                      {temporaryDesignDecorationOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-xs font-medium uppercase text-neutral-500">
+                      Kopfstil
+                    </span>
+                    <select
+                      name="headerStyle"
+                      defaultValue={editableTemplate.theme.headerStyle}
+                      className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)]"
+                    >
+                      {temporaryDesignHeaderStyleOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
 
                 <div className="grid gap-2 sm:grid-cols-4">
@@ -7249,6 +7320,54 @@ function mapTemporaryDesignSource(source: ActiveTemporaryDesign["source"]) {
   };
 
   return labels[source];
+}
+
+const temporaryDesignDecorationOptions = [
+  { label: "Standard", value: "" },
+  { label: "Blumen", value: "floral" },
+  { label: "Abzeichen", value: "badge" },
+  { label: "Spielfeld", value: "pitch" },
+  { label: "Sterne", value: "stars" },
+  { label: "Eier", value: "eggs" },
+  { label: "Funken", value: "spark" },
+  { label: "Mond", value: "moon" },
+  { label: "Herz", value: "heart" },
+  { label: "Kontrast", value: "contrast" },
+] as const;
+
+const temporaryDesignHeaderStyleOptions = [
+  { label: "Standard", value: "default" },
+  { label: "Weich", value: "soft" },
+  { label: "Klar", value: "clear" },
+  { label: "Sport", value: "sport" },
+  { label: "Stadion", value: "stadium" },
+  { label: "Festlich", value: "festive" },
+  { label: "Fruehling", value: "spring" },
+  { label: "Feier", value: "celebration" },
+  { label: "Saisonal", value: "seasonal" },
+  { label: "Kontrast", value: "contrast" },
+] as const;
+
+function getTemporaryDesignDecorationClass(value?: string | null) {
+  const allowed = new Set<string>(
+    temporaryDesignDecorationOptions
+      .map((option) => option.value)
+      .filter(Boolean),
+  );
+  const token = value ?? "";
+
+  return allowed.has(token) ? token : "default";
+}
+
+function getTemporaryDesignHeaderStyleClass(value?: string | null) {
+  const allowed = new Set<string>(
+    temporaryDesignHeaderStyleOptions
+      .map((option) => option.value)
+      .filter(Boolean),
+  );
+  const token = value ?? "";
+
+  return allowed.has(token) ? token : "default";
 }
 
 function formatTemporaryDesignPeriod(template?: TemporaryDesignTemplate | null) {

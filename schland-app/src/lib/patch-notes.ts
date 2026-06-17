@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "17.06.2026",
+    id: "temporary-design-rich-skins",
+    items: [
+      "Design-Vorlagen sind jetzt echte Skins mit saisonalen Hintergrundornamenten, Banner-Emblemen, Mini-Vorschau und Button-Akzenten.",
+      "Vorlagen speichern Motiv und Kopfstil in Supabase mit, damit Bearbeiten nicht mehr auf reine Farbaenderungen zurueckfaellt.",
+      "Die Vorschau ist sauber in die Einstellungsseite eingebettet und erzeugt keine Vollbild-Overlays mehr ausserhalb der Live-App-Schale.",
+    ],
+    title: "Design-Vorlagen als Skins",
+    type: "feature",
+    version: "0.10.15",
+  },
+  {
+    date: "17.06.2026",
     id: "world-cup-2026-design",
     items: [
       "WM-2026-Design fertig vorkonfiguriert: Zeitraum 11.06.2026 bis 19.07.2026, hohe Prioritaet und automatische Aktivierung.",
