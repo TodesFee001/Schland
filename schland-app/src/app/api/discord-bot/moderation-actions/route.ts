@@ -18,7 +18,12 @@ import { getSupabaseAdminClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 const COMMAND_SOURCE = "schland-web-command";
-const COMMAND_SOURCES = [COMMAND_SOURCE, MODERATION_ADVICE_COMMAND_SOURCE];
+const MEMBER_FILE_IMAGE_COMMAND_SOURCE = "schland-member-file-image-policy";
+const COMMAND_SOURCES = [
+  COMMAND_SOURCE,
+  MEMBER_FILE_IMAGE_COMMAND_SOURCE,
+  MODERATION_ADVICE_COMMAND_SOURCE,
+];
 const COMMAND_STATUSES = new Set(["executed", "failed", "running"]);
 
 export async function GET(request: Request) {
@@ -203,6 +208,15 @@ export async function PATCH(request: Request) {
     });
   }
 
+  if (existing.source === MEMBER_FILE_IMAGE_COMMAND_SOURCE) {
+    await markMemberImageWarningExecutionResult(supabase, {
+      botError,
+      commandStatus: commandStatus as "executed" | "failed" | "running",
+      eventId: id,
+      metadata: previousMetadata,
+    });
+  }
+
   return NextResponse.json({
     action: {
       commandStatus: asRecord(data.metadata).commandStatus,
@@ -244,4 +258,66 @@ function mapAction(row: unknown) {
     reason: asText(action.reason) ?? "Schland Moderation",
     startedAt,
   };
+}
+
+async function markMemberImageWarningExecutionResult(
+  supabase: ReturnType<typeof getSupabaseAdminClient>,
+  input: {
+    botError: string | null;
+    commandStatus: "executed" | "failed" | "running";
+    eventId: string;
+    metadata: Record<string, unknown>;
+  },
+) {
+  const requestId = asText(input.metadata.memberFileImageRequestId);
+
+  if (!requestId || !isUuid(requestId)) {
+    return;
+  }
+
+  const status =
+    input.commandStatus === "executed" ? "warning_recorded" : "warning_queued";
+  const { error } = await supabase
+    .from("member_file_image_requests")
+    .update({
+      last_error:
+        input.commandStatus === "failed"
+          ? input.botError ?? "warning_execution_failed"
+          : null,
+      status,
+      warning_event_id: input.eventId,
+    })
+    .eq("id", requestId);
+
+  if (error) {
+    console.error("member image warning status update failed", {
+      code: error.code,
+      details: error.details,
+      message: error.message,
+    });
+
+    return;
+  }
+
+  if (input.commandStatus !== "executed") {
+    return;
+  }
+
+  const { error: logError } = await supabase
+    .from("member_file_image_request_logs")
+    .insert({
+      action: "warning_recorded",
+      details: {
+        eventId: input.eventId,
+      },
+      request_id: requestId,
+    });
+
+  if (logError) {
+    console.error("member image warning log failed", {
+      code: logError.code,
+      details: logError.details,
+      message: logError.message,
+    });
+  }
 }

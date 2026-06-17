@@ -10,10 +10,13 @@ import {
   Events,
   GatewayIntentBits,
   ModalBuilder,
+  Partials,
   PermissionFlagsBits,
   TextInputBuilder,
   TextInputStyle,
 } from "discord.js";
+
+import { createTicketSystem, readTicketConfig } from "./tickets.js";
 
 const LOCKDOWN_PERMISSION_KEYS = [
   "ViewChannel",
@@ -78,7 +81,9 @@ const client = new Client({
     GatewayIntentBits.GuildModeration,
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.MessageContent,
   ],
+  partials: [Partials.Channel],
 });
 
 const disabledAnalyticsIds = new Set();
@@ -104,6 +109,14 @@ let lockdownQueueSize = 0;
 let moderationQueueSize = 0;
 let questionnaireQueueSize = 0;
 let representationQueueSize = 0;
+const ticketSystem = createTicketSystem({
+  api,
+  client,
+  config,
+  errorMessage,
+  formatUser,
+  getGuild,
+});
 
 client.once(Events.ClientReady, async () => {
   console.log(`Schland bot online as ${client.user.tag}`);
@@ -125,6 +138,7 @@ function startBotTimers() {
   );
   timers.push(setInterval(() => void pollLockdownCommands(), config.lockdownPollMs));
   timers.push(setInterval(() => void pollModerationActions(), config.moderationPollMs));
+  timers.push(...ticketSystem.startTimers());
   timers.push(
     setInterval(
       () => void pollRepresentationActions(),
@@ -142,6 +156,7 @@ async function runStartupTasks() {
     ["send heartbeat", () => sendHeartbeat()],
     ["poll lockdown commands", () => pollLockdownCommands()],
     ["poll moderation actions", () => pollModerationActions()],
+    ["poll member image requests", () => ticketSystem.pollMemberFileImages()],
     ["poll representation actions", () => pollRepresentationActions()],
     ["poll invites", () => pollInvites()],
     ["prime voice sessions", () => primeVoiceSessions()],
@@ -165,6 +180,7 @@ client.on(Events.GuildMemberAdd, (member) => {
   }
 
   void syncMember(member, "join");
+  void ticketSystem.handleGuildMemberAdd(member);
 });
 
 client.on(Events.GuildMemberRemove, (member) => {
@@ -192,9 +208,16 @@ client.on(Events.GuildMemberUpdate, (oldMember, newMember) => {
 });
 
 client.on(Events.MessageCreate, (message) => {
-  if (!message.guild || !isConfiguredGuild(message.guild.id)) {
+  if (!message.guild) {
+    void ticketSystem.handleMessage(message);
     return;
   }
+
+  if (!isConfiguredGuild(message.guild.id)) {
+    return;
+  }
+
+  void ticketSystem.handleMessage(message);
 
   if (message.author.bot || disabledAnalyticsIds.has(message.author.id)) {
     return;
@@ -908,6 +931,10 @@ async function handleRepresentationApprovalInteraction(interaction, approval) {
 
 async function handleInteraction(interaction) {
   try {
+    if (await ticketSystem.handleInteraction(interaction)) {
+      return;
+    }
+
     if (interaction.isButton()) {
       const representationApproval = getRepresentationApprovalFromCustomId(
         interaction.customId,
@@ -3848,6 +3875,7 @@ async function sendHeartbeat() {
       humansOnServer: null,
       skippedBots: null,
     };
+    const ticketStats = ticketSystem.getHeartbeatStats();
 
     await api("/heartbeat", {
       body: {
@@ -3857,11 +3885,13 @@ async function sendHeartbeat() {
         guildName: stats.guildName ?? guild.name,
         humansOnServer: stats.humansOnServer,
         lockdownQueueSize,
+        memberImageQueueSize: ticketStats.memberImageQueueSize,
         messageBufferSize: messageCounts.size,
         moderationQueueSize,
         questionnaireQueueSize,
         representationQueueSize,
         skippedBots: stats.skippedBots,
+        ticketDrafts: ticketStats.ticketDrafts,
         uptimeSeconds: Math.round(process.uptime()),
       },
     });
@@ -3999,6 +4029,7 @@ function loadConfig() {
     representationPollMs: readMs(env.REPRESENTATION_POLL_MS, 5_000),
     syncToken: env.DISCORD_BOT_SYNC_TOKEN.trim(),
     voiceFlushMs: readMs(env.VOICE_FLUSH_MS, 60_000),
+    ...readTicketConfig(env),
   };
 }
 

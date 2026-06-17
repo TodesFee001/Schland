@@ -154,7 +154,7 @@ const adviceOutputSchema = {
 } as const;
 
 export async function analyzeModerationAdviceCase(input: {
-  actorId: string;
+  actorId: string | null;
   actorName: string;
   caseId: string;
 }) {
@@ -1000,7 +1000,7 @@ function buildAdviceTargetFromCase(adviceCase: Record<string, unknown>) {
 async function persistMinimalAdviceFallback(
   admin: SupabaseAdminClient,
   input: {
-    actorId: string;
+    actorId: string | null;
     caseId: string;
     reason: string;
   },

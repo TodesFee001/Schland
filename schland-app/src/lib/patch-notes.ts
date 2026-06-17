@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "17.06.2026",
+    id: "discord-ticket-member-image-system",
+    items: [
+      "Discord-Tickets koennen ueber ein Bot-Panel erstellt, privat protokolliert und mit Evidence/Transcript in Supabase gespeichert werden.",
+      "Der KI-Sanktionsberater ist in Tickets angebunden, bleibt aber ausdruecklich nur Beratung; Sanktionen laufen weiter ueber berechtigte Admin-Aktionen.",
+      "Neue Mitglieder werden nach 4 Stunden per DM nach genau einem Mitgliederaktenbild gefragt; gueltige Bilder werden als Profilbild der Akte gespeichert und Fristverstoesse landen in der Moderationsqueue.",
+    ],
+    title: "Discord Ticket-System",
+    type: "feature",
+    version: "0.10.16",
+  },
+  {
+    date: "17.06.2026",
     id: "temporary-design-rich-skins",
     items: [
       "Design-Vorlagen sind jetzt echte Skins mit saisonalen Hintergrundornamenten, Banner-Emblemen, Mini-Vorschau und Button-Akzenten.",

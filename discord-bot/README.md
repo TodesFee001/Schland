@@ -11,6 +11,7 @@ Start Command: `npm start`
 Noetige Variablen:
 
 - `DISCORD_BOT_TOKEN`
+- `DISCORD_CLIENT_ID` - fuer `npm run register-commands`
 - `DISCORD_GUILD_ID`
 - `DISCORD_INVITE_CHANNEL_ID`
 - `DISCORD_BOT_SYNC_TOKEN`
@@ -26,3 +27,56 @@ Optionale Lockdown-Variablen:
 Im Discord Developer Portal muss beim Bot der Server Members Intent aktiv sein, sonst kann Discord keine vollstaendige Mitgliederliste liefern.
 
 Fuer Lockdown braucht der Bot zusaetzlich `Manage Channels`, damit Channel-Overwrites gesetzt und spaeter wiederhergestellt werden koennen.
+
+## Slash Commands
+
+Guild-Commands nach Env-Setup registrieren:
+
+```bash
+npm run register-commands
+```
+
+Registriert werden:
+
+- `/ticket-setup` - legt Panel, Ticket-Log, Bilder-Protokoll und Kategorie an oder nutzt die gesetzten IDs.
+- `/add user grund?` - fuegt eine Person zu einem aktiven Ticket hinzu, aber nie eine beim Erstellen explizit ausgeschlossene Person.
+
+## Ticket-System
+
+Standard-Rollen:
+
+- Ticket sichtbar: `1164278939670282261`, `1370092260842278982`, `1164278939670282268`
+- Ticket-Admin fuer `/add`: `1164278939670282268`
+
+Optionale Variablen:
+
+- `DISCORD_TICKET_ADMIN_ROLE_ID`
+- `DISCORD_TICKET_VIEW_ROLE_IDS`
+- `DISCORD_TICKET_PANEL_CHANNEL_ID`
+- `DISCORD_TICKET_LOG_CHANNEL_ID`
+- `DISCORD_TICKET_CATEGORY_ID`
+- `DISCORD_GOVERNMENT_ROLE_IDS`
+- `TICKET_DRAFT_TTL_MS`
+
+Flow:
+
+1. Admin fuehrt `/ticket-setup` aus.
+2. User klickt im Panel auf `Ticket erstellen`.
+3. Der Bot fragt Ticketart, Gegenpartei, ggf. explizit auszuschliessende Regierungsmitglieder, Ort, Zeitpunkt und Details ab.
+4. Der Bot erstellt einen privaten Ticketchannel. `@everyone` ist gesperrt, die sichtbaren Rollen und der Ersteller sind erlaubt, ausgeschlossene User bekommen einen direkten Deny.
+5. Im Ticket koennen berechtigte Personen den KI-Sanktionsberater starten, ein Transcript sichern oder das Ticket schliessen.
+
+Der KI-Sanktionsberater erstellt nur eine Beratung in der Schland-App. Sanktionen werden nicht automatisch von der KI ausgefuehrt; die Umsetzung bleibt ein bewusster Admin-Klick in der bestehenden Moderationsstrecke.
+
+## Mitgliederaktenbilder
+
+Optionale Variablen:
+
+- `DISCORD_MEMBER_IMAGE_LOG_CHANNEL_ID`
+- `MEMBER_IMAGE_DM_DELAY_MS` - Standard 4 Stunden
+- `MEMBER_IMAGE_DEADLINE_MS` - Standard 48 Stunden nach erfolgreicher DM
+- `MEMBER_IMAGE_POLL_MS` - Standard 60 Sekunden
+
+Neue Mitglieder werden in Supabase vorgemerkt. Nach Ablauf der DM-Verzoegerung sendet der Bot eine DM mit der Aufforderung, genau ein Bild als Anhang zu schicken. Gueltige Bilder werden ueber die App-API in `schland-files` gespeichert und als Profilbild der Mitgliederakte verknuepft. Ungueltige Antworten und Fristueberschreitungen werden protokolliert; bei Fristablauf wird eine Warnung in die bestehende Moderationsqueue gelegt.
+
+Fuer Tickettexte und Transcripts muss im Discord Developer Portal zusaetzlich der Message Content Intent aktiviert sein. Fuer neue Mitglieder ist weiterhin der Server Members Intent noetig.

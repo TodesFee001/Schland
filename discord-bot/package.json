@@ -7,7 +7,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "check": "node --check src/index.js && node scripts/boot-check.js",
+    "check": "node --check src/index.js && node --check src/tickets.js && node --check scripts/register-commands.js && node scripts/boot-check.js",
+    "register-commands": "node scripts/register-commands.js",
     "start": "node src/index.js"
   },
   "dependencies": {
