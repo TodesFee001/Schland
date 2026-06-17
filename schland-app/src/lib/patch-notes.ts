@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "17.06.2026",
+    id: "discord-age-role-sync",
+    items: [
+      "Der Discord-Bot vergibt nach dem normalen Mitgliederaktenbogen automatisch genau eine passende Altersrolle fuer 14+, 16+, 18+ oder 20+.",
+      "Falsche Altersrollen aus der Vierer-Staffel werden entfernt, andere Discord-Rollen bleiben unveraendert.",
+      "Fehlende Rollen, Berechtigungsprobleme und deaktivierte Synchronisation werden nachvollziehbar im Bot und in den Mitgliederakten-Logs protokolliert.",
+    ],
+    title: "Altersrollen aus Aktenbogen",
+    type: "feature",
+    version: "0.10.17",
+  },
+  {
+    date: "17.06.2026",
     id: "discord-ticket-member-image-system",
     items: [
       "Discord-Tickets koennen ueber ein Bot-Panel erstellt, privat protokolliert und mit Evidence/Transcript in Supabase gespeichert werden.",

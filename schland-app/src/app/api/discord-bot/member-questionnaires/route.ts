@@ -35,6 +35,15 @@ const BULK_ROLLOUT_ENABLED =
   process.env.QUESTIONNAIRE_BULK_ROLLOUT_ENABLED?.trim().toLowerCase() ===
   "true";
 const WRITE_STATUSES = new Set([
+  "age_role_failed_member_not_found",
+  "age_role_failed_missing_role",
+  "age_role_failed_permission",
+  "age_role_failed_unknown",
+  "age_role_removed_under_14",
+  "age_role_skipped_disabled",
+  "age_role_skipped_no_age",
+  "age_role_unchanged",
+  "age_role_updated",
   "failed",
   "gaming_submitted",
   "profile_submitted",
@@ -265,6 +274,7 @@ export async function PATCH(request: Request) {
 
   const logError = await insertQuestionnaireLog(supabase, {
     botError: asText(body?.botError ?? body?.error),
+    details: asRecord(body?.details),
     discordUserId,
     dmMessageId: asText(body?.dmMessageId ?? body?.messageId),
     memberId,
@@ -277,7 +287,13 @@ export async function PATCH(request: Request) {
     return logError;
   }
 
-  return NextResponse.json({ questionnaire: { memberId, status } });
+  return NextResponse.json({
+    member: {
+      id: memberId,
+      discordUserId: memberDiscordId ?? discordUserId,
+    },
+    questionnaire: { memberId, status },
+  });
 }
 
 async function submitQuestionnaire(
@@ -390,7 +406,25 @@ async function submitQuestionnaire(
     return logError;
   }
 
-  return NextResponse.json({ questionnaire: { memberId, status } });
+  const ageWasStored =
+    status !== "gaming_submitted" &&
+    status !== "socials_submitted" &&
+    answers.age !== null;
+
+  return NextResponse.json({
+    member: {
+      age: ageWasStored ? answers.age : null,
+      discordUserId:
+        asText(member.discord_id) ??
+        discordUserId,
+      id: memberId,
+    },
+    questionnaire: {
+      ageProvided: ageWasStored,
+      memberId,
+      status,
+    },
+  });
 }
 
 async function insertQuestionnaireLog(
@@ -398,6 +432,7 @@ async function insertQuestionnaireLog(
   input: {
     answers?: IntakeAnswers;
     botError?: string | null;
+    details?: Record<string, unknown>;
     discordUserId?: string | null;
     dmMessageId?: string | null;
     memberId: string;
@@ -410,6 +445,7 @@ async function insertQuestionnaireLog(
   const payload = {
     answers: input.answers,
     botError: input.botError,
+    details: input.details,
     discordUserId: input.discordUserId,
     dmMessageId: input.dmMessageId,
     forceResendRunId: FORCE_RESEND_RUN_ID,
@@ -525,6 +561,15 @@ function mapLatestLogsByMember(rows: unknown[]) {
 
 function mapStatusReason(status: string) {
   const labels: Record<string, string> = {
+    age_role_failed_member_not_found: "Discord-Altersrolle: Mitglied nicht gefunden",
+    age_role_failed_missing_role: "Discord-Altersrolle: Rolle nicht gefunden",
+    age_role_failed_permission: "Discord-Altersrolle: Berechtigung fehlt",
+    age_role_failed_unknown: "Discord-Altersrolle: unbekannter Fehler",
+    age_role_removed_under_14: "Discord-Altersrolle entfernt - unter 14",
+    age_role_skipped_disabled: "Discord-Altersrolle deaktiviert",
+    age_role_skipped_no_age: "Discord-Altersrolle uebersprungen - kein Alter",
+    age_role_unchanged: "Discord-Altersrolle unveraendert",
+    age_role_updated: "Discord-Altersrolle aktualisiert",
     failed: "Discord-Aktenbogen DM fehlgeschlagen",
     gaming_submitted: "Discord-Aktenbogen Gaming-Felder eingereicht",
     profile_submitted: "Discord-Aktenbogen Basisfelder eingereicht",

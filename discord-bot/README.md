@@ -28,6 +28,29 @@ Im Discord Developer Portal muss beim Bot der Server Members Intent aktiv sein, 
 
 Fuer Lockdown braucht der Bot zusaetzlich `Manage Channels`, damit Channel-Overwrites gesetzt und spaeter wiederhergestellt werden koennen.
 
+## Altersrollen aus Mitgliederaktenbogen
+
+Der bestehende Mitgliederaktenbogen fragt im Modal `Mitgliederakte - Basis` optional das Alter ab. Nach erfolgreichem Speichern synchronisiert der Bot genau eine Altersrolle:
+
+| Alter | Rollen-ID |
+| ---: | --- |
+| 14-15 | `1164278939598995516` |
+| 16-17 | `1164278939565424669` |
+| 18-19 | `1164278939565424668` |
+| 20+ | `1164278939565424667` |
+
+Optionale Variablen:
+
+- `DISCORD_AGE_ROLE_SYNC_ENABLED` - `1` aktiv, `0` deaktiviert
+- `DISCORD_AGE_ROLE_14_ID`
+- `DISCORD_AGE_ROLE_16_ID`
+- `DISCORD_AGE_ROLE_18_ID`
+- `DISCORD_AGE_ROLE_20_ID`
+
+Leeres oder ungueltiges Alter aendert keine Rolle. Gueltiges Alter unter 14 entfernt vorhandene Altersrollen aus dieser Vierer-Liste und setzt keine neue. Der Bot veraendert keine anderen Rollen.
+
+Der Bot braucht `Manage Roles`, der Server Members Intent muss aktiv sein, und die hoechste Bot-Rolle muss oberhalb der vier Altersrollen stehen. Wenn eine Rolle fehlt oder die Hierarchie nicht passt, bleibt die Akte gespeichert und der Fehler wird im Bot-Log sowie ueber den Mitgliederakten-Log protokolliert.
+
 ## Slash Commands
 
 Guild-Commands nach Env-Setup registrieren:

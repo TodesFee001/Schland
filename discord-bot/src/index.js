@@ -71,6 +71,23 @@ const MEMBER_QUESTIONNAIRE_SOCIALS_BUTTON_PREFIX = "member-intake:socials:";
 const MEMBER_QUESTIONNAIRE_SOCIALS_MODAL_PREFIX = "member-intake:socials-submit:";
 const REPRESENTATION_APPROVAL_ACCEPT_PREFIX = "representation-approval:accept:";
 const REPRESENTATION_APPROVAL_DECLINE_PREFIX = "representation-approval:decline:";
+const AGE_ROLE_RULES = [
+  { minAge: 20, roleId: "1164278939565424667" },
+  { minAge: 18, roleId: "1164278939565424668" },
+  { minAge: 16, roleId: "1164278939565424669" },
+  { minAge: 14, roleId: "1164278939598995516" },
+];
+const AGE_ROLE_STATUSES = new Set([
+  "age_role_failed_member_not_found",
+  "age_role_failed_missing_role",
+  "age_role_failed_permission",
+  "age_role_failed_unknown",
+  "age_role_removed_under_14",
+  "age_role_skipped_disabled",
+  "age_role_skipped_no_age",
+  "age_role_unchanged",
+  "age_role_updated",
+]);
 
 const config = loadConfig();
 const client = new Client({
@@ -1144,7 +1161,7 @@ async function handleMemberQuestionnaireProfileSubmit(interaction, memberId) {
     residence: getModalText(interaction, "residence"),
   };
 
-  await api("/member-questionnaires", {
+  const result = await api("/member-questionnaires", {
     body: {
       answers,
       discordUserId: interaction.user.id,
@@ -1153,8 +1170,24 @@ async function handleMemberQuestionnaireProfileSubmit(interaction, memberId) {
     },
     method: "PATCH",
   });
+  const savedAge = getSavedQuestionnaireAge(result);
+  const ageRoleResult = await syncAgeRoleForMember(interaction.user.id, savedAge, {
+    memberId: result.member?.id ?? memberId,
+    source: "member-questionnaire-profile",
+  });
 
-  await replyMemberQuestionnaireStep(interaction, memberId, "Basisdaten gespeichert.");
+  logAgeRoleSyncResult(ageRoleResult);
+  await writeAgeRoleSyncLog({
+    discordUserId: interaction.user.id,
+    memberId: result.member?.id ?? memberId,
+    result: ageRoleResult,
+  });
+
+  await replyMemberQuestionnaireStep(
+    interaction,
+    memberId,
+    getProfileSubmitReply(ageRoleResult),
+  );
 }
 
 async function handleMemberQuestionnaireSocialsSubmit(interaction, memberId) {
@@ -1203,6 +1236,217 @@ async function replyMemberQuestionnaireStep(interaction, memberId, message) {
     content: `${message} Bitte fuelle bei Bedarf auch die anderen Teile aus.`,
     ephemeral: Boolean(interaction.guildId),
   });
+}
+
+function getSavedQuestionnaireAge(result) {
+  const member = toRecord(result?.member);
+
+  if (!Object.prototype.hasOwnProperty.call(member, "age")) {
+    return null;
+  }
+
+  return normalizeAgeForRole(member.age);
+}
+
+function getProfileSubmitReply(ageRoleResult) {
+  if (
+    ageRoleResult.status === "age_role_skipped_no_age" ||
+    ageRoleResult.status === "age_role_skipped_disabled"
+  ) {
+    return "Basisdaten gespeichert.";
+  }
+
+  if (ageRoleResult.status.startsWith("age_role_failed_")) {
+    return "Basisdaten gespeichert. Die Altersrolle konnte gerade nicht automatisch aktualisiert werden und wurde protokolliert.";
+  }
+
+  return "Basisdaten gespeichert. Altersrolle wurde aktualisiert.";
+}
+
+async function syncAgeRoleForMember(discordUserId, age, context = {}) {
+  const numericAge = normalizeAgeForRole(age);
+  const targetRoleId = getAgeRoleId(numericAge, config.ageRoleRules);
+  const base = {
+    addedRoleId: null,
+    age: numericAge,
+    discordUserId,
+    error: null,
+    memberId: context.memberId ?? null,
+    removedRoleIds: [],
+    source: context.source ?? "member-questionnaire",
+    status: "age_role_skipped_no_age",
+    targetRoleId,
+  };
+
+  if (!config.ageRoleSyncEnabled) {
+    return {
+      ...base,
+      status: "age_role_skipped_disabled",
+    };
+  }
+
+  if (numericAge === null) {
+    return base;
+  }
+
+  try {
+    const guild = await getGuild();
+    const me = guild.members.me ?? (await guild.members.fetchMe());
+
+    await guild.roles.fetch();
+
+    if (!me.permissions.has(PermissionFlagsBits.ManageRoles)) {
+      return buildAgeRoleFailure(base, "age_role_failed_permission", {
+        error: "Bot braucht Manage Roles fuer Altersrollen.",
+      });
+    }
+
+    const member = await guild.members.fetch(discordUserId).catch(() => null);
+
+    if (!member) {
+      return buildAgeRoleFailure(base, "age_role_failed_member_not_found", {
+        error: "Discord-Mitglied nicht gefunden.",
+      });
+    }
+
+    const ageRoleIds = config.ageRoleRules.map((rule) => rule.roleId).filter(Boolean);
+    const currentAgeRoleIds = ageRoleIds.filter((roleId) =>
+      member.roles.cache.has(roleId),
+    );
+    const removedRoleIds = currentAgeRoleIds.filter(
+      (roleId) => roleId !== targetRoleId,
+    );
+    const shouldAddTarget =
+      Boolean(targetRoleId) && !member.roles.cache.has(targetRoleId);
+    const roleIdsToManage = uniqueStrings([
+      ...removedRoleIds,
+      ...(shouldAddTarget && targetRoleId ? [targetRoleId] : []),
+    ]);
+
+    for (const roleId of roleIdsToManage) {
+      const role = guild.roles.cache.get(roleId);
+
+      if (!role) {
+        return buildAgeRoleFailure(base, "age_role_failed_missing_role", {
+          error: `Altersrolle nicht gefunden: ${roleId}`,
+          removedRoleIds,
+        });
+      }
+
+      if (!canManageRole(role, me, guild)) {
+        return buildAgeRoleFailure(base, "age_role_failed_permission", {
+          error: `Bot kann Altersrolle ${role.name ?? role.id} nicht verwalten. Rollen-Hierarchie oder Manage Roles pruefen.`,
+          removedRoleIds,
+        });
+      }
+    }
+
+    if (roleIdsToManage.length === 0) {
+      return {
+        ...base,
+        currentAgeRoleIds,
+        status: targetRoleId
+          ? "age_role_unchanged"
+          : "age_role_removed_under_14",
+      };
+    }
+
+    const reason =
+      "Schland Mitgliederakte: Altersrolle anhand angegebenem Alter aktualisiert";
+
+    if (removedRoleIds.length > 0) {
+      await member.roles.remove(removedRoleIds, reason);
+    }
+
+    if (shouldAddTarget && targetRoleId) {
+      await member.roles.add(targetRoleId, reason);
+    }
+
+    return {
+      ...base,
+      addedRoleId: shouldAddTarget ? targetRoleId : null,
+      currentAgeRoleIds,
+      removedRoleIds,
+      status: targetRoleId ? "age_role_updated" : "age_role_removed_under_14",
+    };
+  } catch (error) {
+    return buildAgeRoleFailure(base, "age_role_failed_unknown", {
+      error: errorMessage(error),
+    });
+  }
+}
+
+function buildAgeRoleFailure(base, status, extra = {}) {
+  return {
+    ...base,
+    ...extra,
+    status,
+  };
+}
+
+function getAgeRoleId(age, rules = AGE_ROLE_RULES) {
+  const numericAge = normalizeAgeForRole(age);
+
+  if (numericAge === null) {
+    return null;
+  }
+
+  return rules.find((rule) => numericAge >= rule.minAge)?.roleId ?? null;
+}
+
+function normalizeAgeForRole(value) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const numericAge = Number(value);
+
+  if (!Number.isInteger(numericAge) || numericAge < 0 || numericAge > 120) {
+    return null;
+  }
+
+  return numericAge;
+}
+
+function logAgeRoleSyncResult(result) {
+  const payload = {
+    addedRoleId: result.addedRoleId,
+    age: result.age,
+    discordUserId: result.discordUserId,
+    error: result.error,
+    memberId: result.memberId,
+    removedRoleIds: result.removedRoleIds,
+    status: result.status,
+    targetRoleId: result.targetRoleId,
+  };
+
+  if (result.status.startsWith("age_role_failed_")) {
+    console.error("Age role sync failed", payload);
+    return;
+  }
+
+  console.log("Age role sync", payload);
+}
+
+async function writeAgeRoleSyncLog(input) {
+  if (!input.memberId || !AGE_ROLE_STATUSES.has(input.result.status)) {
+    return;
+  }
+
+  try {
+    await api("/member-questionnaires", {
+      body: {
+        botError: input.result.error,
+        details: input.result,
+        discordUserId: input.discordUserId,
+        memberId: input.memberId,
+        status: input.result.status,
+      },
+      method: "PATCH",
+    });
+  } catch (error) {
+    console.error("Age role sync log write failed", errorMessage(error));
+  }
 }
 
 function getModalText(interaction, customId) {
@@ -4011,6 +4255,8 @@ function loadConfig() {
     auditBackfillMs: readMs(env.AUDIT_BACKFILL_MS, 15 * 60_000),
     auditPollMs: readMs(env.AUDIT_POLL_MS, 20_000),
     discordBotToken: env.DISCORD_BOT_TOKEN.trim(),
+    ageRoleRules: readAgeRoleRules(env),
+    ageRoleSyncEnabled: env.DISCORD_AGE_ROLE_SYNC_ENABLED?.trim() !== "0",
     fullSyncIntervalMs: readMs(env.FULL_SYNC_INTERVAL_MS, 2 * 60_000),
     guildId: env.DISCORD_GUILD_ID.trim(),
     heartbeatMs: readMs(env.HEARTBEAT_MS, 10_000),
@@ -4031,6 +4277,15 @@ function loadConfig() {
     voiceFlushMs: readMs(env.VOICE_FLUSH_MS, 60_000),
     ...readTicketConfig(env),
   };
+}
+
+function readAgeRoleRules(env) {
+  return AGE_ROLE_RULES.map((rule) => ({
+    minAge: rule.minAge,
+    roleId:
+      env[`DISCORD_AGE_ROLE_${rule.minAge}_ID`]?.trim() ||
+      rule.roleId,
+  }));
 }
 
 function readMs(value, fallback) {
