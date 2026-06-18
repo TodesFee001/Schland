@@ -11,6 +11,17 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "18.06.2026",
+    id: "wm-2026-preview-animation-parity",
+    items: [
+      "Die WM-Vorschau zeigt jetzt ebenfalls die neuen Spielfeldlinien, Flutlichter, Konfetti-Elemente und die animierte Schwarz-Rot-Gold-Bannerleiste.",
+      "Live-Overlay und Design-Vorschau sind dadurch visuell konsistenter; neue WM-Effekte sind vor dem Speichern direkt erkennbar.",
+    ],
+    title: "WM-Vorschau an Live-Overlay angepasst",
+    type: "fix",
+    version: "0.10.21",
+  },
+  {
+    date: "18.06.2026",
     id: "wm-2026-overlay-animation-boost",
     items: [
       "Das WM-Overlay wurde bewusst auffaelliger animiert: mehr Fussbaelle, mehr Bewegung und mehr sichtbare Stadion-Action.",

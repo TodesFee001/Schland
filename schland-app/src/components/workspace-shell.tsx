@@ -6373,7 +6373,7 @@ function SettingsSection({
     renderedPreviewTemplate?.theme.headerStyle,
   );
   const previewAtmosphereElementCount =
-    renderedPreviewTemplate?.theme.backgroundClass === "theme-wm-2026" ? 10 : 6;
+    renderedPreviewTemplate?.theme.backgroundClass === "theme-wm-2026" ? 12 : 6;
 
   const lockdownRecipients = members
     .filter((member) => member.discordId && member.discordOnServer)
@@ -6572,7 +6572,7 @@ function SettingsSection({
                   </span>
                 </div>
                 <div className="grid gap-2">
-                  <div className="h-3 bg-[var(--accent)]" />
+                  <div className="temporary-design-preview-banner-line h-3 bg-[var(--accent)]" />
                   <div className="grid grid-cols-3 gap-2">
                     <span className="h-8 border border-[var(--line)] bg-[var(--surface)]" />
                     <span className="h-8 border border-[var(--line)] bg-[var(--accent-soft)]" />
