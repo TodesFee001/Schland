@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "18.06.2026",
+    id: "patchnotes-button-openai-model-status",
+    items: [
+      "Patchnotes sind in der Topbar wieder als klarer Button mit Beschriftung und Versions-Badge sichtbar.",
+      "Der Patchnotes-Dialog zeigt die aktuelle Version im Kopfbereich und hat einen sichtbaren Schliessen-Button.",
+      "OPENAI_MODEL wird nicht mehr faelschlich als Fehler markiert, wenn das serverseitige Standardmodell genutzt wird.",
+    ],
+    title: "Patchnotes-Button und OpenAI-Status repariert",
+    type: "fix",
+    version: "0.10.23",
+  },
+  {
+    date: "18.06.2026",
     id: "temporary-design-storage-animation-repair",
     items: [
       "Neue Supabase-Reparaturmigration fuer temporaere Designs angelegt: Tabellen, RLS, Data-API-GRANTs, Rechte und alle Vorlagen werden idempotent synchronisiert.",

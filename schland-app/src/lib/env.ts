@@ -14,6 +14,8 @@ export type EnvironmentStatus = {
   googleDocsTemplateId: boolean;
   openAiApiKey: boolean;
   openAiModel: boolean;
+  openAiModelConfigured: boolean;
+  openAiModelName: string;
   supabaseUrl: boolean;
   supabasePublishableKey: boolean;
   supabaseServiceRole: boolean;
@@ -21,6 +23,8 @@ export type EnvironmentStatus = {
 };
 
 export function getEnvironmentStatus(): EnvironmentStatus {
+  const openAiModelName = process.env.OPENAI_MODEL?.trim() || "gpt-5.5";
+
   return {
     discordApplicationId: Boolean(process.env.DISCORD_APPLICATION_ID),
     cronSecret: Boolean(process.env.CRON_SECRET),
@@ -45,7 +49,9 @@ export function getEnvironmentStatus(): EnvironmentStatus {
         process.env.GOOGLE_DRIVE_DOCS_TEMPLATE_ID,
     ),
     openAiApiKey: Boolean(process.env.OPENAI_API_KEY),
-    openAiModel: Boolean(process.env.OPENAI_MODEL),
+    openAiModel: Boolean(openAiModelName),
+    openAiModelConfigured: Boolean(process.env.OPENAI_MODEL?.trim()),
+    openAiModelName,
     supabaseUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
     supabasePublishableKey: Boolean(getSupabasePublishableKey()),
     supabaseServiceRole: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),

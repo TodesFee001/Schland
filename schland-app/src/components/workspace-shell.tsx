@@ -390,6 +390,7 @@ export function WorkspaceShell({
       ? "99+"
       : formatNumber(visibleNotifications.length);
   const latestPatchVersion = patchNotes[0]?.version ?? "-";
+  const latestPatchTitle = patchNotes[0]?.title ?? "Keine Patchnotes";
   const previewTemplate =
     workspaceData.temporaryDesigns.templates.find(
       (template) => template.key === temporaryDesignPreviewKey,
@@ -513,13 +514,22 @@ export function WorkspaceShell({
                 ) : null}
                 <button
                   type="button"
-                  title="Patchnotes"
+                  title={`Patchnotes oeffnen: ${latestPatchTitle}`}
+                  aria-haspopup="dialog"
                   aria-expanded={patchNotesOpen}
-                  onClick={() => setPatchNotesOpen(true)}
-                  className="flex h-9 items-center gap-2 rounded-md border border-[var(--line)] bg-[var(--surface)] px-3 text-sm"
+                  onClick={() => setPatchNotesOpen((open) => !open)}
+                  className={[
+                    "flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium",
+                    patchNotesOpen
+                      ? "border-[var(--line-strong)] bg-[var(--accent-soft)] text-[var(--accent-strong)]"
+                      : "border-[var(--line)] bg-[var(--surface)]",
+                  ].join(" ")}
                 >
                   <FileText className="size-4" aria-hidden="true" />
-                  <span className="hidden sm:inline">{latestPatchVersion}</span>
+                  <span>Patchnotes</span>
+                  <span className="border border-current px-1.5 py-0.5 font-mono text-xs">
+                    {latestPatchVersion}
+                  </span>
                 </button>
                 <div className="relative">
                   <button
@@ -6184,6 +6194,8 @@ function SyncSection({
 }
 
 function PatchNotesLayer({ onClose }: { onClose: () => void }) {
+  const latestPatchVersion = patchNotes[0]?.version ?? "-";
+
   return (
     <div
       aria-modal="true"
@@ -6195,21 +6207,22 @@ function PatchNotesLayer({ onClose }: { onClose: () => void }) {
           <div className="min-w-0">
             <p className="text-sm font-bold uppercase">Patchnotes</p>
             <p className="truncate text-xs text-neutral-600">
-              Aenderungen an Schland DB
+              Aenderungen an Schland DB - aktuelle Version {latestPatchVersion}
             </p>
           </div>
           <button
             type="button"
             title="Patchnotes schliessen"
             onClick={onClose}
-            className="flex size-8 items-center justify-center border border-[var(--line)] bg-white text-neutral-700"
+            className="flex h-8 items-center gap-2 border border-[var(--line)] bg-white px-2 text-xs font-medium text-neutral-700"
           >
             <XCircle className="size-4" aria-hidden="true" />
+            <span>Schliessen</span>
           </button>
         </div>
 
         <div className="grid gap-3 overflow-y-auto p-4">
-          {patchNotes.map((note) => (
+          {patchNotes.length > 0 ? patchNotes.map((note) => (
             <article
               key={note.id}
               className="border border-[var(--line)] bg-white"
@@ -6242,7 +6255,11 @@ function PatchNotesLayer({ onClose }: { onClose: () => void }) {
                 ))}
               </ul>
             </article>
-          ))}
+          )) : (
+            <div className="border border-[var(--line)] bg-white p-4 text-sm text-neutral-600">
+              Noch keine Patchnotes vorhanden.
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -7276,7 +7293,14 @@ function SettingsSection({
         <SectionHeader icon={Bot} title="KI-Auswertung" />
         <div className="grid gap-3 border-t border-[var(--line)] p-4 text-sm">
           <StatusLine active={environmentStatus.openAiApiKey} label="OPENAI_API_KEY" />
-          <StatusLine active={environmentStatus.openAiModel} label="OPENAI_MODEL" />
+          <StatusLine
+            active={environmentStatus.openAiModel}
+            label={
+              environmentStatus.openAiModelConfigured
+                ? `OPENAI_MODEL ${environmentStatus.openAiModelName}`
+                : `OPENAI_MODEL Standard ${environmentStatus.openAiModelName}`
+            }
+          />
           <StatusLine active label="Regelwerke serverseitig" />
         </div>
       </section>
