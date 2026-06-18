@@ -95,7 +95,7 @@ body {
 .temporary-design-atmosphere {
   position: fixed;
   inset: 0;
-  z-index: 0 !important;
+  z-index: 2 !important;
   overflow: hidden;
   pointer-events: none;
 }
@@ -160,6 +160,36 @@ body {
   bottom: 24%;
 }
 
+.temporary-design-atmosphere span:nth-child(11) {
+  left: 18%;
+  top: 2%;
+}
+
+.temporary-design-atmosphere span:nth-child(12) {
+  right: 18%;
+  top: 6%;
+}
+
+.temporary-design-atmosphere span:nth-child(13) {
+  left: 8%;
+  top: 46%;
+}
+
+.temporary-design-atmosphere span:nth-child(14) {
+  right: 6%;
+  top: 52%;
+}
+
+.temporary-design-atmosphere span:nth-child(15) {
+  left: 48%;
+  bottom: 16%;
+}
+
+.temporary-design-atmosphere span:nth-child(16) {
+  right: 34%;
+  top: 34%;
+}
+
 .theme-frauentag .temporary-design-atmosphere span,
 .theme-valentinstag .temporary-design-atmosphere span {
   width: 68px;
@@ -177,6 +207,22 @@ body {
   transform: rotate(45deg);
 }
 
+.theme-frauentag .temporary-design-atmosphere span:nth-child(n + 11),
+.theme-valentinstag .temporary-design-atmosphere span:nth-child(n + 11) {
+  width: 24px;
+  height: 58px;
+  opacity: 0.82;
+  border-radius: 999px 999px 8px 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), transparent 32%),
+    linear-gradient(135deg, var(--accent), var(--accent-strong));
+  box-shadow:
+    26px 34px 0 color-mix(in srgb, var(--accent-soft) 64%, white),
+    -18px 68px 0 color-mix(in srgb, var(--accent) 72%, white),
+    34px 104px 0 rgba(255, 255, 255, 0.72);
+  animation: temporary-design-event-confetti-drift 6.5s ease-in-out infinite;
+}
+
 .theme-maennertag .temporary-design-atmosphere span {
   width: 88px;
   height: 62px;
@@ -186,6 +232,22 @@ body {
     linear-gradient(180deg, color-mix(in srgb, var(--accent) 78%, white), var(--accent-strong));
   clip-path: polygon(0 12%, 78% 12%, 100% 50%, 78% 88%, 0 88%, 14% 50%);
   animation: temporary-design-banner-drift 12s ease-in-out infinite;
+}
+
+.theme-maennertag .temporary-design-atmosphere span:nth-child(n + 11) {
+  width: 28px;
+  height: 92px;
+  opacity: 0.78;
+  border: 0;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.85), transparent 24%),
+    repeating-linear-gradient(180deg, var(--accent-strong) 0 14px, var(--accent) 14px 28px);
+  clip-path: none;
+  box-shadow:
+    28px 36px 0 rgba(255, 255, 255, 0.6),
+    -18px 74px 0 color-mix(in srgb, var(--accent) 72%, white);
+  animation: temporary-design-event-streamer-swing 7s ease-in-out infinite;
 }
 
 .theme-wm-2026 .temporary-design-atmosphere {
@@ -394,6 +456,19 @@ body {
   animation-delay: -6s;
 }
 
+.theme-weihnachten .temporary-design-atmosphere span:nth-child(n + 11) {
+  width: 22px;
+  height: 22px;
+  opacity: 0.94;
+  background: #ffffff;
+  box-shadow:
+    34px 28px 0 rgba(255, 255, 255, 0.88),
+    -28px 56px 0 rgba(255, 255, 255, 0.72),
+    68px 92px 0 rgba(185, 28, 28, 0.28),
+    112px 38px 0 rgba(255, 255, 255, 0.68);
+  animation: temporary-design-snowfall 9s linear infinite;
+}
+
 .theme-ostern .temporary-design-atmosphere span {
   width: 58px;
   height: 78px;
@@ -402,6 +477,20 @@ body {
     repeating-linear-gradient(0deg, transparent 0 9px, rgba(255, 255, 255, 0.6) 9px 13px),
     linear-gradient(135deg, color-mix(in srgb, var(--accent) 78%, white), color-mix(in srgb, var(--accent-soft) 60%, white));
   animation: temporary-design-float 12s ease-in-out infinite;
+}
+
+.theme-ostern .temporary-design-atmosphere span:nth-child(n + 11) {
+  width: 36px;
+  height: 48px;
+  opacity: 0.86;
+  background:
+    radial-gradient(circle at 50% 22%, rgba(255, 255, 255, 0.9) 0 5px, transparent 6px),
+    repeating-linear-gradient(0deg, transparent 0 7px, rgba(255, 255, 255, 0.66) 7px 10px),
+    linear-gradient(135deg, var(--accent-soft), var(--accent));
+  box-shadow:
+    28px 38px 0 color-mix(in srgb, var(--accent-soft) 70%, white),
+    -26px 76px 0 color-mix(in srgb, var(--accent) 54%, white);
+  animation: temporary-design-event-bounce 5.8s ease-in-out infinite;
 }
 
 .theme-neujahr .temporary-design-atmosphere span {
@@ -415,6 +504,31 @@ body {
 
 .theme-neujahr .temporary-design-atmosphere span:nth-child(even) {
   animation-delay: -1.3s;
+}
+
+.theme-neujahr .temporary-design-atmosphere span:nth-child(n + 11) {
+  width: 16px;
+  height: 54px;
+  opacity: 0.9;
+  border-radius: 3px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), transparent 28%),
+    repeating-linear-gradient(180deg, #ffcf33 0 10px, var(--accent) 10px 20px, #ffffff 20px 30px);
+  box-shadow:
+    28px 34px 0 rgba(255, 207, 51, 0.78),
+    -22px 72px 0 color-mix(in srgb, var(--accent) 68%, white),
+    38px 112px 0 rgba(255, 255, 255, 0.78);
+  animation: temporary-design-event-confetti-drift 5.6s ease-in-out infinite;
+}
+
+.theme-neujahr .temporary-design-atmosphere span:nth-child(3n + 11) {
+  width: 84px;
+  height: 84px;
+  border-radius: 999px;
+  background:
+    conic-gradient(from 18deg, transparent 0 10deg, #ffcf33 10deg 15deg, transparent 15deg 38deg, #ffffff 38deg 42deg, transparent 42deg 70deg, var(--accent) 70deg 75deg, transparent 75deg 360deg);
+  box-shadow: none;
+  animation: temporary-design-firework 2.3s ease-in-out infinite;
 }
 
 .theme-halloween .temporary-design-atmosphere span {
@@ -441,6 +555,28 @@ body {
   transform: rotate(10deg);
 }
 
+.theme-halloween .temporary-design-atmosphere span:nth-child(n + 11) {
+  width: 96px;
+  height: 44px;
+  opacity: 0.74;
+  border-radius: 0;
+  background: #431407;
+  clip-path: polygon(0 54%, 16% 18%, 34% 50%, 50% 14%, 66% 50%, 84% 18%, 100% 54%, 82% 72%, 66% 62%, 50% 84%, 34% 62%, 18% 72%);
+  box-shadow: 0 8px 18px rgba(67, 20, 7, 0.22);
+  animation: temporary-design-event-bat-flight 6.2s ease-in-out infinite;
+}
+
+.theme-halloween .temporary-design-atmosphere span:nth-child(n + 11)::before {
+  left: 42%;
+  top: 17px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #f97316;
+  box-shadow: 14px 0 0 #f97316;
+  transform: none;
+}
+
 .theme-black-friday .temporary-design-atmosphere span {
   width: 110px;
   height: 54px;
@@ -460,6 +596,34 @@ body {
   height: 9px;
   border-radius: 999px;
   background: #ffffff;
+}
+
+.theme-black-friday .temporary-design-atmosphere span:nth-child(n + 11) {
+  width: 72px;
+  height: 72px;
+  opacity: 0.86;
+  border: 3px solid #ffffff;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.36) 0 9px, transparent 10px),
+    linear-gradient(135deg, #ef4444, #111111 62%);
+  clip-path: none;
+  color: #ffffff;
+  animation: temporary-design-event-sale-pop 4.8s ease-in-out infinite;
+}
+
+.theme-black-friday .temporary-design-atmosphere span:nth-child(n + 11)::before {
+  content: "%";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  width: auto;
+  height: auto;
+  place-items: center;
+  border-radius: inherit;
+  background: transparent;
+  font: 900 34px/1 Arial, sans-serif;
+  letter-spacing: 0;
 }
 
 .theme-frauentag {
@@ -1137,6 +1301,22 @@ body {
   transform: rotate(45deg);
 }
 
+.temporary-design-preview.theme-frauentag .temporary-design-preview-atmosphere span:nth-child(n + 7),
+.temporary-design-preview.theme-valentinstag .temporary-design-preview-atmosphere span:nth-child(n + 7) {
+  width: 18px;
+  height: 42px;
+  opacity: 0.76;
+  border-radius: 999px 999px 7px 7px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.86), transparent 28%),
+    linear-gradient(135deg, var(--accent-soft), var(--accent));
+  box-shadow:
+    16px 22px 0 color-mix(in srgb, var(--accent) 72%, white),
+    -14px 44px 0 rgba(255, 255, 255, 0.72);
+  transform: none;
+  animation-name: temporary-design-event-confetti-drift;
+}
+
 .temporary-design-preview.theme-maennertag .temporary-design-preview-atmosphere span,
 .temporary-design-preview.theme-black-friday .temporary-design-preview-atmosphere span {
   width: 58px;
@@ -1144,6 +1324,33 @@ body {
   border: 2px solid rgba(255, 255, 255, 0.9);
   background: linear-gradient(90deg, var(--accent-strong), var(--accent));
   clip-path: polygon(0 10%, 82% 10%, 100% 50%, 82% 90%, 0 90%, 13% 50%);
+}
+
+.temporary-design-preview.theme-maennertag .temporary-design-preview-atmosphere span:nth-child(n + 7) {
+  width: 18px;
+  height: 62px;
+  border: 0;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), transparent 24%),
+    repeating-linear-gradient(180deg, var(--accent-strong) 0 10px, var(--accent) 10px 20px);
+  clip-path: none;
+  box-shadow:
+    18px 24px 0 rgba(255, 255, 255, 0.58),
+    -14px 48px 0 color-mix(in srgb, var(--accent) 70%, white);
+  animation-name: temporary-design-event-streamer-swing;
+}
+
+.temporary-design-preview.theme-black-friday .temporary-design-preview-atmosphere span:nth-child(n + 7) {
+  width: 42px;
+  height: 42px;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.35) 0 6px, transparent 7px),
+    linear-gradient(135deg, #ef4444, #111111 62%);
+  clip-path: none;
+  animation-name: temporary-design-event-sale-pop;
 }
 
 .temporary-design-preview.theme-wm-2026 .temporary-design-preview-atmosphere span {
@@ -1220,6 +1427,14 @@ body {
   pointer-events: none;
 }
 
+.temporary-design-preview-banner-line::before {
+  inset: 0;
+  opacity: 0.38;
+  background:
+    linear-gradient(110deg, transparent 0 34%, rgba(255, 255, 255, 0.72) 42% 48%, transparent 56% 100%);
+  animation: temporary-design-preview-banner-sweep 2.8s ease-in-out infinite;
+}
+
 .temporary-design-preview.theme-wm-2026 .temporary-design-preview-banner-line {
   background:
     linear-gradient(90deg, #111111 0 33.33%, #d90429 33.33% 66.66%, #ffcf33 66.66% 100%);
@@ -1251,6 +1466,154 @@ body {
   animation: temporary-design-wm-banner-ball 3.4s ease-in-out infinite;
 }
 
+.temporary-design-preview.theme-frauentag .temporary-design-preview-banner-line,
+.temporary-design-preview.theme-valentinstag .temporary-design-preview-banner-line {
+  background:
+    radial-gradient(circle at 16% 50%, rgba(255, 255, 255, 0.74) 0 5px, transparent 6px),
+    radial-gradient(circle at 78% 50%, rgba(255, 255, 255, 0.44) 0 8px, transparent 9px),
+    linear-gradient(90deg, var(--accent-strong), var(--accent), var(--accent-soft));
+}
+
+.temporary-design-preview.theme-frauentag .temporary-design-preview-banner-line::after,
+.temporary-design-preview.theme-valentinstag .temporary-design-preview-banner-line::after {
+  top: 50%;
+  left: 16px;
+  width: 16px;
+  height: 16px;
+  border-radius: 70% 30% 70% 30%;
+  background: #ffffff;
+  box-shadow:
+    18px -2px 0 color-mix(in srgb, var(--accent-soft) 70%, white),
+    42px 2px 0 color-mix(in srgb, var(--accent) 60%, white);
+  animation: temporary-design-preview-banner-orbit 3.8s ease-in-out infinite;
+}
+
+.temporary-design-preview.theme-valentinstag .temporary-design-preview-banner-line::after {
+  border-radius: 5px 5px 14px 5px;
+  transform: translateY(-50%) rotate(45deg);
+  animation-name: temporary-design-preview-heart-orbit;
+}
+
+.temporary-design-preview.theme-maennertag .temporary-design-preview-banner-line {
+  background:
+    repeating-linear-gradient(90deg, var(--accent-strong) 0 16px, var(--accent) 16px 32px, rgba(255, 255, 255, 0.72) 32px 38px),
+    var(--accent);
+}
+
+.temporary-design-preview.theme-maennertag .temporary-design-preview-banner-line::after {
+  top: -10px;
+  left: 24px;
+  width: 18px;
+  height: 34px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow:
+    42px 4px 0 color-mix(in srgb, var(--accent-soft) 66%, white),
+    82px -1px 0 rgba(255, 255, 255, 0.72);
+  animation: temporary-design-event-streamer-swing 4.2s ease-in-out infinite;
+}
+
+.temporary-design-preview.theme-weihnachten .temporary-design-preview-banner-line {
+  background:
+    repeating-linear-gradient(135deg, #ffffff 0 8px, #b91c1c 8px 16px, #ffffff 16px 24px),
+    var(--accent);
+}
+
+.temporary-design-preview.theme-weihnachten .temporary-design-preview-banner-line::after {
+  inset: -6px 10px auto auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow:
+    -30px 10px 0 rgba(255, 255, 255, 0.78),
+    -62px -1px 0 rgba(255, 255, 255, 0.64),
+    -90px 8px 0 rgba(255, 255, 255, 0.82);
+  animation: temporary-design-preview-banner-snow 2.9s linear infinite;
+}
+
+.temporary-design-preview.theme-ostern .temporary-design-preview-banner-line {
+  background:
+    radial-gradient(ellipse at 18% 50%, var(--accent-soft) 0 8px, transparent 9px),
+    radial-gradient(ellipse at 48% 50%, rgba(255, 255, 255, 0.8) 0 7px, transparent 8px),
+    radial-gradient(ellipse at 78% 50%, color-mix(in srgb, var(--accent) 70%, white) 0 8px, transparent 9px),
+    linear-gradient(90deg, var(--accent), var(--accent-soft));
+}
+
+.temporary-design-preview.theme-ostern .temporary-design-preview-banner-line::after {
+  top: -8px;
+  left: 24px;
+  width: 18px;
+  height: 24px;
+  border-radius: 50% 50% 44% 44%;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 4px, rgba(255, 255, 255, 0.7) 4px 6px),
+    var(--accent-soft);
+  box-shadow:
+    52px 3px 0 color-mix(in srgb, var(--accent) 55%, white),
+    96px 0 0 rgba(255, 255, 255, 0.82);
+  animation: temporary-design-event-bounce 3.4s ease-in-out infinite;
+}
+
+.temporary-design-preview.theme-neujahr .temporary-design-preview-banner-line {
+  background:
+    conic-gradient(from 0deg at 15% 50%, transparent 0 12deg, #ffcf33 12deg 18deg, transparent 18deg 40deg),
+    conic-gradient(from 18deg at 84% 50%, transparent 0 12deg, rgba(255, 255, 255, 0.9) 12deg 17deg, transparent 17deg 40deg),
+    linear-gradient(90deg, var(--accent-strong), var(--accent));
+}
+
+.temporary-design-preview.theme-neujahr .temporary-design-preview-banner-line::after {
+  top: -8px;
+  right: 26px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background:
+    conic-gradient(from 0deg, transparent 0 12deg, #ffcf33 12deg 18deg, transparent 18deg 46deg, #ffffff 46deg 52deg, transparent 52deg 90deg, var(--accent-soft) 90deg 96deg, transparent 96deg 360deg);
+  animation: temporary-design-firework 2.1s ease-in-out infinite;
+}
+
+.temporary-design-preview.theme-halloween .temporary-design-preview-banner-line {
+  background:
+    radial-gradient(circle at 82% 50%, #ffedd5 0 9px, transparent 10px),
+    repeating-linear-gradient(135deg, rgba(67, 20, 7, 0.42) 0 12px, transparent 12px 24px),
+    linear-gradient(90deg, #431407, #9a3412);
+}
+
+.temporary-design-preview.theme-halloween .temporary-design-preview-banner-line::after {
+  top: -1px;
+  left: 22px;
+  width: 38px;
+  height: 18px;
+  background: #431407;
+  clip-path: polygon(0 54%, 16% 18%, 34% 50%, 50% 14%, 66% 50%, 84% 18%, 100% 54%, 82% 72%, 66% 62%, 50% 84%, 34% 62%, 18% 72%);
+  animation: temporary-design-event-bat-flight 3.6s ease-in-out infinite;
+}
+
+.temporary-design-preview.theme-black-friday .temporary-design-preview-banner-line {
+  background:
+    repeating-linear-gradient(90deg, #111111 0 20px, #ef4444 20px 28px, #111111 28px 42px),
+    #111111;
+}
+
+.temporary-design-preview.theme-black-friday .temporary-design-preview-banner-line::after {
+  top: 50%;
+  right: 18px;
+  width: 22px;
+  height: 22px;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #ffffff;
+  content: "%";
+  display: grid;
+  place-items: center;
+  font: 900 16px/1 Arial, sans-serif;
+  letter-spacing: 0;
+  transform: translateY(-50%);
+  animation: temporary-design-preview-sale-badge 2.6s ease-in-out infinite;
+}
+
 .temporary-design-preview.theme-weihnachten .temporary-design-preview-atmosphere span {
   width: 9px;
   height: 9px;
@@ -1262,6 +1625,16 @@ body {
     62px 34px 0 rgba(255, 255, 255, 0.64);
 }
 
+.temporary-design-preview.theme-weihnachten .temporary-design-preview-atmosphere span:nth-child(n + 7) {
+  width: 15px;
+  height: 15px;
+  box-shadow:
+    20px 20px 0 rgba(255, 255, 255, 0.84),
+    -18px 38px 0 rgba(185, 28, 28, 0.28),
+    44px 52px 0 rgba(255, 255, 255, 0.68);
+  animation-name: temporary-design-preview-snow-drift;
+}
+
 .temporary-design-preview.theme-ostern .temporary-design-preview-atmosphere span {
   width: 34px;
   height: 46px;
@@ -1271,10 +1644,30 @@ body {
     linear-gradient(135deg, var(--accent), var(--accent-soft));
 }
 
+.temporary-design-preview.theme-ostern .temporary-design-preview-atmosphere span:nth-child(n + 7) {
+  width: 25px;
+  height: 34px;
+  opacity: 0.78;
+  animation-name: temporary-design-event-bounce;
+}
+
 .temporary-design-preview.theme-neujahr .temporary-design-preview-atmosphere span {
   border-radius: 999px;
   background:
     conic-gradient(from 0deg, transparent 0 9deg, rgba(255, 207, 51, 0.88) 9deg 14deg, transparent 14deg 36deg, var(--accent) 36deg 42deg, transparent 42deg 360deg);
+}
+
+.temporary-design-preview.theme-neujahr .temporary-design-preview-atmosphere span:nth-child(n + 7) {
+  width: 12px;
+  height: 38px;
+  border-radius: 2px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), transparent 28%),
+    repeating-linear-gradient(180deg, #ffcf33 0 8px, var(--accent) 8px 16px, #ffffff 16px 24px);
+  box-shadow:
+    16px 22px 0 rgba(255, 207, 51, 0.72),
+    -13px 40px 0 color-mix(in srgb, var(--accent) 68%, white);
+  animation-name: temporary-design-event-confetti-drift;
 }
 
 .temporary-design-preview.theme-halloween .temporary-design-preview-atmosphere span {
@@ -1285,6 +1678,15 @@ body {
     radial-gradient(circle at 35% 42%, #431407 0 3px, transparent 4px),
     radial-gradient(circle at 65% 42%, #431407 0 3px, transparent 4px),
     linear-gradient(180deg, #f97316, var(--accent));
+}
+
+.temporary-design-preview.theme-halloween .temporary-design-preview-atmosphere span:nth-child(n + 7) {
+  width: 58px;
+  height: 26px;
+  border-radius: 0;
+  background: #431407;
+  clip-path: polygon(0 54%, 16% 18%, 34% 50%, 50% 14%, 66% 50%, 84% 18%, 100% 54%, 82% 72%, 66% 62%, 50% 84%, 34% 62%, 18% 72%);
+  animation-name: temporary-design-event-bat-flight;
 }
 
 .temporary-design-preview .temporary-design-emblem {
@@ -1496,6 +1898,162 @@ body {
   }
 }
 
+@keyframes temporary-design-event-confetti-drift {
+  0%,
+  100% {
+    transform: translate3d(-18px, -14px, 0) rotate(-18deg);
+    opacity: 0.58;
+  }
+
+  36% {
+    transform: translate3d(28px, 26px, 0) rotate(84deg);
+    opacity: 0.96;
+  }
+
+  72% {
+    transform: translate3d(-8px, 58px, 0) rotate(190deg);
+    opacity: 0.82;
+  }
+}
+
+@keyframes temporary-design-event-streamer-swing {
+  0%,
+  100% {
+    transform: translate3d(-14px, -8px, 0) rotate(-10deg) skewX(-4deg);
+  }
+
+  45% {
+    transform: translate3d(24px, 22px, 0) rotate(12deg) skewX(7deg);
+  }
+
+  70% {
+    transform: translate3d(6px, -18px, 0) rotate(-5deg) skewX(-10deg);
+  }
+}
+
+@keyframes temporary-design-event-bounce {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-6deg) scale(0.96);
+  }
+
+  44% {
+    transform: translate3d(14px, -26px, 0) rotate(8deg) scale(1.08);
+  }
+
+  72% {
+    transform: translate3d(-10px, -8px, 0) rotate(-3deg) scale(1);
+  }
+}
+
+@keyframes temporary-design-event-bat-flight {
+  0%,
+  100% {
+    transform: translate3d(-24px, 10px, 0) rotate(-7deg) scale(0.92);
+    opacity: 0.54;
+  }
+
+  38% {
+    transform: translate3d(38px, -18px, 0) rotate(9deg) scale(1.08);
+    opacity: 0.86;
+  }
+
+  68% {
+    transform: translate3d(12px, 20px, 0) rotate(-3deg) scale(1);
+    opacity: 0.72;
+  }
+}
+
+@keyframes temporary-design-event-sale-pop {
+  0%,
+  100% {
+    transform: translate3d(-8px, 5px, 0) rotate(-8deg) scale(0.88);
+    opacity: 0.62;
+  }
+
+  45% {
+    transform: translate3d(12px, -16px, 0) rotate(10deg) scale(1.12);
+    opacity: 0.96;
+  }
+}
+
+@keyframes temporary-design-preview-sale-badge {
+  0%,
+  100% {
+    transform: translate3d(-8px, -50%, 0) rotate(-8deg) scale(0.88);
+    opacity: 0.72;
+  }
+
+  45% {
+    transform: translate3d(12px, -68%, 0) rotate(10deg) scale(1.12);
+    opacity: 1;
+  }
+}
+
+@keyframes temporary-design-preview-banner-sweep {
+  0%,
+  100% {
+    transform: translate3d(-38%, 0, 0) skewX(-14deg);
+    opacity: 0.22;
+  }
+
+  50% {
+    transform: translate3d(34%, 0, 0) skewX(12deg);
+    opacity: 0.68;
+  }
+}
+
+@keyframes temporary-design-preview-banner-orbit {
+  0%,
+  100% {
+    transform: translate3d(-8px, -50%, 0) rotate(-10deg) scale(0.9);
+  }
+
+  50% {
+    transform: translate3d(44px, -80%, 0) rotate(14deg) scale(1.12);
+  }
+}
+
+@keyframes temporary-design-preview-heart-orbit {
+  0%,
+  100% {
+    transform: translate3d(-8px, -50%, 0) rotate(35deg) scale(0.9);
+  }
+
+  50% {
+    transform: translate3d(44px, -80%, 0) rotate(58deg) scale(1.12);
+  }
+}
+
+@keyframes temporary-design-preview-banner-snow {
+  0% {
+    transform: translate3d(0, -12px, 0);
+    opacity: 0.4;
+  }
+
+  50% {
+    opacity: 0.92;
+  }
+
+  100% {
+    transform: translate3d(-18px, 22px, 0);
+    opacity: 0.42;
+  }
+}
+
+@keyframes temporary-design-preview-snow-drift {
+  0%,
+  100% {
+    transform: translate3d(-8px, -10px, 0);
+    opacity: 0.48;
+  }
+
+  55% {
+    transform: translate3d(18px, 36px, 0);
+    opacity: 0.92;
+  }
+}
+
 @keyframes temporary-design-preview-breathe {
   0%,
   100% {
@@ -1520,8 +2078,8 @@ body {
   .temporary-design-shell.theme-halloween::after,
   .temporary-design-preview.theme-wm-2026::before,
   .temporary-design-preview.theme-wm-2026::after,
-  .temporary-design-preview.theme-wm-2026 .temporary-design-preview-banner-line::before,
-  .temporary-design-preview.theme-wm-2026 .temporary-design-preview-banner-line::after,
+  .temporary-design-preview-banner-line::before,
+  .temporary-design-preview-banner-line::after,
   .temporary-design-atmosphere span,
   .temporary-design-preview-atmosphere span {
     animation: none;

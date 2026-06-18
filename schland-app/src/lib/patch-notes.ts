@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "18.06.2026",
+    id: "temporary-design-storage-animation-repair",
+    items: [
+      "Neue Supabase-Reparaturmigration fuer temporaere Designs angelegt: Tabellen, RLS, Data-API-GRANTs, Rechte und alle Vorlagen werden idempotent synchronisiert.",
+      "Der Statushinweis nennt jetzt die konkrete Migration, wenn Supabase die Design-Tabellen oder Rechte noch nicht kennt.",
+      "Alle Event-Vorlagen zeigen jetzt in Live-Seiten und Vorschau eigene animierte Motive statt nur Farbwechsel.",
+    ],
+    title: "Design-Speicher und Animationen repariert",
+    type: "fix",
+    version: "0.10.22",
+  },
+  {
+    date: "18.06.2026",
     id: "wm-2026-preview-animation-parity",
     items: [
       "Die WM-Vorschau zeigt jetzt ebenfalls die neuen Spielfeldlinien, Flutlichter, Konfetti-Elemente und die animierte Schwarz-Rot-Gold-Bannerleiste.",

@@ -1700,7 +1700,7 @@ function getTemporaryDesignStorageMessage(message: string) {
     normalized.includes("schema cache") ||
     normalized.includes("does not exist")
   ) {
-    return "Supabase-Migration fuer temporaere Designs fehlt noch.";
+    return "Supabase-Migration 20260618030821_sync_temporary_design_templates.sql fuer temporaere Designs fehlt noch.";
   }
 
   return message || "Supabase-Speicher fuer temporaere Designs ist nicht erreichbar.";

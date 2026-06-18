@@ -338,7 +338,7 @@ function getSetupNotice(setup?: string) {
   if (setup === "temporary-design-migration") {
     return {
       tone: "warning" as const,
-      text: "Supabase kennt die Tabellen fuer temporaere Designs noch nicht. Bitte Migration 20260615001000_add_temporary_designs.sql ausfuehren.",
+      text: "Supabase kennt die Tabellen/Rechte fuer temporaere Designs noch nicht. Bitte Migration 20260618030821_sync_temporary_design_templates.sql ausfuehren.",
     };
   }
 

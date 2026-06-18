@@ -854,8 +854,9 @@ function TemporaryDesignAtmosphere({ design }: { design: ActiveTemporaryDesign }
     return null;
   }
 
-  const atmosphereElementCount =
-    design.theme.backgroundClass === "theme-wm-2026" ? 18 : 10;
+  const atmosphereElementCount = getTemporaryDesignAtmosphereElementCount(
+    design.theme.backgroundClass,
+  );
 
   return (
     <div className="temporary-design-atmosphere" aria-hidden="true">
@@ -864,6 +865,21 @@ function TemporaryDesignAtmosphere({ design }: { design: ActiveTemporaryDesign }
       ))}
     </div>
   );
+}
+
+function getTemporaryDesignAtmosphereElementCount(
+  backgroundClass?: string,
+  mode: "live" | "preview" = "live",
+) {
+  if (!backgroundClass || backgroundClass === "theme-default") {
+    return 0;
+  }
+
+  if (backgroundClass === "theme-wm-2026") {
+    return mode === "preview" ? 12 : 18;
+  }
+
+  return mode === "preview" ? 10 : 16;
 }
 
 function DashboardSection({
@@ -6373,7 +6389,10 @@ function SettingsSection({
     renderedPreviewTemplate?.theme.headerStyle,
   );
   const previewAtmosphereElementCount =
-    renderedPreviewTemplate?.theme.backgroundClass === "theme-wm-2026" ? 12 : 6;
+    getTemporaryDesignAtmosphereElementCount(
+      renderedPreviewTemplate?.theme.backgroundClass,
+      "preview",
+    );
 
   const lockdownRecipients = members
     .filter((member) => member.discordId && member.discordOnServer)
