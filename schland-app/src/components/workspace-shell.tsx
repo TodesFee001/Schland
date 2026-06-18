@@ -6199,7 +6199,7 @@ function PatchNotesLayer({ onClose }: { onClose: () => void }) {
   return (
     <div
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6"
+      className="temporary-design-overlay-layer fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6"
       role="dialog"
     >
       <div className="flex max-h-[86vh] w-full max-w-3xl flex-col border border-[var(--line-strong)] bg-[var(--surface)] shadow-[10px_10px_0_rgba(0,0,0,0.28)]">
@@ -6310,7 +6310,7 @@ function LockdownOverlay({ lockdown }: { lockdown: LockdownStatus }) {
   }, [soundEnabled]);
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-3">
+    <div className="temporary-design-overlay-layer pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-3">
       <div className="w-[min(620px,100%)] overflow-hidden rounded-md border border-red-500/80 bg-[#140202]/95 text-white shadow-[0_18px_70px_rgba(127,29,29,0.45)] backdrop-blur">
         <div className="lockdown-scan h-1 bg-red-500" />
         <div className="grid gap-3 p-4 sm:grid-cols-[auto_1fr_auto] sm:items-center">

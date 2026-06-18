@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "18.06.2026",
+    id: "patchnotes-overlay-z-index-repair",
+    items: [
+      "Patchnotes-Dialog bleibt jetzt trotz temporaerer Event-Designs als echtes Overlay sichtbar.",
+      "Die Design-Schale ueberschreibt modale Layer nicht mehr auf normales Seitenlayout.",
+      "Lockdown-Hinweis nutzt dieselbe Overlay-Schutzklasse, damit er ebenfalls nicht vom Theme-Z-Index geschluckt wird.",
+    ],
+    title: "Patchnotes-Overlay repariert",
+    type: "fix",
+    version: "0.10.24",
+  },
+  {
+    date: "18.06.2026",
     id: "patchnotes-button-openai-model-status",
     items: [
       "Patchnotes sind in der Topbar wieder als klarer Button mit Beschriftung und Versions-Badge sichtbar.",

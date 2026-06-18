@@ -73,6 +73,11 @@ body {
   z-index: 1;
 }
 
+.temporary-design-shell > .temporary-design-overlay-layer {
+  position: fixed;
+  z-index: 80;
+}
+
 .temporary-design-shell.theme-frauentag::before,
 .temporary-design-shell.theme-valentinstag::before,
 .temporary-design-shell.theme-weihnachten::before,
