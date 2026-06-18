@@ -862,6 +862,10 @@ function TemporaryDesignAtmosphere({ design }: { design: ActiveTemporaryDesign }
       <span />
       <span />
       <span />
+      <span />
+      <span />
+      <span />
+      <span />
     </div>
   );
 }
@@ -6541,6 +6545,8 @@ function SettingsSection({
                 style={renderedPreviewStyle}
               >
                 <span className="temporary-design-preview-atmosphere" aria-hidden="true">
+                  <span />
+                  <span />
                   <span />
                   <span />
                   <span />

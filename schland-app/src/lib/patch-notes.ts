@@ -10,6 +10,18 @@ export type PatchNote = {
 // Jede produktive Aenderung bekommt hier ab jetzt einen Eintrag.
 export const patchNotes: PatchNote[] = [
   {
+    date: "18.06.2026",
+    id: "wm-2026-overlay-redesign",
+    items: [
+      "Das WM-Design nutzt jetzt konsequent Schwarz-Rot-Gold; der gruene Bannerblock wurde entfernt.",
+      "Die WM-Atmosphaere zeigt groessere animierte Fussbaelle, bewegte Deutschland-Baender und Flutlicht-Effekte statt kaum sichtbarer Hintergrundpunkte.",
+      "Die WM-Vorlage wurde auf die neuen Farben umgestellt, damit Vorschau und gespeicherte Designs nicht wieder in den gruenen Feld-Look kippen.",
+    ],
+    title: "WM-Overlay nachgeschaerft",
+    type: "feature",
+    version: "0.10.19",
+  },
+  {
     date: "17.06.2026",
     id: "temporary-design-event-overlays",
     items: [
