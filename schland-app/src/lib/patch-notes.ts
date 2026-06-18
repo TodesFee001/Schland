@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "18.06.2026",
+    id: "wm-2026-overlay-animation-boost",
+    items: [
+      "Das WM-Overlay wurde bewusst auffaelliger animiert: mehr Fussbaelle, mehr Bewegung und mehr sichtbare Stadion-Action.",
+      "Neue Konfetti- und Flutlicht-Layer laufen nur im WM-Design und respektieren Reduced-Motion.",
+      "Die WM-Vorschau zeigt jetzt ebenfalls mehr animierte Elemente, damit das Design vor dem Speichern nicht mehr tot wirkt.",
+    ],
+    title: "WM-Animationen aufgedreht",
+    type: "feature",
+    version: "0.10.20",
+  },
+  {
+    date: "18.06.2026",
     id: "wm-2026-overlay-redesign",
     items: [
       "Das WM-Design nutzt jetzt konsequent Schwarz-Rot-Gold; der gruene Bannerblock wurde entfernt.",

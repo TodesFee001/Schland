@@ -193,9 +193,9 @@ body {
 }
 
 .theme-wm-2026 .temporary-design-atmosphere span {
-  width: 94px;
-  height: 94px;
-  opacity: 0.76;
+  width: 104px;
+  height: 104px;
+  opacity: 0.88;
   border-radius: 999px;
   background:
     radial-gradient(circle at 50% 50%, #111111 0 7px, transparent 8px),
@@ -207,8 +207,8 @@ body {
   box-shadow:
     inset 0 0 0 4px #ffffff,
     inset 0 0 0 8px rgba(17, 17, 17, 0.24),
-    0 18px 30px rgba(0, 0, 0, 0.24);
-  animation: temporary-design-wm-ball-float 6.5s ease-in-out infinite;
+    0 22px 34px rgba(0, 0, 0, 0.3);
+  animation: temporary-design-wm-ball-float 4.6s ease-in-out infinite;
 }
 
 .theme-wm-2026 .temporary-design-atmosphere span:nth-child(2),
@@ -224,7 +224,36 @@ body {
     inset 0 0 0 2px rgba(255, 255, 255, 0.42),
     0 14px 26px rgba(0, 0, 0, 0.2);
   filter: drop-shadow(0 18px 20px rgba(217, 4, 41, 0.16));
-  animation: temporary-design-wm-scarf-sweep 7.5s ease-in-out infinite;
+  animation: temporary-design-wm-scarf-sweep 5.2s ease-in-out infinite;
+}
+
+.theme-wm-2026 .temporary-design-atmosphere span:nth-child(n + 11) {
+  width: 26px;
+  height: 74px;
+  z-index: 3;
+  opacity: 0.96;
+  border-radius: 3px;
+  background: #d90429;
+  box-shadow:
+    30px 38px 0 #ffcf33,
+    -26px 78px 0 #111111,
+    46px 116px 0 rgba(217, 4, 41, 0.92),
+    -44px 154px 0 rgba(255, 207, 51, 0.9);
+  filter: drop-shadow(0 10px 12px rgba(0, 0, 0, 0.22));
+  animation: temporary-design-wm-confetti-rain 3.4s linear infinite;
+}
+
+.theme-wm-2026 .temporary-design-atmosphere span:nth-child(n + 17) {
+  width: 340px;
+  height: 82vh;
+  opacity: 0.36;
+  border-radius: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.68), rgba(255, 207, 51, 0.12) 58%, transparent);
+  clip-path: polygon(46% 0, 54% 0, 100% 100%, 0 100%);
+  box-shadow: none;
+  filter: blur(1px);
+  animation: temporary-design-wm-spotlight-sweep 6s ease-in-out infinite;
 }
 
 .theme-wm-2026 .temporary-design-atmosphere span:nth-child(1) {
@@ -292,6 +321,59 @@ body {
   width: 58px;
   height: 58px;
   animation-delay: -5.7s;
+}
+
+.theme-wm-2026 .temporary-design-atmosphere span:nth-child(11) {
+  left: 20%;
+  top: 4%;
+  animation-delay: -0.6s;
+}
+
+.theme-wm-2026 .temporary-design-atmosphere span:nth-child(12) {
+  left: 36%;
+  top: 0;
+  background: #111111;
+  animation-delay: -1.8s;
+}
+
+.theme-wm-2026 .temporary-design-atmosphere span:nth-child(13) {
+  left: 54%;
+  top: 10%;
+  background: #ffcf33;
+  animation-delay: -2.6s;
+}
+
+.theme-wm-2026 .temporary-design-atmosphere span:nth-child(14) {
+  right: 18%;
+  top: 2%;
+  animation-delay: -3.4s;
+}
+
+.theme-wm-2026 .temporary-design-atmosphere span:nth-child(15) {
+  left: 72%;
+  top: 14%;
+  background: #111111;
+  animation-delay: -4.1s;
+}
+
+.theme-wm-2026 .temporary-design-atmosphere span:nth-child(16) {
+  left: 10%;
+  top: 22%;
+  background: #ffcf33;
+  animation-delay: -5s;
+}
+
+.theme-wm-2026 .temporary-design-atmosphere span:nth-child(17) {
+  left: 4%;
+  top: -10%;
+  transform-origin: 50% 0;
+}
+
+.theme-wm-2026 .temporary-design-atmosphere span:nth-child(18) {
+  right: 4%;
+  top: -10%;
+  transform-origin: 50% 0;
+  animation-delay: -3s;
 }
 
 .theme-weihnachten .temporary-design-atmosphere span {
@@ -442,6 +524,7 @@ body {
     radial-gradient(circle at 84% 74%, rgba(255, 255, 255, 0.9) 0 10px, transparent 11px),
     radial-gradient(circle at 84% 74%, rgba(217, 4, 41, 0.25) 0 15px, transparent 16px);
   background-size: 44px 44px, 44px 44px, 260px 220px, 260px 220px, 320px 260px, 320px 260px;
+  animation: temporary-design-wm-field-scroll 14s linear infinite;
 }
 
 .temporary-design-shell.theme-wm-2026::after {
@@ -761,7 +844,7 @@ body {
   background:
     linear-gradient(90deg, #111111 0 33.33%, #d90429 33.33% 66.66%, #ffcf33 66.66% 100%);
   color: #ffffff;
-  min-height: 46px;
+  min-height: 52px;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.62);
 }
 
@@ -786,7 +869,7 @@ body {
     inset 0 0 0 5px rgba(17, 17, 17, 0.25),
     0 8px 16px rgba(0, 0, 0, 0.3);
   transform: translateY(-50%);
-  animation: temporary-design-wm-banner-ball 6.5s linear infinite;
+  animation: temporary-design-wm-banner-ball 3.4s ease-in-out infinite;
 }
 
 .theme-wm-2026 .temporary-design-banner::after {
@@ -798,7 +881,7 @@ body {
   background:
     linear-gradient(110deg, transparent 0 36%, rgba(255, 255, 255, 0.58) 42% 48%, transparent 56% 100%),
     repeating-linear-gradient(90deg, rgba(17, 17, 17, 0.28) 0 12px, rgba(217, 4, 41, 0.24) 12px 24px, rgba(255, 207, 51, 0.34) 24px 36px);
-  animation: temporary-design-light-sweep 4.8s ease-in-out infinite;
+  animation: temporary-design-wm-banner-sweep 3.2s ease-in-out infinite;
 }
 
 .temporary-design-banner-default {
@@ -899,7 +982,6 @@ body {
 .theme-wm-2026 .temporary-design-banner,
 .temporary-design-shell.theme-frauentag::before,
 .temporary-design-shell.theme-neujahr::after,
-.temporary-design-shell.theme-wm-2026::after,
 .temporary-design-shell.theme-halloween::after {
   animation: temporary-design-sheen 8s ease-in-out infinite;
 }
@@ -994,6 +1076,30 @@ body {
   animation-delay: -4.5s;
 }
 
+.temporary-design-preview-atmosphere span:nth-child(7) {
+  left: 32%;
+  top: -18%;
+  animation-delay: -0.8s;
+}
+
+.temporary-design-preview-atmosphere span:nth-child(8) {
+  right: 26%;
+  top: -24%;
+  animation-delay: -1.7s;
+}
+
+.temporary-design-preview-atmosphere span:nth-child(9) {
+  left: 62%;
+  top: -16%;
+  animation-delay: -2.6s;
+}
+
+.temporary-design-preview-atmosphere span:nth-child(10) {
+  left: 8%;
+  top: -22%;
+  animation-delay: -3.5s;
+}
+
 .temporary-design-preview.theme-frauentag .temporary-design-preview-atmosphere span,
 .temporary-design-preview.theme-valentinstag .temporary-design-preview-atmosphere span {
   border-radius: 70% 30% 70% 30%;
@@ -1040,6 +1146,18 @@ body {
   background: linear-gradient(90deg, #111111 0 33%, #d90429 33% 66%, #ffcf33 66% 100%);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.48), 0 8px 14px rgba(0, 0, 0, 0.16);
   animation-name: temporary-design-wm-scarf-sweep;
+}
+
+.temporary-design-preview.theme-wm-2026 .temporary-design-preview-atmosphere span:nth-child(n + 7) {
+  width: 10px;
+  height: 34px;
+  border-radius: 2px;
+  background: #d90429;
+  box-shadow:
+    14px 22px 0 #ffcf33,
+    -12px 44px 0 #111111,
+    22px 62px 0 rgba(217, 4, 41, 0.82);
+  animation-name: temporary-design-wm-confetti-rain;
 }
 
 .temporary-design-preview.theme-weihnachten .temporary-design-preview-atmosphere span {
@@ -1150,24 +1268,81 @@ body {
 @keyframes temporary-design-wm-banner-ball {
   0%,
   100% {
-    transform: translate3d(-14px, -50%, 0) rotate(-18deg) scale(0.94);
+    transform: translate3d(-22px, -50%, 0) rotate(-28deg) scale(0.94);
   }
 
   50% {
-    transform: translate3d(18px, -62%, 0) rotate(28deg) scale(1.08);
+    transform: translate3d(24px, -68%, 0) rotate(34deg) scale(1.16);
+  }
+}
+
+@keyframes temporary-design-wm-banner-sweep {
+  0%,
+  100% {
+    transform: translate3d(-18%, 0, 0) skewX(-12deg);
+    opacity: 0.36;
+  }
+
+  50% {
+    transform: translate3d(14%, 0, 0) skewX(10deg);
+    opacity: 0.76;
   }
 }
 
 @keyframes temporary-design-wm-scarf-sweep {
   0%,
   100% {
-    transform: translate3d(-34px, 6px, 0) rotate(-8deg) scale(0.95);
-    opacity: 0.5;
+    transform: translate3d(-42px, 8px, 0) rotate(-10deg) scale(0.94);
+    opacity: 0.58;
   }
 
   50% {
-    transform: translate3d(40px, -20px, 0) rotate(7deg) scale(1.05);
-    opacity: 0.86;
+    transform: translate3d(58px, -28px, 0) rotate(9deg) scale(1.12);
+    opacity: 0.94;
+  }
+}
+
+@keyframes temporary-design-wm-confetti-rain {
+  0% {
+    transform: translate3d(-8px, -8vh, 0) rotate(-20deg);
+    opacity: 0.42;
+  }
+
+  20% {
+    opacity: 1;
+  }
+
+  55% {
+    transform: translate3d(36px, 35vh, 0) rotate(160deg);
+    opacity: 0.96;
+  }
+
+  100% {
+    transform: translate3d(-20px, 82vh, 0) rotate(380deg);
+    opacity: 0.28;
+  }
+}
+
+@keyframes temporary-design-wm-spotlight-sweep {
+  0%,
+  100% {
+    transform: translate3d(-9%, 0, 0) rotate(-13deg);
+    opacity: 0.18;
+  }
+
+  48% {
+    transform: translate3d(10%, 0, 0) rotate(12deg);
+    opacity: 0.46;
+  }
+}
+
+@keyframes temporary-design-wm-field-scroll {
+  0% {
+    background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0;
+  }
+
+  100% {
+    background-position: 44px 44px, 44px 44px, 260px 220px, 260px 220px, -320px 260px, -320px 260px;
   }
 }
 
@@ -1239,6 +1414,7 @@ body {
   .theme-wm-2026 .temporary-design-banner::after,
   .temporary-design-shell.theme-frauentag::before,
   .temporary-design-shell.theme-neujahr::after,
+  .temporary-design-shell.theme-wm-2026::before,
   .temporary-design-shell.theme-wm-2026::after,
   .temporary-design-shell.theme-halloween::after,
   .temporary-design-atmosphere span,

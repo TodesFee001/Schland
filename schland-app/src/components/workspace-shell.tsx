@@ -854,18 +854,14 @@ function TemporaryDesignAtmosphere({ design }: { design: ActiveTemporaryDesign }
     return null;
   }
 
+  const atmosphereElementCount =
+    design.theme.backgroundClass === "theme-wm-2026" ? 18 : 10;
+
   return (
     <div className="temporary-design-atmosphere" aria-hidden="true">
-      <span />
-      <span />
-      <span />
-      <span />
-      <span />
-      <span />
-      <span />
-      <span />
-      <span />
-      <span />
+      {Array.from({ length: atmosphereElementCount }, (_, index) => (
+        <span key={`temporary-design-atmosphere-${index}`} />
+      ))}
     </div>
   );
 }
@@ -6376,6 +6372,8 @@ function SettingsSection({
   const renderedPreviewHeaderStyleClass = getTemporaryDesignHeaderStyleClass(
     renderedPreviewTemplate?.theme.headerStyle,
   );
+  const previewAtmosphereElementCount =
+    renderedPreviewTemplate?.theme.backgroundClass === "theme-wm-2026" ? 10 : 6;
 
   const lockdownRecipients = members
     .filter((member) => member.discordId && member.discordOnServer)
@@ -6545,12 +6543,9 @@ function SettingsSection({
                 style={renderedPreviewStyle}
               >
                 <span className="temporary-design-preview-atmosphere" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                  <span />
+                  {Array.from({ length: previewAtmosphereElementCount }, (_, index) => (
+                    <span key={`temporary-design-preview-atmosphere-${index}`} />
+                  ))}
                 </span>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
