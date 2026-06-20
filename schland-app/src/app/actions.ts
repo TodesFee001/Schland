@@ -21,6 +21,10 @@ import {
   writeModerationAdviceLog,
 } from "@/lib/moderation-advice";
 import {
+  createOfficialModerationAdviceDocument,
+  type OfficialAdviceDocumentType,
+} from "@/lib/moderation-advice-documents";
+import {
   createSupabaseServerClient,
   getSupabaseAdminClient,
 } from "@/lib/supabase/server";
@@ -1859,6 +1863,53 @@ export async function executeModerationAdviceAction(formData: FormData) {
 
   revalidatePath("/", "layout");
   redirect(`/?section=advice&advice=${encodeURIComponent(caseId)}&setup=advice-queued`);
+}
+
+export async function createModerationAdviceOfficialDocumentAction(
+  formData: FormData,
+) {
+  const { actor } = await getModerationAdviceActionContext("advice-error");
+  const caseId = getFormText(formData, "caseId");
+  const documentType = getOfficialAdviceDocumentType(formData);
+  const periodMonth = getOptionalFormNumber(formData, "periodMonth");
+  const periodYear = getOptionalFormNumber(formData, "periodYear");
+  const folderId = getFormText(formData, "folderId");
+
+  if (!isUuidText(caseId)) {
+    redirect("/?section=advice&setup=advice-missing");
+  }
+
+  if (folderId && !isUuidText(folderId)) {
+    redirect(`/?section=advice&advice=${encodeURIComponent(caseId)}&setup=advice-document-folder`);
+  }
+
+  try {
+    await createOfficialModerationAdviceDocument({
+      actorId: actor.id,
+      actorName: actor.name,
+      caseId,
+      documentType,
+      folderId: folderId || undefined,
+      periodMonth: periodMonth ?? undefined,
+      periodYear: periodYear ?? undefined,
+    });
+  } catch (error) {
+    console.error("moderation advice official document failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    redirect(
+      `/?section=advice&advice=${encodeURIComponent(
+        caseId,
+      )}&setup=${getOfficialAdviceDocumentErrorSetup(error)}`,
+    );
+  }
+
+  revalidatePath("/", "layout");
+  redirect(
+    `/?section=advice&advice=${encodeURIComponent(
+      caseId,
+    )}&setup=advice-document-created`,
+  );
 }
 
 export async function activateLockdownAction(formData: FormData) {
@@ -4723,6 +4774,49 @@ function getFolderErrorSetup(error: { code?: string; message?: string }) {
   }
 
   return "folder-error";
+}
+
+function getOfficialAdviceDocumentType(
+  formData: FormData,
+): OfficialAdviceDocumentType {
+  const value = getFormText(formData, "documentType");
+
+  if (value === "sanktionsvorschlag" || value === "aktennotiz") {
+    return value;
+  }
+
+  return "ermittlungsvermerk";
+}
+
+function getOfficialAdviceDocumentErrorSetup(error: unknown) {
+  const message =
+    error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+
+  if (message.includes("needs_analysis")) {
+    return "advice-document-needs-analysis";
+  }
+
+  if (message.includes("not_configured") || message.includes("disabled")) {
+    return "advice-document-drive";
+  }
+
+  if (message.includes("template")) {
+    return "advice-document-template";
+  }
+
+  if (message.includes("az") || message.includes("sequence") || message.includes("period")) {
+    return "advice-document-az";
+  }
+
+  if (message.includes("folder")) {
+    return "advice-document-folder";
+  }
+
+  if (message.includes("batch") || message.includes("document") || message.includes("docs")) {
+    return "advice-document-fill";
+  }
+
+  return "advice-document-error";
 }
 
 function getGoogleDocErrorSetup(error: unknown) {

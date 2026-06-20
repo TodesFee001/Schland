@@ -60,11 +60,59 @@ DISCORD_CLIENT_SECRET=
 DISCORD_BOT_TOKEN=
 DISCORD_GUILD_ID=
 DISCORD_INVITE_CHANNEL_ID=
+GOOGLE_DRIVE_CLIENT_EMAIL=
+GOOGLE_DRIVE_PRIVATE_KEY=
+GOOGLE_DRIVE_ROOT_FOLDER_ID=1FPOUB-Uj_mX5X26asct7KS06Ulwj5V4Z
+GOOGLE_DOCS_TEMPLATE_ID=1xRbjl9ue0Ve6s4WYX_pJ81BMvmXAuEiP
+GOOGLE_DOCS_OFFICIAL_ADVICE_TEMPLATE_ID=
+GOOGLE_DOCS_OFFICIAL_ADVICE_FOLDER_ID=
+OFFICIAL_ADVICE_DOCS_ENABLED=1
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-5.5
+OPENAI_REASONING_EFFORT=low
+OPENAI_TIMEOUT_MS=55000
 ```
 
 `SUPABASE_SERVICE_ROLE_KEY` ist nur fuer serverseitige Admin-Aufgaben noetig und darf niemals im Browser genutzt werden.
 `DISCORD_BOT_SYNC_TOKEN` schuetzt die internen Bot-Endpunkte und muss spaeter identisch im Bot hinterlegt werden.
 `CRON_SECRET` schuetzt den geplanten Vercel-Aufruf. `DISCORD_APPLICATION_ID`, `DISCORD_PUBLIC_KEY`, `DISCORD_CLIENT_ID` und `DISCORD_CLIENT_SECRET` gehoeren zur Discord-App. `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID` und `DISCORD_INVITE_CHANNEL_ID` braucht der Sync, um Einladungen zu erstellen und Auditlogs zu lesen.
+
+## KI-Sanktionsberater
+
+Der KI-Sanktionsberater bleibt ein Beratungswerkzeug. Er fuehrt keine Sanktionen aus; Warn/Kick/Ban werden erst durch einen berechtigten Menschen per separatem Button in die Bot-Queue gelegt.
+
+- Die Hauptquellen sind BRS-StGB `1UU0oElWYKlGImZA-L_O5jeKZcfCaJ_1gVnb6IpEC-Vo` und Regelwerk Schland `1XzgpBgIcZoqFkugGBPwfMCZtG91eAZvCd79k3FEDZBQ`.
+- Jede KI-Ausgabe muss `recommendedMeasures` enthalten. Auch unklare Faelle bekommen konkrete naechste Schritte wie Dokumentation, Anhoerung, Belege nachfordern oder manuelle Entscheidung.
+- Harte Empfehlungen `warn`, `kick` und `ban` brauchen konkrete Rechtsgrundlagen. Logik- oder Analogieentscheidungen werden nur unter `reasoningBasis` begruendet und nicht als exakte Regelstelle ausgegeben.
+- Belege werden als untrusted input behandelt. Dateien, URLs, Message-Links, Ticket-Kontext, Dateimetadaten und lesbare Texte landen im Evidence-Manifest; unlesbare oder ausgelassene Inhalte werden in Snapshot, Log und Risikohinweisen sichtbar.
+- Fuer detailreiche Begruendungen ist `OPENAI_TIMEOUT_MS=55000` vorgesehen; das Modell kann ueber `OPENAI_MODEL` und `OPENAI_REASONING_EFFORT` konfiguriert werden.
+
+## Offizielle Google-Docs-Dokumente
+
+Aus einer fertigen KI-Auswertung kann ein offizielles Google Docs Dokument erstellt werden. Die Erstellung kopiert immer eine Vorlage und befuellt Platzhalter per Google Docs API, damit Layout, Bild/Logo und Gestaltung erhalten bleiben.
+
+Erforderliche Service-Account-Scopes:
+
+- `https://www.googleapis.com/auth/drive`
+- `https://www.googleapis.com/auth/documents`
+
+Vorlagen/Fallback:
+
+- `GOOGLE_DOCS_OFFICIAL_ADVICE_TEMPLATE_ID` wird bevorzugt.
+- Ohne diese Variable wird `GOOGLE_DOCS_TEMPLATE_ID` genutzt.
+- `GOOGLE_DOCS_OFFICIAL_ADVICE_FOLDER_ID` kann einen Drive-Zielordner festlegen.
+- Ohne Zielordner wird der lokale/Drive-Fallback `Zu pruefen` verwendet.
+
+Pflicht-Platzhalter in der Vorlage:
+
+```text
+{{AZ}}, {{DATUM}}, {{FALL_AZ}}, {{TITEL}}, {{ZIELPERSON}}, {{ZIEL_DISCORD_ID}},
+{{VORFALL_ZEIT}}, {{SACHVERHALT}}, {{BEWEISWURDIGUNG}}, {{RECHTSGRUNDLAGEN}},
+{{MASSNAHMEN}}, {{EMPFEHLUNG_KURZ}}, {{BEGRUENDUNG}}, {{RISIKEN}},
+{{FEHLENDE_INFOS}}, {{ERSTELLT_DURCH}}, {{MODELL}}, {{ANLAGEN}}
+```
+
+Wenn Platzhalter fehlen, wird die Vorlage trotzdem kopiert und der generierte Inhalt am Dokumentende eingefuegt. Der Fall erhaelt ein offizielles Aktenzeichen im Format `BRS/ERM/NN/MM/YYYY/KI`; bestehende `files` und offizielle Dokumente werden fuer den Monats-Fortlauf beruecksichtigt. Die Nummernvergabe passiert ueber `official_document_sequences` race-sicher in der Datenbank.
 
 ## Interne Discord-Bot-Schnittstelle
 

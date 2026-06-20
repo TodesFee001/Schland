@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "20.06.2026",
+    id: "sanctions-advisor-official-docs-measures",
+    items: [
+      "KI-Sanktionsberater speichert jetzt immer konkrete Massnahmen mit Begruendung, Belegbasis, Rechtsgrundlagen, Risiken und Ausfuehrbarkeitsstatus.",
+      "Evidence-Manifest und AI-Input enthalten mehr Fallkontext, Beleg-Lesestatus, unlesbare Dateien und die verbindlichen Regelwerk-Quellen.",
+      "Aus fertigen Auswertungen kann ein offizielles Google Docs Dokument aus Vorlage mit BRS/ERM-Aktenzeichen erstellt werden.",
+    ],
+    title: "Sanktionsberater mit offiziellen Docs",
+    type: "feature",
+    version: "0.10.38",
+  },
+  {
+    date: "20.06.2026",
     id: "discord-ticket-delete-button-no-hang",
     items: [
       "Ticket loeschen antwortet jetzt sofort sichtbar statt bei der Transkript-Sicherung auf Discords Denkt nach stehen zu bleiben.",

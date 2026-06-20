@@ -327,6 +327,12 @@ export type WorkspaceModerationAdviceCase = {
   logs: WorkspaceModerationAdviceLog[];
   modelName: string;
   modelProvider: string;
+  officialAz?: string;
+  officialDocumentCreatedAt?: string;
+  officialDocumentFileId?: string;
+  officialDocumentId?: string;
+  officialDocumentStatus?: string;
+  officialDocumentUrl?: string;
   priorHistorySnapshot: Record<string, unknown>;
   recommendedAction: string;
   recommendedEventType: string;
@@ -1388,6 +1394,8 @@ export async function getWorkspaceData(
             executed_by,
             executed_at,
             archived_at,
+            official_document_id,
+            official_az,
             target_member:members!moderation_advice_cases_target_member_id_fkey(
               id,
               name,
@@ -1409,6 +1417,21 @@ export async function getWorkspaceData(
               action,
               details,
               created_at
+            ),
+            moderation_advice_official_documents(
+              id,
+              az,
+              status,
+              document_type,
+              file_id,
+              google_drive_file_id,
+              metadata,
+              created_at,
+              files(
+                id,
+                external_url,
+                google_drive_web_view_link
+              )
             )
           `,
         )
@@ -2379,6 +2402,14 @@ function mapModerationAdviceCases(
     const aiOutput = asObject(row.ai_output);
     const evidenceRows = asArray(row.moderation_advice_evidence);
     const logRows = asArray(row.moderation_advice_logs);
+    const officialDocuments = asArray(row.moderation_advice_official_documents);
+    const officialDocument = officialDocuments
+      .map(asObject)
+      .sort((left, right) =>
+        String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")),
+      )[0] ?? {};
+    const officialFile = asObject(officialDocument.files);
+    const officialMetadata = asObject(officialDocument.metadata);
     const status = String(row.status ?? "draft");
     const recommendedAction = String(
       row.recommended_action ?? aiOutput.recommendedAction ?? "",
@@ -2423,6 +2454,19 @@ function mapModerationAdviceCases(
         .sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
       modelName: String(row.model_name ?? ""),
       modelProvider: String(row.model_provider ?? ""),
+      officialAz: String(row.official_az ?? officialDocument.az ?? ""),
+      officialDocumentCreatedAt: formatDate(String(officialDocument.created_at ?? "")),
+      officialDocumentFileId: String(officialDocument.file_id ?? ""),
+      officialDocumentId: String(
+        row.official_document_id ?? officialDocument.id ?? "",
+      ),
+      officialDocumentStatus: String(officialDocument.status ?? ""),
+      officialDocumentUrl: String(
+        officialFile.google_drive_web_view_link ??
+          officialFile.external_url ??
+          officialMetadata.documentUrl ??
+          "",
+      ),
       priorHistorySnapshot: asObject(row.prior_history_snapshot),
       recommendedAction,
       recommendedEventType: String(row.recommended_event_type ?? ""),

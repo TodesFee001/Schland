@@ -951,6 +951,62 @@ function getSetupNotice(setup?: string) {
     };
   }
 
+  if (setup === "advice-document-created") {
+    return {
+      tone: "success" as const,
+      text: "Offizielles Google Docs Dokument wurde aus der Vorlage erstellt und mit dem Beratungsfall verknuepft.",
+    };
+  }
+
+  if (setup === "advice-document-needs-analysis") {
+    return {
+      tone: "warning" as const,
+      text: "Vor dem offiziellen Dokument muss zuerst eine KI-Auswertung gespeichert sein.",
+    };
+  }
+
+  if (setup === "advice-document-drive") {
+    return {
+      tone: "error" as const,
+      text: "Google Drive oder die offizielle Docs-Erstellung ist serverseitig nicht bereit.",
+    };
+  }
+
+  if (setup === "advice-document-template") {
+    return {
+      tone: "error" as const,
+      text: "Die offizielle Google-Docs-Vorlage fehlt oder ist fuer den Service-Account nicht erreichbar.",
+    };
+  }
+
+  if (setup === "advice-document-az") {
+    return {
+      tone: "error" as const,
+      text: "Aktenzeichen konnte nicht vergeben werden. Bitte Migration und vorhandene BRS/ERM-Dateien pruefen.",
+    };
+  }
+
+  if (setup === "advice-document-folder") {
+    return {
+      tone: "warning" as const,
+      text: "Der Zielordner fuer das offizielle Dokument wurde nicht gefunden.",
+    };
+  }
+
+  if (setup === "advice-document-fill") {
+    return {
+      tone: "error" as const,
+      text: "Das Google Doc wurde nicht sauber befuellt. Bitte Vorlage und Docs-API-Rechte pruefen.",
+    };
+  }
+
+  if (setup === "advice-document-error") {
+    return {
+      tone: "error" as const,
+      text: "Offizielles Dokument konnte nicht erstellt werden. Details wurden protokolliert.",
+    };
+  }
+
   if (setup === "advice-aal2") {
     return {
       tone: "warning" as const,

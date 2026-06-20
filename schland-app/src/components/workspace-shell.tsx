@@ -52,6 +52,7 @@ import {
   deactivateLockdownAction,
   deleteDiscordInviteRequestAction,
   createModerationAdviceCaseAction,
+  createModerationAdviceOfficialDocumentAction,
   createMemberAction,
   deleteFileAction,
   deleteFolderAction,
@@ -778,6 +779,7 @@ export function WorkspaceShell({
         return (
           <ModerationAdviceSection
             adviceCases={workspaceData.moderationAdviceCases}
+            environmentStatus={environmentStatus}
             members={members}
             mfaReady={mfaReady}
             selectedAdviceId={selectedAdviceId}
@@ -5091,12 +5093,14 @@ function ModerationSection({
 
 function ModerationAdviceSection({
   adviceCases,
+  environmentStatus,
   members,
   mfaReady,
   selectedAdviceId,
   setSelectedAdviceId,
 }: {
   adviceCases: WorkspaceModerationAdviceCase[];
+  environmentStatus: EnvironmentStatus;
   members: WorkspaceMember[];
   mfaReady: boolean;
   selectedAdviceId: string;
@@ -5262,6 +5266,17 @@ function ModerationAdviceSection({
     !selectedAdvice?.executionEventId &&
     selectedAdvice?.status !== "queued" &&
     selectedAdvice?.status !== "executed";
+  const canCreateOfficialDocument =
+    Boolean(selectedAdvice) &&
+    mfaReady &&
+    environmentStatus.googleDriveClientEmail &&
+    environmentStatus.googleDrivePrivateKey &&
+    environmentStatus.googleDocsTemplateId &&
+    ["advice_ready", "saved", "queued", "executed"].includes(
+      selectedAdvice?.status ?? "",
+    ) &&
+    Object.keys(selectedAdvice?.aiOutput ?? {}).length > 0 &&
+    !selectedAdvice?.officialDocumentId;
 
   return (
     <div className="grid gap-5">
@@ -5569,11 +5584,64 @@ function ModerationAdviceSection({
                     {selectedAdvice.targetDiscordUsername} {"-"} {selectedAdvice.targetDiscordId}
                   </p>
                 </article>
+                <article className="border border-[var(--line)] bg-[var(--surface-muted)] p-3">
+                  <p className="text-xs font-medium uppercase text-neutral-500">
+                    Offizielles Dokument
+                  </p>
+                  <p className="mt-2 font-mono text-sm font-medium">
+                    {selectedAdvice.officialAz || "-"}
+                  </p>
+                  {selectedAdvice.officialDocumentUrl ? (
+                    <a
+                      href={selectedAdvice.officialDocumentUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--accent-strong)] underline-offset-2 hover:underline"
+                    >
+                      <ExternalLink className="size-3.5" aria-hidden="true" />
+                      <span>Google Doc oeffnen</span>
+                    </a>
+                  ) : (
+                    <p className="mt-2 text-xs text-neutral-500">
+                      Noch nicht erstellt
+                    </p>
+                  )}
+                  {selectedAdvice.officialDocumentCreatedAt ? (
+                    <p className="mt-1 text-xs text-neutral-500">
+                      {selectedAdvice.officialDocumentStatus} {"-"}{" "}
+                      {selectedAdvice.officialDocumentCreatedAt}
+                    </p>
+                  ) : null}
+                </article>
               </div>
 
               <AdviceTextBlock
+                label="Entscheidung kurz"
+                value={readAdviceText(selectedAdvice.aiOutput, "decisionSummary")}
+              />
+              <AdviceTextBlock
                 label="Begruendung"
                 value={readAdviceText(selectedAdvice.aiOutput, "humanExplanation")}
+              />
+              <AdviceListBlock
+                label="Konkrete Massnahmen"
+                items={readAdviceObjectList(selectedAdvice.aiOutput, "recommendedMeasures").map(
+                  (measure) =>
+                    [
+                      `${readAdviceText(measure, "recommendedOrder")}. ${readAdviceText(
+                        measure,
+                        "title",
+                      )}`,
+                      readAdviceText(measure, "description"),
+                      `Begruendung: ${readAdviceText(measure, "whyAppropriate")}`,
+                      `Art: ${readAdviceText(measure, "measureType")}`,
+                      `Ausfuehrbar: ${
+                        readAdviceBoolean(measure, "executable") ? "Ja" : "Nein"
+                      }`,
+                    ]
+                      .filter(Boolean)
+                      .join("\n"),
+                )}
               />
               <AdviceListBlock
                 label="Erkannte Verstoesse"
@@ -5608,7 +5676,7 @@ function ModerationAdviceSection({
                 items={readAdviceStringList(selectedAdvice.aiOutput, "alternatives")}
               />
 
-              <div className="grid gap-3 border-t border-[var(--line)] pt-4 lg:grid-cols-3">
+              <div className="grid gap-3 border-t border-[var(--line)] pt-4 lg:grid-cols-4">
                 <form action={analyzeModerationAdviceCaseAction}>
                   <input type="hidden" name="caseId" value={selectedAdvice.id} />
                   <button
@@ -5634,6 +5702,30 @@ function ModerationAdviceSection({
                   >
                     <Save className="size-4" aria-hidden="true" />
                     <span>Nur speichern</span>
+                  </button>
+                </form>
+                <form
+                  action={createModerationAdviceOfficialDocumentAction}
+                  className="grid gap-2"
+                >
+                  <input type="hidden" name="caseId" value={selectedAdvice.id} />
+                  <select
+                    name="documentType"
+                    defaultValue="ermittlungsvermerk"
+                    className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
+                    disabled={!canCreateOfficialDocument}
+                  >
+                    <option value="ermittlungsvermerk">Ermittlungsvermerk</option>
+                    <option value="sanktionsvorschlag">Sanktionsvorschlag</option>
+                    <option value="aktennotiz">Aktennotiz</option>
+                  </select>
+                  <button
+                    type="submit"
+                    disabled={!canCreateOfficialDocument}
+                    className="flex h-10 w-full items-center justify-center gap-2 rounded-md border border-[var(--line)] bg-white px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <FileText className="size-4" aria-hidden="true" />
+                    <span>Offizielles Docs erstellen</span>
                   </button>
                 </form>
                 <form action={executeModerationAdviceAction} className="grid gap-2">
@@ -7712,9 +7804,13 @@ function mapAdviceLogAction(action: string) {
     bot_befehl_laeuft: "Bot-Befehl laeuft",
     bot_erfolgreich_ausgefuehrt: "Bot erfolgreich ausgefuehrt",
     bot_fehlgeschlagen: "Bot fehlgeschlagen",
+    belege_unlesbar: "Belege nicht vollstaendig lesbar",
     ki_auswertung_abgeschlossen: "KI-Auswertung abgeschlossen",
     ki_auswertung_gestartet: "KI-Auswertung gestartet",
+    offizielles_dokument_erstellt: "Offizielles Dokument erstellt",
+    offizielles_dokument_fehler: "Offizielles Dokument fehlgeschlagen",
     rechtsgrundlagen_geladen: "Rechtsgrundlagen geladen",
+    template_placeholders_missing: "Vorlagen-Platzhalter fehlen",
     titel_geaendert: "Titel geaendert",
   };
 
@@ -7739,6 +7835,14 @@ function readAdviceStringList(source: unknown, key: string) {
   return Array.isArray(value)
     ? value.map((item) => String(item ?? "").trim()).filter(Boolean)
     : [];
+}
+
+function readAdviceBoolean(source: unknown, key: string) {
+  if (typeof source !== "object" || source === null || Array.isArray(source)) {
+    return false;
+  }
+
+  return (source as Record<string, unknown>)[key] === true;
 }
 
 function readAdviceObjectList(source: unknown, key: string) {

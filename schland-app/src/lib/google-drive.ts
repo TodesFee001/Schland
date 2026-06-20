@@ -33,9 +33,11 @@ export type DriveConfig = {
 };
 
 const tokenUrl = "https://oauth2.googleapis.com/token";
+const docsApiBaseUrl = "https://docs.googleapis.com/v1";
 const driveApiBaseUrl = "https://www.googleapis.com/drive/v3";
 const driveUploadBaseUrl = "https://www.googleapis.com/upload/drive/v3";
 const driveScope = "https://www.googleapis.com/auth/drive";
+const docsScope = "https://www.googleapis.com/auth/documents";
 const defaultDriveRootFolderId = "1FPOUB-Uj_mX5X26asct7KS06Ulwj5V4Z";
 const defaultDocsTemplateId = "1xRbjl9ue0Ve6s4WYX_pJ81BMvmXAuEiP";
 const fileFields =
@@ -91,6 +93,21 @@ export function getGoogleDocsTemplateId() {
     process.env.GOOGLE_DRIVE_DOCS_TEMPLATE_ID ??
     defaultDocsTemplateId
   );
+}
+
+export function getOfficialAdviceDocsTemplateId() {
+  return (
+    process.env.GOOGLE_DOCS_OFFICIAL_ADVICE_TEMPLATE_ID?.trim() ||
+    getGoogleDocsTemplateId()
+  );
+}
+
+export function getOfficialAdviceDocsFolderId() {
+  return process.env.GOOGLE_DOCS_OFFICIAL_ADVICE_FOLDER_ID?.trim() || "";
+}
+
+export function isOfficialAdviceDocsEnabled() {
+  return process.env.OFFICIAL_ADVICE_DOCS_ENABLED !== "0";
 }
 
 export function isGoogleDocsMimeType(mimeType: string) {
@@ -325,6 +342,33 @@ export class GoogleDriveClient {
     );
   }
 
+  async getDocument(documentId: string) {
+    return this.request<Record<string, unknown>>(
+      `/documents/${encodeURIComponent(documentId)}`,
+      {},
+      docsApiBaseUrl,
+    );
+  }
+
+  async batchUpdateDocument(input: {
+    documentId: string;
+    requests: unknown[];
+  }) {
+    return this.request<Record<string, unknown>>(
+      `/documents/${encodeURIComponent(input.documentId)}:batchUpdate`,
+      {
+        body: JSON.stringify({
+          requests: input.requests,
+        }),
+        headers: {
+          "content-type": "application/json",
+        },
+        method: "POST",
+      },
+      docsApiBaseUrl,
+    );
+  }
+
   async moveFile(input: {
     fileId: string;
     previousParents: string[];
@@ -424,7 +468,7 @@ async function getAccessToken(config: DriveConfig) {
       exp: nowSeconds + 3600,
       iat: nowSeconds,
       iss: config.clientEmail,
-      scope: driveScope,
+      scope: `${driveScope} ${docsScope}`,
     },
     config.privateKey,
   );
