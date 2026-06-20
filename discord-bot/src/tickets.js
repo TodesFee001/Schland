@@ -67,6 +67,9 @@ const IMAGE_CONTENT_TYPES = new Set([
   "image/webp",
 ]);
 const MAX_TRANSCRIPT_MESSAGES = 300;
+const TICKET_TRANSCRIPT_TIMEOUT_MS = 20_000;
+const TICKET_DELETE_TRANSCRIPT_TIMEOUT_MS = 15_000;
+const TICKET_DELETE_CHANNEL_TIMEOUT_MS = 10_000;
 
 export function createTicketSystem(input) {
   const { api, client, config, errorMessage, formatUser, getGuild } = input;
@@ -1417,8 +1420,21 @@ export function createTicketSystem(input) {
     const ticketId = interaction.customId.slice(TICKET_TRANSCRIPT_PREFIX.length);
 
     await interaction.deferReply({ ephemeral: true });
-    await saveTranscript(interaction.channel, ticketId, interaction.user);
-    await interaction.editReply({ content: "Transkript wurde als Beleg gespeichert." });
+    await interaction.editReply({ content: "Transkript wird erstellt..." });
+    try {
+      await withTimeout(
+        saveTranscript(interaction.channel, ticketId, interaction.user),
+        TICKET_TRANSCRIPT_TIMEOUT_MS,
+        "ticket_transcript_timeout",
+      );
+      await interaction.editReply({ content: "Transkript wurde als Beleg gespeichert." });
+    } catch (error) {
+      console.error("Ticket transcript button failed", errorMessage(error));
+      await interaction.editReply({
+        content:
+          "Transkript konnte gerade nicht erstellt werden. Bitte nochmal versuchen oder Ticket-Logs pruefen.",
+      }).catch(() => {});
+    }
   }
 
   async function handleDeleteTicketButton(interaction) {
@@ -1440,10 +1456,34 @@ export function createTicketSystem(input) {
       return;
     }
 
+    const channelId = interaction.channel.id;
+    const channelName = interaction.channel.name;
+
     await interaction.deferReply({ ephemeral: true });
-    await saveTranscript(interaction.channel, ticketId, interaction.user).catch((error) => {
-      console.error("Ticket transcript before delete failed", errorMessage(error));
+    await interaction.editReply({
+      content: "Ticket-Loeschung gestartet. Transkript wird gesichert...",
     });
+
+    try {
+      await withTimeout(
+        saveTranscript(interaction.channel, ticketId, interaction.user),
+        TICKET_DELETE_TRANSCRIPT_TIMEOUT_MS,
+        "ticket_delete_transcript_timeout",
+      );
+    } catch (error) {
+      console.error("Ticket transcript before delete failed", errorMessage(error));
+      await logTicketDeleteFailure(ticketId, interaction, {
+        channelId,
+        channelName,
+        error: errorMessage(error),
+        stage: "transcript_before_delete",
+      });
+      await interaction.editReply({
+        content:
+          "Transkript konnte nicht zuverlaessig gesichert werden. Ticketchannel wurde nicht geloescht; bitte nochmal versuchen oder Rechte/Logs pruefen.",
+      }).catch(() => {});
+      return;
+    }
 
     await api("/tickets/logs", {
       body: {
@@ -1451,8 +1491,8 @@ export function createTicketSystem(input) {
         actorDiscordUserId: interaction.user.id,
         actorDiscordUsername: formatUser(interaction.user),
         details: {
-          channelId: interaction.channel.id,
-          channelName: interaction.channel.name,
+          channelId,
+          channelName,
         },
         ticketId,
       },
@@ -1461,31 +1501,26 @@ export function createTicketSystem(input) {
       console.error("Ticket delete log failed", errorMessage(error));
     });
 
-    const channelName = interaction.channel.name;
-
     await interaction.editReply({
       content: "Transkript wurde gesichert. Ticketchannel wird geloescht.",
     });
 
     try {
-      await interaction.channel.delete(
-        trimReason(`Ticket geloescht von ${formatUser(interaction.user)}`),
+      await withTimeout(
+        interaction.channel.delete(
+          trimReason(`Ticket geloescht von ${formatUser(interaction.user)}`),
+        ),
+        TICKET_DELETE_CHANNEL_TIMEOUT_MS,
+        "ticket_delete_channel_timeout",
       );
     } catch (error) {
       console.error("Ticket channel delete failed", errorMessage(error));
-      await api("/tickets/logs", {
-        body: {
-          action: "ticket_channel_delete_failed",
-          actorDiscordUserId: interaction.user.id,
-          actorDiscordUsername: formatUser(interaction.user),
-          details: {
-            channelName,
-            error: errorMessage(error),
-          },
-          ticketId,
-        },
-        method: "POST",
-      }).catch(() => {});
+      await logTicketDeleteFailure(ticketId, interaction, {
+        channelId,
+        channelName,
+        error: errorMessage(error),
+        stage: "discord_channel_delete",
+      });
       await interaction.followUp({
         content:
           "Ticketchannel konnte nicht geloescht werden. Bitte Bot-Rechte fuer Kanaele verwalten pruefen.",
@@ -1499,6 +1534,23 @@ export function createTicketSystem(input) {
       description: `${formatUser(interaction.user)} hat den Ticketchannel \`${channelName}\` geloescht. Transkript wurde vorher gesichert.`,
       fields: [{ name: "Ticket", value: ticketId }],
       title: "Ticket geloescht",
+    }).catch((error) => {
+      console.error("Ticket delete log channel message failed", errorMessage(error));
+    });
+  }
+
+  async function logTicketDeleteFailure(ticketId, interaction, details) {
+    await api("/tickets/logs", {
+      body: {
+        action: "ticket_channel_delete_failed",
+        actorDiscordUserId: interaction.user.id,
+        actorDiscordUsername: formatUser(interaction.user),
+        details,
+        ticketId,
+      },
+      method: "POST",
+    }).catch((error) => {
+      console.error("Ticket delete failure log failed", errorMessage(error));
     });
   }
 
@@ -2965,6 +3017,15 @@ export function createTicketSystem(input) {
     return message.components?.some((row) =>
       row.components?.some((component) => component.customId?.startsWith(prefix)),
     );
+  }
+
+  function withTimeout(promise, timeoutMs, label) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(label)), timeoutMs);
+    });
+
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
   }
 
   function hasTicketAdminRole(member) {

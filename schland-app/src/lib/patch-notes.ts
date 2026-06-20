@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "20.06.2026",
+    id: "discord-ticket-delete-button-no-hang",
+    items: [
+      "Ticket loeschen antwortet jetzt sofort sichtbar statt bei der Transkript-Sicherung auf Discords Denkt nach stehen zu bleiben.",
+      "Transkript-Erstellung und Channel-Loeschen haben Timeouts; wenn das Transkript nicht sicher gespeichert wird, bleibt der Kanal erhalten.",
+      "Fehler beim Loeschen werden als Ticket-Log protokolliert und dem ausloesenden Admin direkt angezeigt.",
+    ],
+    title: "Ticket-Loeschen haengt nicht mehr",
+    type: "fix",
+    version: "0.10.37",
+  },
+  {
+    date: "20.06.2026",
     id: "discord-ticket-close-transcript-delete-actions",
     items: [
       "Nach dem Schliessen eines Tickets wird die Ticket-Bedienung auf Transkript erstellen und Ticket loeschen umgestellt.",
