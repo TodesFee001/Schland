@@ -95,8 +95,8 @@ Flow:
 
 1. Der Bot legt beim Start `Tickets`, `#ticket-erstellen`, `#ticket-log` und `#bilder-protokoll` an oder repariert sie. Admins koennen das ueber den Panel-Button `Setup reparieren`, `/ticket-setup` oder `!ticket-setup` erneut ausloesen.
 2. User klickt im Panel auf `Ticket erstellen`; der Button `Anleitung` zeigt den Ablauf ohne Textbefehl.
-3. Der Bot fragt Ticketart, Gegenpartei, ggf. explizit auszuschliessende Regierungsmitglieder, Ort und Zeitpunkt ab. Danach oeffnet der Button `Details eingeben` das Formular fuer Beschreibung und gewuenschten Ausgang.
-4. Der Bot erstellt einen privaten Ticketchannel. `@everyone` ist gesperrt, die sichtbaren Rollen und der Ersteller sind erlaubt, ausgeschlossene User bekommen einen direkten Deny.
+3. Der Bot fragt Ticketart, Gegenpartei, ggf. explizit auszuschliessende Regierungsmitglieder, Ort und Zeitpunkt ab. Danach reicht die Auswahl `Worum geht es grob?`, damit der Ticketchannel sofort entsteht.
+4. Details werden direkt im privaten Ticketchannel geschrieben und automatisch als Beleg gespeichert. `@everyone` ist gesperrt, die sichtbaren Rollen und der Ersteller sind erlaubt, ausgeschlossene User bekommen einen direkten Deny.
 5. Im Ticket koennen berechtigte Personen per Button weitere Personen hinzufuegen, den KI-Sanktionsberater starten, ein Transcript sichern oder das Ticket schliessen.
 
 Der KI-Sanktionsberater erstellt nur eine Beratung in der Schland-App. Sanktionen werden nicht automatisch von der KI ausgefuehrt; die Umsetzung bleibt ein bewusster Admin-Klick in der bestehenden Moderationsstrecke.

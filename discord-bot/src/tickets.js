@@ -22,6 +22,7 @@ const TICKET_EXCLUDED_PREFIX = "ticket:excluded:";
 const TICKET_OUTSIDE_PREFIX = "ticket:outside:";
 const TICKET_CHANNEL_PREFIX = "ticket:channel:";
 const TICKET_TIME_PREFIX = "ticket:time:";
+const TICKET_QUICK_DETAILS_PREFIX = "ticket:quick-details:";
 const TICKET_DETAILS_BUTTON_PREFIX = "ticket:details-open:";
 const TICKET_DETAILS_PREFIX = "ticket:details:";
 const TICKET_EXACT_BUTTON_PREFIX = "ticket:exact-open:";
@@ -412,12 +413,12 @@ export function createTicketSystem(input) {
     }
 
     if (interaction.customId.startsWith(TICKET_DETAILS_BUTTON_PREFIX)) {
-      await showTicketDetailsModal(interaction, TICKET_DETAILS_BUTTON_PREFIX);
+      await createTicketFromDetailsButton(interaction, TICKET_DETAILS_BUTTON_PREFIX);
       return;
     }
 
     if (interaction.customId.startsWith(TICKET_EXACT_BUTTON_PREFIX)) {
-      await showTicketExactModal(interaction, TICKET_EXACT_BUTTON_PREFIX);
+      await createTicketFromDetailsButton(interaction, TICKET_EXACT_BUTTON_PREFIX);
       return;
     }
 
@@ -434,6 +435,11 @@ export function createTicketSystem(input) {
   async function handleTicketSelect(interaction) {
     if (interaction.customId.startsWith(TICKET_ADD_USER_PREFIX)) {
       await addTicketUsersFromSelect(interaction);
+      return;
+    }
+
+    if (interaction.customId.startsWith(TICKET_QUICK_DETAILS_PREFIX)) {
+      await createTicketFromQuickDetails(interaction);
       return;
     }
 
@@ -573,16 +579,13 @@ export function createTicketSystem(input) {
 
       if (value === "exact") {
         draft.incidentAt = null;
-        draft.incidentTimeText = "Genauer Zeitpunkt";
+        draft.incidentTimeText = "Genauer Zeitpunkt wird im Ticket nachgetragen";
         ticketDrafts.set(draft.id, draft);
         await interaction.update({
-          components: [
-            ...buildTimeSelectRows(draft.id),
-            buildOpenDetailsButtonRow(draft.id, true),
-          ],
+          components: buildQuickDetailsRows(draft.id),
           content: buildDraftMessage(
             draft,
-            "Fast fertig: oeffne jetzt Zeit und Details.",
+            "Fast fertig: waehle aus, worum es grob geht. Der Ticketchannel wird danach sofort erstellt.",
           ),
         });
         return;
@@ -593,11 +596,11 @@ export function createTicketSystem(input) {
       draft.incidentTimeText = mappedTime.incidentTimeText;
       ticketDrafts.set(draft.id, draft);
       await interaction.update({
-        components: [
-          ...buildTimeSelectRows(draft.id),
-          buildOpenDetailsButtonRow(draft.id, false),
-        ],
-        content: buildDraftMessage(draft, "Fast fertig: oeffne jetzt die Details."),
+        components: buildQuickDetailsRows(draft.id),
+        content: buildDraftMessage(
+          draft,
+          "Fast fertig: waehle aus, worum es grob geht. Der Ticketchannel wird danach sofort erstellt.",
+        ),
       });
     }
   }
@@ -904,24 +907,41 @@ export function createTicketSystem(input) {
     });
   }
 
-  async function showTicketDetailsModal(interaction, prefix) {
+  async function createTicketFromDetailsButton(interaction, prefix) {
     const draft = requireDraft(interaction, prefix);
 
     if (!draft) {
       return;
     }
 
-    await interaction.showModal(buildTicketDetailsModal(draft.id));
+    draft.description = [
+      "Schnellticket: Details per Button gestartet.",
+      "Details werden direkt im Ticketchannel nachgereicht und automatisch als Beleg gespeichert.",
+    ].join(" ");
+    draft.desiredOutcome = "Sachverhalt klaeren.";
+    ticketDrafts.set(draft.id, draft);
+
+    await createTicketFromDraft(interaction, draft);
   }
 
-  async function showTicketExactModal(interaction, prefix) {
-    const draft = requireDraft(interaction, prefix);
+  async function createTicketFromQuickDetails(interaction) {
+    const draft = requireDraft(interaction, TICKET_QUICK_DETAILS_PREFIX);
 
     if (!draft) {
       return;
     }
 
-    await interaction.showModal(buildTicketExactModal(draft.id));
+    const quickType = interaction.values[0];
+    const quickDetails = getQuickDetailOption(quickType);
+
+    draft.description = [
+      `Schnellticket: ${quickDetails.label}.`,
+      "Details werden direkt im Ticketchannel nachgereicht und automatisch als Beleg gespeichert.",
+    ].join(" ");
+    draft.desiredOutcome = quickDetails.desiredOutcome;
+    ticketDrafts.set(draft.id, draft);
+
+    await createTicketFromDraft(interaction, draft);
   }
 
   async function addTicketUsersFromSelect(interaction) {
@@ -1672,6 +1692,65 @@ export function createTicketSystem(input) {
           ),
       ),
     ];
+  }
+
+  function buildQuickDetailsRows(draftId) {
+    return [
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${TICKET_QUICK_DETAILS_PREFIX}${draftId}`)
+          .setPlaceholder("Worum geht es grob?")
+          .addOptions(
+            {
+              label: "Allgemeine Anfrage",
+              value: "general_request",
+            },
+            {
+              label: "Problem oder Beschwerde",
+              value: "complaint",
+            },
+            {
+              label: "Bitte um Entscheidung",
+              value: "decision",
+            },
+            {
+              label: "Termin oder Absprache",
+              value: "appointment",
+            },
+            {
+              label: "Sonstiges",
+              value: "other",
+            },
+          ),
+      ),
+    ];
+  }
+
+  function getQuickDetailOption(value) {
+    const options = {
+      appointment: {
+        desiredOutcome: "Termin oder Absprache klaeren.",
+        label: "Termin oder Absprache",
+      },
+      complaint: {
+        desiredOutcome: "Problem pruefen und weitere Schritte festlegen.",
+        label: "Problem oder Beschwerde",
+      },
+      decision: {
+        desiredOutcome: "Entscheidung der zustaendigen Stelle einholen.",
+        label: "Bitte um Entscheidung",
+      },
+      general_request: {
+        desiredOutcome: "Anfrage beantworten und bei Bedarf weiterleiten.",
+        label: "Allgemeine Anfrage",
+      },
+      other: {
+        desiredOutcome: "Sachverhalt klaeren.",
+        label: "Sonstiges",
+      },
+    };
+
+    return options[value] ?? options.other;
   }
 
   function buildOpenDetailsButtonRow(draftId, exactTime) {

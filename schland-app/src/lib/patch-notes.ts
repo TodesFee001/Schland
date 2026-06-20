@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "20.06.2026",
+    id: "discord-ticket-details-modal-removal",
+    items: [
+      "Ticket-Erstellung nutzt nach der Zeit-Auswahl kein Discord-Modal mehr, sondern ein Auswahlfeld Worum geht es grob?.",
+      "Der Ticketchannel wird danach sofort erstellt; Details werden direkt im Channel geschrieben und automatisch als Beleg gespeichert.",
+      "Auch alte Details-eingeben-Buttons laufen nun in einen Sofortabschluss statt erneut in den fehlerhaften Modalpfad.",
+    ],
+    title: "Ticket-Details ohne Modal",
+    type: "fix",
+    version: "0.10.29",
+  },
+  {
+    date: "20.06.2026",
     id: "discord-ticket-time-step-button-repair",
     items: [
       "Zeit-Auswahl im Ticketflow oeffnet nicht mehr direkt ein Discord-Modal aus dem Select-Menue.",
