@@ -65,6 +65,12 @@ Registriert werden:
 - `/ticket-anleitung` - zeigt die kurze Arbeitsanweisung direkt in Discord.
 - `/add user grund?` - fuegt eine Person zu einem aktiven Ticket hinzu, aber nie eine beim Erstellen explizit ausgeschlossene Person.
 
+Falls Discord beim Tippen von `/` keine Befehlsliste zeigt, funktionieren dieselben Adminpfade als normale Nachrichten:
+
+- `!ticket-setup`
+- `!ticket-anleitung`
+- `!add @User optionaler Grund`
+
 ## Ticket-System
 
 Standard-Rollen:
@@ -76,6 +82,7 @@ Optionale Variablen:
 
 - `DISCORD_AUTO_REGISTER_COMMANDS` - Standard `1`; mit `0` deaktivieren.
 - `DISCORD_TICKET_AUTO_SETUP` - Standard `1`; mit `0` deaktivieren.
+- `DISCORD_TEXT_COMMAND_PREFIX` - Standard `!`
 - `DISCORD_TICKET_ADMIN_ROLE_ID`
 - `DISCORD_TICKET_VIEW_ROLE_IDS`
 - `DISCORD_TICKET_PANEL_CHANNEL_ID`

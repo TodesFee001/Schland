@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "20.06.2026",
+    id: "discord-ticket-text-command-fallbacks",
+    items: [
+      "Ticket-System kann jetzt auch ohne Discord-Slash-Liste per Textbefehl bedient werden: !ticket-setup, !ticket-anleitung und !add @User Grund.",
+      "Text-Fallbacks nutzen dieselben Rechtepruefungen wie die Slash-Commands und speichern Ticketbelege nicht versehentlich als normale Evidence.",
+      "README und Bot-Env-Beispiel dokumentieren den neuen DISCORD_TEXT_COMMAND_PREFIX.",
+    ],
+    title: "Ticket-Textbefehle ergaenzt",
+    type: "fix",
+    version: "0.10.26",
+  },
+  {
+    date: "20.06.2026",
     id: "discord-ticket-setup-and-image-submit-repair",
     items: [
       "Discord-Bot registriert Ticket-Slash-Commands beim Start automatisch und legt Ticketpanel, Ticket-Log, Bilder-Protokoll sowie Kategorie idempotent an.",

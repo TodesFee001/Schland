@@ -38,6 +38,7 @@ const TICKET_PANEL_CHANNEL_NAME = "ticket-erstellen";
 const TICKET_LOG_CHANNEL_NAME = "ticket-log";
 const TICKET_CATEGORY_NAME = "Tickets";
 const MEMBER_IMAGE_LOG_CHANNEL_NAME = "bilder-protokoll";
+const DEFAULT_TEXT_COMMAND_PREFIX = "!";
 const TICKET_TYPES = {
   government_member_dispute: "Streit mit Regierungsmitglied",
   government_request: "Anfrage an die Regierung",
@@ -138,6 +139,10 @@ export function createTicketSystem(input) {
 
     if (!message.guild) {
       await handleDirectMessage(message);
+      return true;
+    }
+
+    if (await handleTextCommand(message)) {
       return true;
     }
 
@@ -296,18 +301,61 @@ export function createTicketSystem(input) {
 
   async function handleTicketHelp(interaction) {
     await interaction.reply({
-      content: [
-        "**Schland Ticket-System**",
-        "1. Ticket starten: im Kanal `#ticket-erstellen` auf `Ticket erstellen` klicken.",
-        "2. Ticketart, Gegenpartei, Ort, Zeitpunkt und Details auswaehlen.",
-        "3. Der Bot erstellt einen privaten Ticketchannel mit Belegspeicherung.",
-        "4. Im Ticket koennen Berechtigte den Sanktionsberater starten, Transcript sichern oder schliessen.",
-        "",
-        "Admin-Reparatur: `/ticket-setup` legt Panel, Ticket-Log, Bilder-Protokoll und Kategorie erneut an.",
-        "Ticket-Zugriff: `/add user grund?` funktioniert nur im aktiven Ticketchannel und nie fuer explizit ausgeschlossene Personen.",
-      ].join("\n"),
+      content: buildTicketHelpText(),
       ephemeral: true,
     });
+  }
+
+  async function handleTextCommand(message) {
+    const parsed = parseTextCommand(message.content);
+
+    if (!parsed) {
+      return false;
+    }
+
+    if (parsed.command === "ticket-setup") {
+      await handleTicketSetupMessage(message);
+      return true;
+    }
+
+    if (
+      parsed.command === "ticket-anleitung" ||
+      parsed.command === "ticket-help" ||
+      parsed.command === "ticket-hilfe"
+    ) {
+      await message.reply(buildTicketHelpText());
+      return true;
+    }
+
+    if (parsed.command === "add") {
+      await handleTicketAddMessage(message, parsed.args);
+      return true;
+    }
+
+    return false;
+  }
+
+  async function handleTicketSetupMessage(message) {
+    if (!canManageTickets(message.member, message.member?.permissions)) {
+      await message.reply("Du brauchst Ticket-Adminrechte fuer das Setup.");
+      return;
+    }
+
+    const setup = await ensureTicketSetup(message.guild ?? (await getGuild()), {
+      actorLabel: formatUser(message.author),
+      refreshPanel: true,
+    });
+
+    await message.reply(
+      [
+        "Ticket-Setup aktualisiert.",
+        `Panel: ${setup.panelChannel}`,
+        `Ticket-Log: ${setup.logChannel}`,
+        `Bilder-Protokoll: ${setup.imageLogChannel}`,
+        `Kategorie: ${setup.category.name} (${setup.category.id})`,
+        `Text-Fallbacks aktiv: \`${config.textCommandPrefix}ticket-setup\`, \`${config.textCommandPrefix}ticket-anleitung\`, \`${config.textCommandPrefix}add @User Grund\`.`,
+      ].join("\n"),
+    );
   }
 
   async function handleTicketButton(interaction) {
@@ -703,6 +751,72 @@ export function createTicketSystem(input) {
         : "Person konnte nicht hinzugefuegt werden.";
 
       await interaction.editReply({ content: message });
+    }
+  }
+
+  async function handleTicketAddMessage(message, args) {
+    if (!message.guild || !message.channel) {
+      await message.reply(`${config.textCommandPrefix}add funktioniert nur in einem Ticket-Channel.`);
+      return;
+    }
+
+    if (!hasTicketAdminRole(message.member)) {
+      await message.reply(`Du brauchst die Ticket-Adminrolle fuer ${config.textCommandPrefix}add.`);
+      return;
+    }
+
+    const ticketId = getTicketIdFromChannel(message.channel);
+
+    if (!ticketId) {
+      await message.reply(`${config.textCommandPrefix}add funktioniert nur in einem aktiven Ticket-Channel.`);
+      return;
+    }
+
+    const user = await resolveCommandUser(message, args[0]);
+
+    if (!user) {
+      await message.reply(`Bitte nutze: \`${config.textCommandPrefix}add @User optionaler Grund\``);
+      return;
+    }
+
+    const reason =
+      args
+        .slice(1)
+        .join(" ")
+        .trim() || "Nachtraeglich hinzugefuegt";
+
+    try {
+      const result = await api("/tickets", {
+        body: {
+          action: "add_participant",
+          actorDiscordUserId: message.author.id,
+          actorDiscordUsername: formatUser(message.author),
+          channelId: message.channel.id,
+          reason,
+          user: {
+            discordUserId: user.id,
+            discordUsername: formatUser(user),
+          },
+        },
+        method: "PATCH",
+      });
+
+      await message.channel.permissionOverwrites.edit(
+        user.id,
+        buildTicketUserAllowOverwrite(),
+        {
+          reason: trimReason(`Schland Ticket ${config.textCommandPrefix}add: ${reason}`),
+        },
+      );
+      await applyExcludedDenies(message.channel, result.ticket?.participants);
+
+      await message.reply(`${user} wurde dem Ticket hinzugefuegt.`);
+    } catch (error) {
+      const reply = errorMessage(error).includes("ticket_user_explicitly_excluded")
+        ? "Diese Person wurde beim Anlegen explizit ausgeschlossen und kann nicht hinzugefuegt werden."
+        : "Person konnte nicht hinzugefuegt werden.";
+
+      await message.reply(reply);
     }
   }
 
@@ -1802,6 +1916,60 @@ export function createTicketSystem(input) {
     );
   }
 
+  async function resolveCommandUser(message, rawUser) {
+    const mentioned = message.mentions.users.first();
+
+    if (mentioned) {
+      return mentioned;
+    }
+
+    const match = String(rawUser ?? "").match(/^<@!?(\d{15,25})>$|^(\d{15,25})$/);
+    const userId = match?.[1] ?? match?.[2];
+
+    if (!userId) {
+      return null;
+    }
+
+    return client.users.fetch(userId).catch(() => null);
+  }
+
+  function parseTextCommand(content) {
+    const prefix = config.textCommandPrefix || DEFAULT_TEXT_COMMAND_PREFIX;
+    const text = String(content ?? "").trim();
+
+    if (!text.toLowerCase().startsWith(prefix.toLowerCase())) {
+      return null;
+    }
+
+    const body = text.slice(prefix.length).trim();
+
+    if (!body) {
+      return null;
+    }
+
+    const [rawCommand, ...args] = body.split(/\s+/);
+    const command = rawCommand.toLowerCase();
+
+    if (command === "ticket" && args[0]?.toLowerCase() === "setup") {
+      return { args: args.slice(1), command: "ticket-setup" };
+    }
+
+    return { args, command };
+  }
+
+  function buildTicketHelpText() {
+    return [
+      "**Schland Ticket-System**",
+      "1. Ticket starten: im Kanal `#ticket-erstellen` auf `Ticket erstellen` klicken.",
+      "2. Ticketart, Gegenpartei, Ort, Zeitpunkt und Details auswaehlen.",
+      "3. Der Bot erstellt einen privaten Ticketchannel mit Belegspeicherung.",
+      "4. Im Ticket koennen Berechtigte den Sanktionsberater starten, Transcript sichern oder schliessen.",
+      "",
+      `Text-Fallback, falls Discord keine Slash-Commands zeigt: \`${config.textCommandPrefix}ticket-setup\`, \`${config.textCommandPrefix}ticket-anleitung\`, \`${config.textCommandPrefix}add @User Grund\`.`,
+      "Slash-Variante: `/ticket-setup`, `/ticket-anleitung`, `/add user grund?`.",
+    ].join("\n");
+  }
+
   function canManageTickets(member, memberPermissions) {
     return (
       hasTicketAdminRole(member) ||
@@ -1901,6 +2069,8 @@ export function readTicketConfig(env) {
     ),
     memberImageLogChannelId: env.DISCORD_MEMBER_IMAGE_LOG_CHANNEL_ID?.trim() || null,
     memberImagePollMs: readMs(env.MEMBER_IMAGE_POLL_MS, 60_000),
+    textCommandPrefix:
+      env.DISCORD_TEXT_COMMAND_PREFIX?.trim() || DEFAULT_TEXT_COMMAND_PREFIX,
     ticketAdminRoleId:
       env.DISCORD_TICKET_ADMIN_ROLE_ID?.trim() || DEFAULT_TICKET_ADMIN_ROLE_ID,
     ticketCategoryId: env.DISCORD_TICKET_CATEGORY_ID?.trim() || null,
