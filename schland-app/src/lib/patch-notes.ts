@@ -11,6 +11,19 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "20.06.2026",
+    id: "discord-ticket-channel-create-repair",
+    items: [
+      "Ticket-Erstellung filtert ungueltige Discord-Rollen vor dem Channel-Anlegen heraus.",
+      "Gegenparteien bekommen beim Sofortticket jetzt direkten Zugriff auf den Ticketchannel, sofern sie nicht explizit ausgeschlossen wurden.",
+      "Wenn Discord den Channel trotzdem ablehnt, wird das Supabase-Ticket automatisch abgebrochen statt als offenes Phantom ohne Channel liegen zu bleiben.",
+      "Discord zeigt bei Ticketfehlern jetzt eine konkretere Kurzdiagnose fuer Supabase-Cache, offene Ticketgrenze oder fehlende Bot-Rechte.",
+    ],
+    title: "Ticketchannel-Erstellung abgesichert",
+    type: "fix",
+    version: "0.10.30",
+  },
+  {
+    date: "20.06.2026",
     id: "discord-ticket-details-modal-removal",
     items: [
       "Ticket-Erstellung nutzt nach der Zeit-Auswahl kein Discord-Modal mehr, sondern ein Auswahlfeld Worum geht es grob?.",

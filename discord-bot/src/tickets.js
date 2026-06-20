@@ -225,7 +225,7 @@ export function createTicketSystem(input) {
 
       await replyTicketError(
         interaction,
-        "Ticket-Aktion konnte gerade nicht verarbeitet werden.",
+        getTicketUserErrorMessage(error),
       );
       return true;
     }
@@ -703,14 +703,22 @@ export function createTicketSystem(input) {
     }
 
     const category = await ensureTicketCategory(guild);
-    const channel = await guild.channels.create({
-      name: buildTicketChannelName(ticket),
-      parent: category.id,
-      permissionOverwrites: buildTicketPermissionOverwrites(guild, draft),
-      reason: trimReason(`Schland Ticket ${ticket.ticketNumber ?? ticket.id}`),
-      topic: buildTicketTopic(ticket, draft),
-      type: ChannelType.GuildText,
-    });
+    const permissionOverwrites = await buildTicketPermissionOverwrites(guild, draft);
+    let channel;
+
+    try {
+      channel = await guild.channels.create({
+        name: buildTicketChannelName(ticket),
+        parent: category.id,
+        permissionOverwrites,
+        reason: trimReason(`Schland Ticket ${ticket.ticketNumber ?? ticket.id}`),
+        topic: buildTicketTopic(ticket, draft),
+        type: ChannelType.GuildText,
+      });
+    } catch (error) {
+      await cancelTicketAfterChannelFailure(ticket, interaction, error);
+      throw new Error(`discord_channel_create_failed: ${errorMessage(error)}`);
+    }
 
     const updated = await api("/tickets", {
       body: {
@@ -744,6 +752,35 @@ export function createTicketSystem(input) {
     await interaction.editReply({
       content: `Ticket erstellt: ${channel}`,
     });
+  }
+
+  async function cancelTicketAfterChannelFailure(ticket, interaction, error) {
+    console.error("Ticket channel create failed", {
+      error: errorMessage(error),
+      ticketId: ticket?.id,
+      ticketNumber: ticket?.ticketNumber,
+    });
+
+    if (!ticket?.id) {
+      return;
+    }
+
+    try {
+      await api("/tickets", {
+        body: {
+          actorDiscordUserId: interaction.user?.id,
+          actorDiscordUsername: formatUser(interaction.user),
+          status: "cancelled",
+          ticketId: ticket.id,
+        },
+        method: "PATCH",
+      });
+    } catch (updateError) {
+      console.error(
+        "Ticket cleanup after channel failure failed",
+        errorMessage(updateError),
+      );
+    }
   }
 
   async function handleTicketAdd(interaction) {
@@ -1983,20 +2020,46 @@ export function createTicketSystem(input) {
     return lines.join("\n");
   }
 
-  function buildTicketPermissionOverwrites(guild, draft) {
-    const roleOverwrites = config.ticketViewRoleIds.map((roleId) => ({
+  async function buildTicketPermissionOverwrites(guild, draft) {
+    await guild.roles.fetch().catch((error) => {
+      console.warn("Ticket role cache refresh failed", errorMessage(error));
+    });
+
+    const validViewRoleIds = config.ticketViewRoleIds.filter(
+      (roleId) => isDiscordSnowflake(roleId) && guild.roles.cache.has(roleId),
+    );
+    const skippedRoleIds = config.ticketViewRoleIds.filter(
+      (roleId) => !validViewRoleIds.includes(roleId),
+    );
+
+    if (skippedRoleIds.length > 0) {
+      console.warn(
+        `Ticket channel skips invalid view role ids: ${skippedRoleIds.join(", ")}`,
+      );
+    }
+
+    const roleOverwrites = validViewRoleIds.map((roleId) => ({
       allow: buildTicketRoleAllowOverwrite(),
       id: roleId,
       type: 0,
     }));
-    const creatorOverwrite = {
+    const excludedUserIds = new Set(
+      draft.excludedUsers
+        .map((user) => user.discordUserId)
+        .filter((id) => isDiscordSnowflake(id)),
+    );
+    const allowUserIds = new Set(
+      [draft.creatorDiscordUserId, ...draft.counterpartUsers.map((user) => user.discordUserId)]
+        .filter((id) => isDiscordSnowflake(id) && !excludedUserIds.has(id)),
+    );
+    const userOverwrites = [...allowUserIds].map((id) => ({
       allow: buildTicketUserAllowOverwrite(),
-      id: draft.creatorDiscordUserId,
+      id,
       type: 1,
-    };
-    const excludedOverwrites = draft.excludedUsers.map((user) => ({
+    }));
+    const excludedOverwrites = [...excludedUserIds].map((id) => ({
       deny: [PermissionFlagsBits.ViewChannel],
-      id: user.discordUserId,
+      id,
       type: 1,
     }));
 
@@ -2007,7 +2070,7 @@ export function createTicketSystem(input) {
         type: 0,
       },
       ...roleOverwrites,
-      creatorOverwrite,
+      ...userOverwrites,
       ...excludedOverwrites,
     ];
   }
@@ -2337,6 +2400,33 @@ export function createTicketSystem(input) {
     await interaction.reply({ content, ephemeral: true }).catch(() => {});
   }
 
+  function getTicketUserErrorMessage(error) {
+    const message = errorMessage(error);
+    const lower = message.toLowerCase();
+
+    if (lower.includes("ticket_open_limit_reached")) {
+      return "Du hast bereits zu viele offene Tickets. Schliesse erst ein altes Ticket oder lass es von einem Admin abbrechen.";
+    }
+
+    if (lower.includes("schema cache") || lower.includes("pgrst205")) {
+      return "Ticket-Datenbank war noch nicht in der Supabase-API geladen. Bitte versuche es gleich nochmal.";
+    }
+
+    if (
+      lower.includes("discord_channel_create_failed") ||
+      lower.includes("missing permissions") ||
+      lower.includes("50013")
+    ) {
+      return "Ticketchannel konnte nicht erstellt werden. Bitte Bot-Rechte pruefen: Kanaele verwalten, Berechtigungen verwalten, Nachrichten senden und Embeds.";
+    }
+
+    if (lower.includes("ticket_insert_failed")) {
+      return "Ticket konnte in der Datenbank nicht angelegt werden. Details wurden protokolliert.";
+    }
+
+    return "Ticket-Aktion konnte gerade nicht verarbeitet werden. Details wurden protokolliert.";
+  }
+
   function getModalText(interaction, customId) {
     try {
       return interaction.fields.getTextInputValue(customId).trim();
@@ -2365,6 +2455,10 @@ export function createTicketSystem(input) {
     return String(reason ?? "").length > 512
       ? `${String(reason).slice(0, 509)}...`
       : String(reason ?? "");
+  }
+
+  function isDiscordSnowflake(value) {
+    return /^\d{15,25}$/.test(String(value ?? ""));
   }
 }
 
