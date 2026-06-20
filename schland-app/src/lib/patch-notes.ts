@@ -10,6 +10,18 @@ export type PatchNote = {
 // Jede produktive Aenderung bekommt hier ab jetzt einen Eintrag.
 export const patchNotes: PatchNote[] = [
   {
+    date: "20.06.2026",
+    id: "discord-ticket-setup-and-image-submit-repair",
+    items: [
+      "Discord-Bot registriert Ticket-Slash-Commands beim Start automatisch und legt Ticketpanel, Ticket-Log, Bilder-Protokoll sowie Kategorie idempotent an.",
+      "Neue Discord-Arbeitsanweisung per /ticket-anleitung ergaenzt; /ticket-setup und /add sind nicht mehr durch Discord-ManageGuild-Permissions versteckt.",
+      "Mitgliederaktenbild-DMs akzeptieren jetzt auch Discord-Anhaenge mit fehlendem oder generischem Content-Type, solange Dateiname oder URL ein Bildformat erkennen lassen.",
+    ],
+    title: "Ticket-System und Aktenbilder repariert",
+    type: "fix",
+    version: "0.10.25",
+  },
+  {
     date: "18.06.2026",
     id: "patchnotes-overlay-z-index-repair",
     items: [

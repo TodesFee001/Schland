@@ -27,7 +27,10 @@ const ACTIVE_STATUSES = [
   "warning_queued",
 ];
 const ALLOWED_IMAGE_TYPES = new Set([
+  "image/avif",
   "image/gif",
+  "image/heic",
+  "image/heif",
   "image/jpeg",
   "image/png",
   "image/webp",
@@ -88,9 +91,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: fetched.error }, { status: fetched.status });
   }
 
-  const contentType =
-    normalizeContentType(fetched.contentType) ??
-    normalizeContentType(body?.contentType ?? body?.content_type);
+  const contentType = resolveImageContentType({
+    fetchedContentType: fetched.contentType,
+    filename:
+      asText(body?.filename) ??
+      filenameFromUrl(attachmentUrl) ??
+      attachmentUrl,
+    submittedContentType: body?.contentType ?? body?.content_type,
+  });
 
   if (!contentType || !ALLOWED_IMAGE_TYPES.has(contentType)) {
     await markInvalidSubmission(supabase, requestRow, {
@@ -522,6 +530,38 @@ function normalizeContentType(value: unknown) {
   return asText(value)?.split(";")[0]?.trim().toLowerCase() ?? null;
 }
 
+function resolveImageContentType(input: {
+  fetchedContentType: unknown;
+  filename: string;
+  submittedContentType: unknown;
+}) {
+  const fetched = normalizeContentType(input.fetchedContentType);
+  const submitted = normalizeContentType(input.submittedContentType);
+  const inferred = inferImageContentType(input.filename);
+
+  if (fetched && ALLOWED_IMAGE_TYPES.has(fetched)) {
+    return fetched;
+  }
+
+  if (submitted && ALLOWED_IMAGE_TYPES.has(submitted)) {
+    return submitted;
+  }
+
+  if (
+    inferred &&
+    (!fetched || isGenericBinaryContentType(fetched)) &&
+    (!submitted || isGenericBinaryContentType(submitted))
+  ) {
+    return inferred;
+  }
+
+  return fetched ?? submitted ?? inferred;
+}
+
+function isGenericBinaryContentType(value: string) {
+  return value === "application/octet-stream" || value === "binary/octet-stream";
+}
+
 function sanitizeFilename(value: string | null) {
   return value
     ?.replace(/[^\w.-]+/g, "-")
@@ -532,18 +572,66 @@ function sanitizeFilename(value: string | null) {
 function ensureImageExtension(filename: string, contentType: string) {
   const current = filename.toLowerCase();
 
-  if (/\.(gif|jpe?g|png|webp)$/.test(current)) {
+  if (/\.(avif|gif|hei[cf]|jpe?g|png|webp)$/.test(current)) {
     return filename;
   }
 
   const extensionByType: Record<string, string> = {
+    "image/avif": "avif",
     "image/gif": "gif",
+    "image/heic": "heic",
+    "image/heif": "heif",
     "image/jpeg": "jpg",
     "image/png": "png",
     "image/webp": "webp",
   };
 
   return `${filename}.${extensionByType[contentType] ?? "img"}`;
+}
+
+function inferImageContentType(value: string | null) {
+  const text = value?.split("?")[0]?.toLowerCase() ?? "";
+
+  if (text.endsWith(".avif")) {
+    return "image/avif";
+  }
+
+  if (text.endsWith(".gif")) {
+    return "image/gif";
+  }
+
+  if (text.endsWith(".heic")) {
+    return "image/heic";
+  }
+
+  if (text.endsWith(".heif")) {
+    return "image/heif";
+  }
+
+  if (text.endsWith(".jpg") || text.endsWith(".jpeg")) {
+    return "image/jpeg";
+  }
+
+  if (text.endsWith(".png")) {
+    return "image/png";
+  }
+
+  if (text.endsWith(".webp")) {
+    return "image/webp";
+  }
+
+  return null;
+}
+
+function filenameFromUrl(value: string) {
+  try {
+    const pathname = new URL(value).pathname;
+    const filename = pathname.split("/").filter(Boolean).pop();
+
+    return filename ? decodeURIComponent(filename) : null;
+  } catch {
+    return null;
+  }
 }
 
 function mapRequest(row: unknown) {

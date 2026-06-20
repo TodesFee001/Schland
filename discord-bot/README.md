@@ -53,7 +53,7 @@ Der Bot braucht `Manage Roles`, der Server Members Intent muss aktiv sein, und d
 
 ## Slash Commands
 
-Guild-Commands nach Env-Setup registrieren:
+Der laufende Bot registriert die Guild-Commands beim Start automatisch, sofern `DISCORD_CLIENT_ID` oder `DISCORD_APPLICATION_ID` gesetzt ist. Manuell geht es weiterhin so:
 
 ```bash
 npm run register-commands
@@ -62,6 +62,7 @@ npm run register-commands
 Registriert werden:
 
 - `/ticket-setup` - legt Panel, Ticket-Log, Bilder-Protokoll und Kategorie an oder nutzt die gesetzten IDs.
+- `/ticket-anleitung` - zeigt die kurze Arbeitsanweisung direkt in Discord.
 - `/add user grund?` - fuegt eine Person zu einem aktiven Ticket hinzu, aber nie eine beim Erstellen explizit ausgeschlossene Person.
 
 ## Ticket-System
@@ -73,6 +74,8 @@ Standard-Rollen:
 
 Optionale Variablen:
 
+- `DISCORD_AUTO_REGISTER_COMMANDS` - Standard `1`; mit `0` deaktivieren.
+- `DISCORD_TICKET_AUTO_SETUP` - Standard `1`; mit `0` deaktivieren.
 - `DISCORD_TICKET_ADMIN_ROLE_ID`
 - `DISCORD_TICKET_VIEW_ROLE_IDS`
 - `DISCORD_TICKET_PANEL_CHANNEL_ID`
@@ -83,7 +86,7 @@ Optionale Variablen:
 
 Flow:
 
-1. Admin fuehrt `/ticket-setup` aus.
+1. Der Bot legt beim Start `Tickets`, `#ticket-erstellen`, `#ticket-log` und `#bilder-protokoll` an oder repariert sie. Admins koennen das mit `/ticket-setup` erneut ausloesen.
 2. User klickt im Panel auf `Ticket erstellen`.
 3. Der Bot fragt Ticketart, Gegenpartei, ggf. explizit auszuschliessende Regierungsmitglieder, Ort, Zeitpunkt und Details ab.
 4. Der Bot erstellt einen privaten Ticketchannel. `@everyone` ist gesperrt, die sichtbaren Rollen und der Ersteller sind erlaubt, ausgeschlossene User bekommen einen direkten Deny.

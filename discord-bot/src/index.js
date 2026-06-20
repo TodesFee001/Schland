@@ -12,10 +12,13 @@ import {
   ModalBuilder,
   Partials,
   PermissionFlagsBits,
+  REST,
+  Routes,
   TextInputBuilder,
   TextInputStyle,
 } from "discord.js";
 
+import { buildSchlandCommands } from "./commands.js";
 import { createTicketSystem, readTicketConfig } from "./tickets.js";
 
 const LOCKDOWN_PERMISSION_KEYS = [
@@ -169,6 +172,8 @@ function startBotTimers() {
 
 async function runStartupTasks() {
   const tasks = [
+    ["register slash commands", () => registerSlashCommands()],
+    ["ensure ticket setup", () => ticketSystem.ensureSetup()],
     ["refresh privacy", () => refreshPrivacy()],
     ["send heartbeat", () => sendHeartbeat()],
     ["poll lockdown commands", () => pollLockdownCommands()],
@@ -4204,6 +4209,28 @@ async function discordApi(path, options = {}, attempt = 0) {
   return body ?? {};
 }
 
+async function registerSlashCommands() {
+  if (!config.autoRegisterCommands) {
+    return;
+  }
+
+  if (!config.applicationId) {
+    console.warn(
+      "Slash command registration skipped: DISCORD_CLIENT_ID or DISCORD_APPLICATION_ID missing.",
+    );
+    return;
+  }
+
+  const rest = new REST({ version: "10" }).setToken(config.discordBotToken);
+  const commands = buildSchlandCommands();
+
+  await rest.put(
+    Routes.applicationGuildCommands(config.applicationId, config.guildId),
+    { body: commands },
+  );
+  console.log(`Registered ${commands.length} Schland bot commands.`);
+}
+
 function getDiscordRetryAfterMs(response, body) {
   const bodyRetryAfter = Number(body?.retry_after);
   const headerRetryAfter = Number(response.headers.get("retry-after"));
@@ -4252,6 +4279,10 @@ function loadConfig() {
     activityFlushMs: readMs(env.ACTIVITY_FLUSH_MS, 5_000),
     apiTimeoutMs: readMs(env.API_TIMEOUT_MS, 15_000),
     appUrl: env.SCHLAND_APP_URL.trim().replace(/\/+$/, ""),
+    applicationId:
+      env.DISCORD_CLIENT_ID?.trim() ||
+      env.DISCORD_APPLICATION_ID?.trim() ||
+      "",
     auditBackfillMs: readMs(env.AUDIT_BACKFILL_MS, 15 * 60_000),
     auditPollMs: readMs(env.AUDIT_POLL_MS, 20_000),
     discordBotToken: env.DISCORD_BOT_TOKEN.trim(),
@@ -4275,6 +4306,8 @@ function loadConfig() {
     representationPollMs: readMs(env.REPRESENTATION_POLL_MS, 5_000),
     syncToken: env.DISCORD_BOT_SYNC_TOKEN.trim(),
     voiceFlushMs: readMs(env.VOICE_FLUSH_MS, 60_000),
+    autoRegisterCommands: env.DISCORD_AUTO_REGISTER_COMMANDS?.trim() !== "0",
+    autoTicketSetup: env.DISCORD_TICKET_AUTO_SETUP?.trim() !== "0",
     ...readTicketConfig(env),
   };
 }

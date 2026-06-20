@@ -44,7 +44,10 @@ const TICKET_TYPES = {
   member_dispute: "Streit mit Mitglied",
 };
 const IMAGE_CONTENT_TYPES = new Set([
+  "image/avif",
   "image/gif",
+  "image/heic",
+  "image/heif",
   "image/jpeg",
   "image/png",
   "image/webp",
@@ -62,6 +65,7 @@ export function createTicketSystem(input) {
     handleGuildMemberAdd,
     handleInteraction,
     handleMessage,
+    ensureSetup,
     pollMemberFileImages,
     startTimers,
   };
@@ -176,6 +180,11 @@ export function createTicketSystem(input) {
           return true;
         }
 
+        if (interaction.commandName === "ticket-anleitung") {
+          await handleTicketHelp(interaction);
+          return true;
+        }
+
         if (interaction.commandName === "add") {
           await handleTicketAdd(interaction);
           return true;
@@ -240,6 +249,22 @@ export function createTicketSystem(input) {
     }
   }
 
+  async function ensureSetup() {
+    if (!config.autoTicketSetup) {
+      return;
+    }
+
+    const guild = await getGuild();
+    const setup = await ensureTicketSetup(guild, {
+      actorLabel: "Bot-Start",
+      refreshPanel: true,
+    });
+
+    console.log(
+      `Ticket setup ready: panel=${setup.panelChannel.id} log=${setup.logChannel.id} imageLog=${setup.imageLogChannel.id} category=${setup.category.id}`,
+    );
+  }
+
   async function handleTicketSetup(interaction) {
     if (!canManageTickets(interaction.member, interaction.memberPermissions)) {
       await interaction.reply({
@@ -252,39 +277,36 @@ export function createTicketSystem(input) {
     await interaction.deferReply({ ephemeral: true });
 
     const guild = interaction.guild ?? (await getGuild());
-    const category = await ensureTicketCategory(guild);
-    const panelChannel = await ensureTextChannel(
-      guild,
-      config.ticketPanelChannelId,
-      TICKET_PANEL_CHANNEL_NAME,
-      null,
-    );
-    const logChannel = await ensureTextChannel(
-      guild,
-      config.ticketLogChannelId,
-      TICKET_LOG_CHANNEL_NAME,
-      null,
-    );
-    const imageLogChannel = await ensureTextChannel(
-      guild,
-      config.memberImageLogChannelId,
-      MEMBER_IMAGE_LOG_CHANNEL_NAME,
-      null,
-    );
-
-    await panelChannel.send({
-      components: [buildTicketPanelActionRow()],
-      embeds: [buildTicketPanelEmbed()],
+    const setup = await ensureTicketSetup(guild, {
+      actorLabel: formatUser(interaction.user),
+      refreshPanel: true,
     });
 
     await interaction.editReply({
       content: [
         "Ticket-Setup aktualisiert.",
-        `Panel: ${panelChannel}`,
-        `Ticket-Log: ${logChannel}`,
-        `Bilder-Protokoll: ${imageLogChannel}`,
-        `Kategorie: ${category.name} (${category.id})`,
+        `Panel: ${setup.panelChannel}`,
+        `Ticket-Log: ${setup.logChannel}`,
+        `Bilder-Protokoll: ${setup.imageLogChannel}`,
+        `Kategorie: ${setup.category.name} (${setup.category.id})`,
+        "Slash-Commands sind beim Bot-Start registriert; falls Discord cached, kurz Client neu laden.",
       ].join("\n"),
+    });
+  }
+
+  async function handleTicketHelp(interaction) {
+    await interaction.reply({
+      content: [
+        "**Schland Ticket-System**",
+        "1. Ticket starten: im Kanal `#ticket-erstellen` auf `Ticket erstellen` klicken.",
+        "2. Ticketart, Gegenpartei, Ort, Zeitpunkt und Details auswaehlen.",
+        "3. Der Bot erstellt einen privaten Ticketchannel mit Belegspeicherung.",
+        "4. Im Ticket koennen Berechtigte den Sanktionsberater starten, Transcript sichern oder schliessen.",
+        "",
+        "Admin-Reparatur: `/ticket-setup` legt Panel, Ticket-Log, Bilder-Protokoll und Kategorie erneut an.",
+        "Ticket-Zugriff: `/add user grund?` funktioniert nur im aktiven Ticketchannel und nie fuer explizit ausgeschlossene Personen.",
+      ].join("\n"),
+      ephemeral: true,
     });
   }
 
@@ -857,8 +879,7 @@ export function createTicketSystem(input) {
       }
 
       const attachment = imageAttachments[0];
-
-      await api("/member-file-images/submissions", {
+      const submission = await api("/member-file-images/submissions", {
         body: {
           attachmentUrl: attachment.url,
           contentType: attachment.contentType,
@@ -874,11 +895,22 @@ export function createTicketSystem(input) {
       await sendMemberImageLog({
         color: 0x15803d,
         description: `${message.author} hat ein Mitgliederaktenbild eingereicht.`,
-        fields: [{ name: "Request", value: request.id }],
+        fields: [
+          { name: "Request", value: request.id },
+          { name: "Datei", value: submission.file?.id ?? "gespeichert" },
+        ],
         title: "Mitgliederaktenbild gespeichert",
       });
     } catch (error) {
       console.error("Member image DM handling failed", errorMessage(error));
+      await message.reply(
+        "Dein Bild konnte gerade nicht in der Mitgliederakte gespeichert werden. Es wurde protokolliert; bitte sende das Bild gleich nochmal oder melde dich beim Team.",
+      ).catch(() => {});
+      await sendMemberImageLog({
+        color: 0xb91c1c,
+        description: `${message.author} hat ein Bild gesendet, aber die Speicherung ist fehlgeschlagen: ${errorMessage(error)}`,
+        title: "Mitgliederaktenbild Speicherfehler",
+      });
     }
   }
 
@@ -1037,12 +1069,48 @@ export function createTicketSystem(input) {
     });
   }
 
+  async function ensureTicketSetup(guild, options = {}) {
+    await guild.channels.fetch().catch(() => null);
+
+    const category = await ensureTicketCategory(guild);
+    const panelChannel = await ensureTextChannel(
+      guild,
+      config.ticketPanelChannelId,
+      TICKET_PANEL_CHANNEL_NAME,
+      category.id,
+    );
+    const logChannel = await ensureTextChannel(
+      guild,
+      config.ticketLogChannelId,
+      TICKET_LOG_CHANNEL_NAME,
+      category.id,
+    );
+    const imageLogChannel = await ensureTextChannel(
+      guild,
+      config.memberImageLogChannelId,
+      MEMBER_IMAGE_LOG_CHANNEL_NAME,
+      category.id,
+    );
+
+    if (options.refreshPanel) {
+      await ensureTicketPanelMessage(panelChannel);
+    }
+
+    return {
+      category,
+      imageLogChannel,
+      logChannel,
+      panelChannel,
+    };
+  }
+
   async function ensureTextChannel(guild, channelId, name, parentId) {
     const existingById = channelId
       ? await guild.channels.fetch(channelId).catch(() => null)
       : null;
 
     if (existingById?.type === ChannelType.GuildText) {
+      await ensureTextChannelParent(existingById, parentId);
       return existingById;
     }
 
@@ -1053,6 +1121,7 @@ export function createTicketSystem(input) {
     );
 
     if (existing) {
+      await ensureTextChannelParent(existing, parentId);
       return existing;
     }
 
@@ -1062,6 +1131,56 @@ export function createTicketSystem(input) {
       reason: "Schland Ticket-System Setup",
       type: ChannelType.GuildText,
     });
+  }
+
+  async function ensureTextChannelParent(channel, parentId) {
+    if (!parentId || channel.parentId === parentId) {
+      return;
+    }
+
+    await channel.setParent(parentId, {
+      lockPermissions: false,
+      reason: "Schland Ticket-System Setup",
+    });
+  }
+
+  async function ensureTicketPanelMessage(panelChannel) {
+    const existing = await findExistingTicketPanelMessage(panelChannel);
+    const payload = {
+      components: [buildTicketPanelActionRow()],
+      embeds: [buildTicketPanelEmbed()],
+    };
+
+    if (existing) {
+      await existing.edit(payload);
+      return existing;
+    }
+
+    return panelChannel.send(payload);
+  }
+
+  async function findExistingTicketPanelMessage(panelChannel) {
+    const messages = await panelChannel.messages
+      .fetch({ limit: 25 })
+      .catch(() => null);
+
+    if (!messages) {
+      return null;
+    }
+
+    return (
+      messages.find((message) => {
+        if (message.author?.id !== client.user?.id) {
+          return false;
+        }
+
+        return message.components?.some((row) =>
+          row.components?.some(
+            (component) => component.customId === TICKET_OPEN_BUTTON_ID,
+          ),
+        );
+      }) ?? null
+    );
   }
 
   async function getTicketLogChannel() {
@@ -1678,7 +1797,9 @@ export function createTicketSystem(input) {
       return true;
     }
 
-    return /\.(gif|jpe?g|png|webp)$/i.test(attachment.name ?? attachment.url ?? "");
+    return /\.(avif|gif|hei[cf]|jpe?g|png|webp)$/i.test(
+      attachment.name ?? attachment.url ?? "",
+    );
   }
 
   function canManageTickets(member, memberPermissions) {
@@ -1713,7 +1834,9 @@ export function createTicketSystem(input) {
 
   function isTicketInteraction(interaction) {
     if (interaction.isChatInputCommand?.()) {
-      return ["add", "ticket-setup"].includes(interaction.commandName);
+      return ["add", "ticket-anleitung", "ticket-setup"].includes(
+        interaction.commandName,
+      );
     }
 
     const customId = interaction.customId ?? "";
