@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "20.06.2026",
+    id: "discord-ticket-time-step-button-repair",
+    items: [
+      "Zeit-Auswahl im Ticketflow oeffnet nicht mehr direkt ein Discord-Modal aus dem Select-Menue.",
+      "Nach Heute/Gestern/Gerade eben erscheint jetzt ein Button Details eingeben; bei genauer Zeit ein Button Zeit und Details eingeben.",
+      "Damit wird der Discord-Fehler nach der Auswahl Gestern vermieden und der Ticketflow bleibt klickbar.",
+    ],
+    title: "Ticket-Zeitschritt repariert",
+    type: "fix",
+    version: "0.10.28",
+  },
+  {
+    date: "20.06.2026",
     id: "discord-ticket-button-interface",
     items: [
       "Ticketpanel hat jetzt direkte Buttons fuer Ticket erstellen, Anleitung und Setup reparieren.",

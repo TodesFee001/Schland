@@ -22,7 +22,9 @@ const TICKET_EXCLUDED_PREFIX = "ticket:excluded:";
 const TICKET_OUTSIDE_PREFIX = "ticket:outside:";
 const TICKET_CHANNEL_PREFIX = "ticket:channel:";
 const TICKET_TIME_PREFIX = "ticket:time:";
+const TICKET_DETAILS_BUTTON_PREFIX = "ticket:details-open:";
 const TICKET_DETAILS_PREFIX = "ticket:details:";
+const TICKET_EXACT_BUTTON_PREFIX = "ticket:exact-open:";
 const TICKET_EXACT_PREFIX = "ticket:exact:";
 const TICKET_ADVICE_PREFIX = "ticket:advice:";
 const TICKET_ADD_USER_PREFIX = "ticket:add-user:";
@@ -409,6 +411,16 @@ export function createTicketSystem(input) {
       return;
     }
 
+    if (interaction.customId.startsWith(TICKET_DETAILS_BUTTON_PREFIX)) {
+      await showTicketDetailsModal(interaction, TICKET_DETAILS_BUTTON_PREFIX);
+      return;
+    }
+
+    if (interaction.customId.startsWith(TICKET_EXACT_BUTTON_PREFIX)) {
+      await showTicketExactModal(interaction, TICKET_EXACT_BUTTON_PREFIX);
+      return;
+    }
+
     if (interaction.customId.startsWith(TICKET_CLOSE_PREFIX)) {
       await showCloseModal(interaction);
       return;
@@ -560,7 +572,19 @@ export function createTicketSystem(input) {
       const value = interaction.values[0];
 
       if (value === "exact") {
-        await interaction.showModal(buildTicketExactModal(draft.id));
+        draft.incidentAt = null;
+        draft.incidentTimeText = "Genauer Zeitpunkt";
+        ticketDrafts.set(draft.id, draft);
+        await interaction.update({
+          components: [
+            ...buildTimeSelectRows(draft.id),
+            buildOpenDetailsButtonRow(draft.id, true),
+          ],
+          content: buildDraftMessage(
+            draft,
+            "Fast fertig: oeffne jetzt Zeit und Details.",
+          ),
+        });
         return;
       }
 
@@ -568,7 +592,13 @@ export function createTicketSystem(input) {
       draft.incidentAt = mappedTime.incidentAt;
       draft.incidentTimeText = mappedTime.incidentTimeText;
       ticketDrafts.set(draft.id, draft);
-      await interaction.showModal(buildTicketDetailsModal(draft.id));
+      await interaction.update({
+        components: [
+          ...buildTimeSelectRows(draft.id),
+          buildOpenDetailsButtonRow(draft.id, false),
+        ],
+        content: buildDraftMessage(draft, "Fast fertig: oeffne jetzt die Details."),
+      });
     }
   }
 
@@ -872,6 +902,26 @@ export function createTicketSystem(input) {
       content: "Waehle eine oder mehrere Personen aus, die Zugriff auf dieses Ticket bekommen sollen.",
       ephemeral: true,
     });
+  }
+
+  async function showTicketDetailsModal(interaction, prefix) {
+    const draft = requireDraft(interaction, prefix);
+
+    if (!draft) {
+      return;
+    }
+
+    await interaction.showModal(buildTicketDetailsModal(draft.id));
+  }
+
+  async function showTicketExactModal(interaction, prefix) {
+    const draft = requireDraft(interaction, prefix);
+
+    if (!draft) {
+      return;
+    }
+
+    await interaction.showModal(buildTicketExactModal(draft.id));
   }
 
   async function addTicketUsersFromSelect(interaction) {
@@ -1622,6 +1672,17 @@ export function createTicketSystem(input) {
           ),
       ),
     ];
+  }
+
+  function buildOpenDetailsButtonRow(draftId, exactTime) {
+    return new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(
+          `${exactTime ? TICKET_EXACT_BUTTON_PREFIX : TICKET_DETAILS_BUTTON_PREFIX}${draftId}`,
+        )
+        .setLabel(exactTime ? "Zeit und Details eingeben" : "Details eingeben")
+        .setStyle(ButtonStyle.Primary),
+    );
   }
 
   function buildTicketDetailsModal(draftId) {
