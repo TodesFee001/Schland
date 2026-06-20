@@ -25,8 +25,11 @@ const TICKET_TIME_PREFIX = "ticket:time:";
 const TICKET_DETAILS_PREFIX = "ticket:details:";
 const TICKET_EXACT_PREFIX = "ticket:exact:";
 const TICKET_ADVICE_PREFIX = "ticket:advice:";
+const TICKET_ADD_USER_PREFIX = "ticket:add-user:";
 const TICKET_CLOSE_PREFIX = "ticket:close:";
 const TICKET_CLOSE_SUBMIT_PREFIX = "ticket:close-submit:";
+const TICKET_HELP_BUTTON_ID = "ticket:help";
+const TICKET_SETUP_BUTTON_ID = "ticket:setup";
 const TICKET_TRANSCRIPT_PREFIX = "ticket:transcript:";
 const DEFAULT_TICKET_VIEW_ROLE_IDS = [
   "1164278939670282261",
@@ -287,16 +290,7 @@ export function createTicketSystem(input) {
       refreshPanel: true,
     });
 
-    await interaction.editReply({
-      content: [
-        "Ticket-Setup aktualisiert.",
-        `Panel: ${setup.panelChannel}`,
-        `Ticket-Log: ${setup.logChannel}`,
-        `Bilder-Protokoll: ${setup.imageLogChannel}`,
-        `Kategorie: ${setup.category.name} (${setup.category.id})`,
-        "Slash-Commands sind beim Bot-Start registriert; falls Discord cached, kurz Client neu laden.",
-      ].join("\n"),
-    });
+    await interaction.editReply({ content: formatTicketSetupSummary(setup) });
   }
 
   async function handleTicketHelp(interaction) {
@@ -304,6 +298,26 @@ export function createTicketSystem(input) {
       content: buildTicketHelpText(),
       ephemeral: true,
     });
+  }
+
+  async function handleTicketSetupButton(interaction) {
+    if (!canManageTickets(interaction.member, interaction.memberPermissions)) {
+      await interaction.reply({
+        content: "Du brauchst Ticket-Adminrechte fuer das Setup.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    const guild = interaction.guild ?? (await getGuild());
+    const setup = await ensureTicketSetup(guild, {
+      actorLabel: formatUser(interaction.user),
+      refreshPanel: true,
+    });
+
+    await interaction.editReply({ content: formatTicketSetupSummary(setup) });
   }
 
   async function handleTextCommand(message) {
@@ -346,21 +360,25 @@ export function createTicketSystem(input) {
       refreshPanel: true,
     });
 
-    await message.reply(
-      [
-        "Ticket-Setup aktualisiert.",
-        `Panel: ${setup.panelChannel}`,
-        `Ticket-Log: ${setup.logChannel}`,
-        `Bilder-Protokoll: ${setup.imageLogChannel}`,
-        `Kategorie: ${setup.category.name} (${setup.category.id})`,
-        `Text-Fallbacks aktiv: \`${config.textCommandPrefix}ticket-setup\`, \`${config.textCommandPrefix}ticket-anleitung\`, \`${config.textCommandPrefix}add @User Grund\`.`,
-      ].join("\n"),
-    );
+    await message.reply(formatTicketSetupSummary(setup));
   }
 
   async function handleTicketButton(interaction) {
     if (interaction.customId === TICKET_OPEN_BUTTON_ID) {
       await startTicketDraft(interaction);
+      return;
+    }
+
+    if (interaction.customId === TICKET_HELP_BUTTON_ID) {
+      await interaction.reply({
+        content: buildTicketHelpText(),
+        ephemeral: true,
+      });
+      return;
+    }
+
+    if (interaction.customId === TICKET_SETUP_BUTTON_ID) {
+      await handleTicketSetupButton(interaction);
       return;
     }
 
@@ -386,6 +404,11 @@ export function createTicketSystem(input) {
       return;
     }
 
+    if (interaction.customId.startsWith(TICKET_ADD_USER_PREFIX)) {
+      await showTicketAddUserSelect(interaction);
+      return;
+    }
+
     if (interaction.customId.startsWith(TICKET_CLOSE_PREFIX)) {
       await showCloseModal(interaction);
       return;
@@ -397,6 +420,11 @@ export function createTicketSystem(input) {
   }
 
   async function handleTicketSelect(interaction) {
+    if (interaction.customId.startsWith(TICKET_ADD_USER_PREFIX)) {
+      await addTicketUsersFromSelect(interaction);
+      return;
+    }
+
     if (interaction.customId.startsWith(TICKET_TYPE_PREFIX)) {
       const draft = requireDraft(interaction, TICKET_TYPE_PREFIX);
 
@@ -818,6 +846,112 @@ export function createTicketSystem(input) {
 
       await message.reply(reply);
     }
+  }
+
+  async function showTicketAddUserSelect(interaction) {
+    if (!hasTicketAdminRole(interaction.member)) {
+      await interaction.reply({
+        content: "Du brauchst die Ticket-Adminrolle, um Personen hinzuzufuegen.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const ticketId = interaction.customId.slice(TICKET_ADD_USER_PREFIX.length);
+
+    if (!ticketId || ticketId !== getTicketIdFromChannel(interaction.channel)) {
+      await interaction.reply({
+        content: "Personen koennen nur in einem aktiven Ticket-Channel hinzugefuegt werden.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    await interaction.reply({
+      components: buildTicketAddUserRows(ticketId),
+      content: "Waehle eine oder mehrere Personen aus, die Zugriff auf dieses Ticket bekommen sollen.",
+      ephemeral: true,
+    });
+  }
+
+  async function addTicketUsersFromSelect(interaction) {
+    if (!hasTicketAdminRole(interaction.member)) {
+      await interaction.reply({
+        content: "Du brauchst die Ticket-Adminrolle, um Personen hinzuzufuegen.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const ticketId = interaction.customId.slice(TICKET_ADD_USER_PREFIX.length);
+
+    if (!ticketId || ticketId !== getTicketIdFromChannel(interaction.channel)) {
+      await interaction.reply({
+        content: "Diese Auswahl gehoert nicht mehr zu diesem Ticket.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    await interaction.deferUpdate();
+
+    const users = await usersFromSelect(interaction);
+    const added = [];
+    const blocked = [];
+    const failed = [];
+
+    for (const user of users) {
+      try {
+        const result = await api("/tickets", {
+          body: {
+            action: "add_participant",
+            actorDiscordUserId: interaction.user.id,
+            actorDiscordUsername: formatUser(interaction.user),
+            channelId: interaction.channel.id,
+            reason: "Per Ticket-Button hinzugefuegt",
+            user,
+          },
+          method: "PATCH",
+        });
+
+        await interaction.channel.permissionOverwrites.edit(
+          user.discordUserId,
+          buildTicketUserAllowOverwrite(),
+          {
+            reason: "Schland Ticket Button: Person hinzugefuegt",
+          },
+        );
+        await applyExcludedDenies(interaction.channel, result.ticket?.participants);
+        added.push(`<@${user.discordUserId}>`);
+      } catch (error) {
+        const name = user.discordUsername ?? user.discordUserId;
+
+        if (errorMessage(error).includes("ticket_user_explicitly_excluded")) {
+          blocked.push(name);
+        } else {
+          failed.push(name);
+        }
+      }
+    }
+
+    const lines = [];
+
+    if (added.length > 0) {
+      lines.push(`Hinzugefuegt: ${added.join(", ")}`);
+    }
+
+    if (blocked.length > 0) {
+      lines.push(`Explizit ausgeschlossen, daher blockiert: ${blocked.join(", ")}`);
+    }
+
+    if (failed.length > 0) {
+      lines.push(`Fehlgeschlagen: ${failed.join(", ")}`);
+    }
+
+    await interaction.editReply({
+      components: [],
+      content: lines.join("\n") || "Keine Person ausgewaehlt.",
+    });
   }
 
   async function handleAdviceButton(interaction) {
@@ -1261,7 +1395,7 @@ export function createTicketSystem(input) {
   async function ensureTicketPanelMessage(panelChannel) {
     const existing = await findExistingTicketPanelMessage(panelChannel);
     const payload = {
-      components: [buildTicketPanelActionRow()],
+      components: buildTicketPanelActionRows(),
       embeds: [buildTicketPanelEmbed()],
     };
 
@@ -1542,18 +1676,32 @@ export function createTicketSystem(input) {
     return modal;
   }
 
-  function buildTicketPanelActionRow() {
-    return new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(TICKET_OPEN_BUTTON_ID)
-        .setLabel("Ticket erstellen")
-        .setStyle(ButtonStyle.Primary),
-    );
+  function buildTicketPanelActionRows() {
+    return [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(TICKET_OPEN_BUTTON_ID)
+          .setLabel("Ticket erstellen")
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId(TICKET_HELP_BUTTON_ID)
+          .setLabel("Anleitung")
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(TICKET_SETUP_BUTTON_ID)
+          .setLabel("Setup reparieren")
+          .setStyle(ButtonStyle.Secondary),
+      ),
+    ];
   }
 
   function buildTicketChannelActionRows(ticketId) {
     return [
       new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${TICKET_ADD_USER_PREFIX}${ticketId}`)
+          .setLabel("Person hinzufuegen")
+          .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
           .setCustomId(`${TICKET_ADVICE_PREFIX}${ticketId}`)
           .setLabel("Sanktionsberater auswerten")
@@ -1566,6 +1714,18 @@ export function createTicketSystem(input) {
           .setCustomId(`${TICKET_CLOSE_PREFIX}${ticketId}`)
           .setLabel("Ticket schliessen")
           .setStyle(ButtonStyle.Danger),
+      ),
+    ];
+  }
+
+  function buildTicketAddUserRows(ticketId) {
+    return [
+      new ActionRowBuilder().addComponents(
+        new UserSelectMenuBuilder()
+          .setCustomId(`${TICKET_ADD_USER_PREFIX}${ticketId}`)
+          .setMaxValues(5)
+          .setMinValues(1)
+          .setPlaceholder("Personen fuer dieses Ticket auswaehlen"),
       ),
     ];
   }
@@ -1587,7 +1747,7 @@ export function createTicketSystem(input) {
       .setColor(0x2563eb)
       .setTitle("Schland Ticket-System")
       .setDescription(
-        "Erstelle hier ein privates Ticket. Gegenparteien werden nicht automatisch eingeladen; Regierungsmitglieder koennen explizit ausgeschlossen werden.",
+        "Erstelle hier ein privates Ticket ueber Buttons und Auswahlfelder. Die Anleitung erklaert den Ablauf; Setup reparieren ist nur fuer berechtigte Admins.",
       )
       .setFooter({ text: "Schland DB - Ticketpanel" })
       .setTimestamp(new Date());
@@ -1960,13 +2120,25 @@ export function createTicketSystem(input) {
   function buildTicketHelpText() {
     return [
       "**Schland Ticket-System**",
-      "1. Ticket starten: im Kanal `#ticket-erstellen` auf `Ticket erstellen` klicken.",
+      "1. Ticket starten: im Kanal `#ticket-erstellen` auf den Button `Ticket erstellen` klicken.",
       "2. Ticketart, Gegenpartei, Ort, Zeitpunkt und Details auswaehlen.",
       "3. Der Bot erstellt einen privaten Ticketchannel mit Belegspeicherung.",
-      "4. Im Ticket koennen Berechtigte den Sanktionsberater starten, Transcript sichern oder schliessen.",
+      "4. Im Ticket koennen Berechtigte per Button Personen hinzufuegen, den Sanktionsberater starten, Transcript sichern oder schliessen.",
       "",
-      `Text-Fallback, falls Discord keine Slash-Commands zeigt: \`${config.textCommandPrefix}ticket-setup\`, \`${config.textCommandPrefix}ticket-anleitung\`, \`${config.textCommandPrefix}add @User Grund\`.`,
+      `Text-Fallback, falls Discord keine Slash-Commands zeigt: \`${config.textCommandPrefix}ticket-setup\`, \`${config.textCommandPrefix}ticket-anleitung\`, \`${config.textCommandPrefix}add <Person> Grund\`.`,
       "Slash-Variante: `/ticket-setup`, `/ticket-anleitung`, `/add user grund?`.",
+    ].join("\n");
+  }
+
+  function formatTicketSetupSummary(setup) {
+    return [
+      "Ticket-Setup aktualisiert.",
+      `Panel: ${setup.panelChannel}`,
+      `Ticket-Log: ${setup.logChannel}`,
+      `Bilder-Protokoll: ${setup.imageLogChannel}`,
+      `Kategorie: ${setup.category.name} (${setup.category.id})`,
+      "Panel-Buttons aktiv: Ticket erstellen, Anleitung, Setup reparieren.",
+      `Text-Fallbacks aktiv: \`${config.textCommandPrefix}ticket-setup\`, \`${config.textCommandPrefix}ticket-anleitung\`, \`${config.textCommandPrefix}add <Person> Grund\`.`,
     ].join("\n");
   }
 

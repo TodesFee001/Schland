@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "20.06.2026",
+    id: "discord-ticket-button-interface",
+    items: [
+      "Ticketpanel hat jetzt direkte Buttons fuer Ticket erstellen, Anleitung und Setup reparieren.",
+      "Ticket-Channels haben einen Person-hinzufuegen-Button mit Discord-User-Auswahl, damit Admins nicht mehr /add oder !add tippen muessen.",
+      "Setup- und Anleitungstexte wurden bereinigt, sodass Discord keine kaputten @User-Platzhalter oder Markdown-Links in die Antwort zieht.",
+    ],
+    title: "Ticket-Interface vereinfacht",
+    type: "feature",
+    version: "0.10.27",
+  },
+  {
+    date: "20.06.2026",
     id: "discord-ticket-text-command-fallbacks",
     items: [
       "Ticket-System kann jetzt auch ohne Discord-Slash-Liste per Textbefehl bedient werden: !ticket-setup, !ticket-anleitung und !add @User Grund.",
