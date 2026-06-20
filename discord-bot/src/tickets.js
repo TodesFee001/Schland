@@ -703,7 +703,10 @@ export function createTicketSystem(input) {
     }
 
     const category = await ensureTicketCategory(guild);
-    const permissionOverwrites = await buildTicketPermissionOverwrites(guild, draft);
+    const permissionOverwrites = buildTicketInitialPermissionOverwrites(
+      guild,
+      draft,
+    );
     let channel;
 
     try {
@@ -719,6 +722,8 @@ export function createTicketSystem(input) {
       await cancelTicketAfterChannelFailure(ticket, interaction, error);
       throw new Error(`discord_channel_create_failed: ${errorMessage(error)}`);
     }
+
+    await applyTicketViewRoleOverwrites(channel, ticket);
 
     const updated = await api("/tickets", {
       body: {
@@ -766,6 +771,19 @@ export function createTicketSystem(input) {
     }
 
     try {
+      await writeTicketDiagnosticLog(ticket.id, interaction, {
+        code: error?.code ?? null,
+        message: errorMessage(error),
+        name: error?.name ?? null,
+        stage: "discord_channel_create",
+        status: error?.status ?? null,
+      }).catch((logError) => {
+        console.error(
+          "Ticket channel create diagnostic log failed",
+          errorMessage(logError),
+        );
+      });
+
       await api("/tickets", {
         body: {
           actorDiscordUserId: interaction.user?.id,
@@ -781,6 +799,18 @@ export function createTicketSystem(input) {
         errorMessage(updateError),
       );
     }
+  }
+
+  async function writeTicketDiagnosticLog(ticketId, interaction, details) {
+    await api("/tickets/logs", {
+      body: {
+        action: "ticket_bot_diagnostic",
+        actorDiscordUserId: interaction.user?.id,
+        actorDiscordUsername: formatUser(interaction.user),
+        details,
+        ticketId,
+      },
+    });
   }
 
   async function handleTicketAdd(interaction) {
@@ -2020,36 +2050,18 @@ export function createTicketSystem(input) {
     return lines.join("\n");
   }
 
-  async function buildTicketPermissionOverwrites(guild, draft) {
-    await guild.roles.fetch().catch((error) => {
-      console.warn("Ticket role cache refresh failed", errorMessage(error));
-    });
-
-    const validViewRoleIds = config.ticketViewRoleIds.filter(
-      (roleId) => isDiscordSnowflake(roleId) && guild.roles.cache.has(roleId),
-    );
-    const skippedRoleIds = config.ticketViewRoleIds.filter(
-      (roleId) => !validViewRoleIds.includes(roleId),
-    );
-
-    if (skippedRoleIds.length > 0) {
-      console.warn(
-        `Ticket channel skips invalid view role ids: ${skippedRoleIds.join(", ")}`,
-      );
-    }
-
-    const roleOverwrites = validViewRoleIds.map((roleId) => ({
-      allow: buildTicketRoleAllowOverwrite(),
-      id: roleId,
-      type: 0,
-    }));
+  function buildTicketInitialPermissionOverwrites(guild, draft) {
     const excludedUserIds = new Set(
       draft.excludedUsers
         .map((user) => user.discordUserId)
         .filter((id) => isDiscordSnowflake(id)),
     );
     const allowUserIds = new Set(
-      [draft.creatorDiscordUserId, ...draft.counterpartUsers.map((user) => user.discordUserId)]
+      [
+        client.user?.id,
+        draft.creatorDiscordUserId,
+        ...draft.counterpartUsers.map((user) => user.discordUserId),
+      ]
         .filter((id) => isDiscordSnowflake(id) && !excludedUserIds.has(id)),
     );
     const userOverwrites = [...allowUserIds].map((id) => ({
@@ -2069,10 +2081,71 @@ export function createTicketSystem(input) {
         id: guild.id,
         type: 0,
       },
-      ...roleOverwrites,
       ...userOverwrites,
       ...excludedOverwrites,
     ];
+  }
+
+  async function applyTicketViewRoleOverwrites(channel, ticket) {
+    await channel.guild.roles.fetch().catch((error) => {
+      console.warn("Ticket role cache refresh failed", errorMessage(error));
+    });
+
+    const validViewRoleIds = config.ticketViewRoleIds.filter(
+      (roleId) =>
+        isDiscordSnowflake(roleId) && channel.guild.roles.cache.has(roleId),
+    );
+    const skippedRoleIds = config.ticketViewRoleIds.filter(
+      (roleId) => !validViewRoleIds.includes(roleId),
+    );
+
+    if (skippedRoleIds.length > 0) {
+      console.warn(
+        `Ticket channel skips invalid view role ids: ${skippedRoleIds.join(", ")}`,
+      );
+    }
+
+    for (const roleId of validViewRoleIds) {
+      try {
+        await channel.permissionOverwrites.edit(
+          roleId,
+          {
+            AttachFiles: true,
+            EmbedLinks: true,
+            ReadMessageHistory: true,
+            SendMessages: true,
+            ViewChannel: true,
+          },
+          {
+            reason: trimReason(`Schland Ticket ${ticket.ticketNumber ?? ticket.id}`),
+          },
+        );
+      } catch (error) {
+        console.warn(
+          `Ticket channel role overwrite failed for ${roleId}`,
+          errorMessage(error),
+        );
+
+        await api("/tickets/logs", {
+          body: {
+            action: "ticket_role_overwrite_failed",
+            details: {
+              code: error?.code ?? null,
+              message: errorMessage(error),
+              roleId,
+              stage: "ticket_role_overwrite",
+              status: error?.status ?? null,
+            },
+            ticketId: ticket.id,
+          },
+        }).catch((logError) => {
+          console.error(
+            "Ticket role overwrite diagnostic log failed",
+            errorMessage(logError),
+          );
+        });
+      }
+    }
   }
 
   function buildTicketRoleAllowOverwrite() {

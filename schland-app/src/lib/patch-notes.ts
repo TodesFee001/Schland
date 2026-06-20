@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "20.06.2026",
+    id: "discord-ticket-overwrite-fallback",
+    items: [
+      "Ticketchannel wird jetzt zuerst mit minimalen Benutzerrechten erstellt; Rollenrechte werden danach einzeln gesetzt.",
+      "Wenn eine Discord-Rolle wegen Hierarchie oder fehlender Bot-Rechte blockiert, scheitert nicht mehr die komplette Ticket-Erstellung.",
+      "Exakte Discord-Fehler aus der Channel-Erstellung und Rollenrechte-Vergabe werden ab jetzt in den Ticket-Logs gespeichert.",
+    ],
+    title: "Ticket-Rechte robuster gesetzt",
+    type: "fix",
+    version: "0.10.31",
+  },
+  {
+    date: "20.06.2026",
     id: "discord-ticket-channel-create-repair",
     items: [
       "Ticket-Erstellung filtert ungueltige Discord-Rollen vor dem Channel-Anlegen heraus.",
