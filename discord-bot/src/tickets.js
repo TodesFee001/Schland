@@ -37,6 +37,7 @@ const TICKET_ADD_USER_MANUAL_BUTTON_PREFIX = "ticket:add-user-manual-open:";
 const TICKET_ADD_USER_MANUAL_PREFIX = "ticket:add-user-manual:";
 const TICKET_CLOSE_PREFIX = "ticket:close:";
 const TICKET_CLOSE_SUBMIT_PREFIX = "ticket:close-submit:";
+const TICKET_DELETE_PREFIX = "ticket:delete:";
 const TICKET_HELP_BUTTON_ID = "ticket:help";
 const TICKET_SETUP_BUTTON_ID = "ticket:setup";
 const TICKET_TRANSCRIPT_PREFIX = "ticket:transcript:";
@@ -462,6 +463,11 @@ export function createTicketSystem(input) {
 
     if (interaction.customId.startsWith(TICKET_TRANSCRIPT_PREFIX)) {
       await handleTranscriptButton(interaction);
+      return;
+    }
+
+    if (interaction.customId.startsWith(TICKET_DELETE_PREFIX)) {
+      await handleDeleteTicketButton(interaction);
     }
   }
 
@@ -1402,7 +1408,7 @@ export function createTicketSystem(input) {
   async function handleTranscriptButton(interaction) {
     if (!canManageTickets(interaction.member, interaction.memberPermissions)) {
       await interaction.reply({
-        content: "Nur berechtigte Moderation darf ein Transcript sichern.",
+        content: "Nur berechtigte Moderation darf ein Transkript erstellen.",
         ephemeral: true,
       });
       return;
@@ -1412,7 +1418,88 @@ export function createTicketSystem(input) {
 
     await interaction.deferReply({ ephemeral: true });
     await saveTranscript(interaction.channel, ticketId, interaction.user);
-    await interaction.editReply({ content: "Transcript wurde als Beleg gespeichert." });
+    await interaction.editReply({ content: "Transkript wurde als Beleg gespeichert." });
+  }
+
+  async function handleDeleteTicketButton(interaction) {
+    if (!canManageTickets(interaction.member, interaction.memberPermissions)) {
+      await interaction.reply({
+        content: "Nur berechtigte Moderation darf Ticketchannel loeschen.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const ticketId = interaction.customId.slice(TICKET_DELETE_PREFIX.length);
+
+    if (!interaction.channel?.delete) {
+      await interaction.reply({
+        content: "Dieser Kanal kann vom Bot nicht geloescht werden.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+    await saveTranscript(interaction.channel, ticketId, interaction.user).catch((error) => {
+      console.error("Ticket transcript before delete failed", errorMessage(error));
+    });
+
+    await api("/tickets/logs", {
+      body: {
+        action: "ticket_channel_delete_requested",
+        actorDiscordUserId: interaction.user.id,
+        actorDiscordUsername: formatUser(interaction.user),
+        details: {
+          channelId: interaction.channel.id,
+          channelName: interaction.channel.name,
+        },
+        ticketId,
+      },
+      method: "POST",
+    }).catch((error) => {
+      console.error("Ticket delete log failed", errorMessage(error));
+    });
+
+    const channelName = interaction.channel.name;
+
+    await interaction.editReply({
+      content: "Transkript wurde gesichert. Ticketchannel wird geloescht.",
+    });
+
+    try {
+      await interaction.channel.delete(
+        trimReason(`Ticket geloescht von ${formatUser(interaction.user)}`),
+      );
+    } catch (error) {
+      console.error("Ticket channel delete failed", errorMessage(error));
+      await api("/tickets/logs", {
+        body: {
+          action: "ticket_channel_delete_failed",
+          actorDiscordUserId: interaction.user.id,
+          actorDiscordUsername: formatUser(interaction.user),
+          details: {
+            channelName,
+            error: errorMessage(error),
+          },
+          ticketId,
+        },
+        method: "POST",
+      }).catch(() => {});
+      await interaction.followUp({
+        content:
+          "Ticketchannel konnte nicht geloescht werden. Bitte Bot-Rechte fuer Kanaele verwalten pruefen.",
+        ephemeral: true,
+      }).catch(() => {});
+      return;
+    }
+
+    await sendTicketLog({
+      color: 0x7f1d1d,
+      description: `${formatUser(interaction.user)} hat den Ticketchannel \`${channelName}\` geloescht. Transkript wurde vorher gesichert.`,
+      fields: [{ name: "Ticket", value: ticketId }],
+      title: "Ticket geloescht",
+    });
   }
 
   async function showCloseModal(interaction) {
@@ -1469,7 +1556,11 @@ export function createTicketSystem(input) {
         .catch(() => {});
     }
 
-    await interaction.channel?.send({
+    const replacedControls = await replaceTicketControlsAfterClose(
+      interaction.channel,
+      ticketId,
+    );
+    const closedMessage = {
       embeds: [
         new EmbedBuilder()
           .setColor(0x6b7280)
@@ -1478,8 +1569,44 @@ export function createTicketSystem(input) {
           .setFooter({ text: `Geschlossen von ${formatUser(interaction.user)}` })
           .setTimestamp(new Date()),
       ],
-    });
+    };
+
+    if (!replacedControls) {
+      closedMessage.components = buildClosedTicketActionRows(ticketId);
+    }
+
+    await interaction.channel?.send(closedMessage);
     await interaction.editReply({ content: "Ticket geschlossen." });
+  }
+
+  async function replaceTicketControlsAfterClose(channel, ticketId) {
+    if (!channel?.messages?.fetch) {
+      return false;
+    }
+
+    const messages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
+
+    if (!messages) {
+      return false;
+    }
+
+    const controlMessage = messages.find(
+      (message) =>
+        message.author?.id === client.user?.id &&
+        messageHasComponentWithPrefix(message, TICKET_CLOSE_PREFIX),
+    );
+
+    if (!controlMessage?.edit) {
+      return false;
+    }
+
+    const edited = await controlMessage
+      .edit({
+        components: buildClosedTicketActionRows(ticketId),
+      })
+      .catch(() => null);
+
+    return Boolean(edited);
   }
 
   async function handleDirectMessage(message) {
@@ -2201,6 +2328,21 @@ export function createTicketSystem(input) {
     ];
   }
 
+  function buildClosedTicketActionRows(ticketId) {
+    return [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${TICKET_TRANSCRIPT_PREFIX}${ticketId}`)
+          .setLabel("Transkript erstellen")
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(`${TICKET_DELETE_PREFIX}${ticketId}`)
+          .setLabel("Ticket loeschen")
+          .setStyle(ButtonStyle.Danger),
+      ),
+    ];
+  }
+
   function buildTicketAddUserRows(ticketId) {
     return [
       new ActionRowBuilder().addComponents(
@@ -2791,7 +2933,8 @@ export function createTicketSystem(input) {
       "3. Falls Discord eine Person in der Suche nicht findet, nutze Discord-ID eingeben.",
       "4. Der Ort kann Text-, Thread-, Sprach- oder Stage-Kanal sein.",
       "5. Der Bot erstellt einen privaten Ticketchannel mit Belegspeicherung.",
-      "6. Im Ticket koennen Berechtigte per Button Personen hinzufuegen, den Sanktionsberater starten, Transcript sichern oder schliessen.",
+      "6. Im Ticket koennen Berechtigte per Button Personen hinzufuegen, den Sanktionsberater starten, Transkript sichern oder schliessen.",
+      "7. Nach dem Schliessen wechselt die Ticket-Bedienung auf Transkript erstellen und Ticket loeschen.",
       "",
       `Text-Fallback, falls Discord keine Slash-Commands zeigt: \`${config.textCommandPrefix}ticket-setup\`, \`${config.textCommandPrefix}ticket-anleitung\`, \`${config.textCommandPrefix}add <Person> Grund\`.`,
       "Slash-Variante: `/ticket-setup`, `/ticket-anleitung`, `/add user grund?`.",
@@ -2815,6 +2958,12 @@ export function createTicketSystem(input) {
       hasTicketAdminRole(member) ||
       memberPermissions?.has(PermissionFlagsBits.ManageGuild) ||
       memberPermissions?.has(PermissionFlagsBits.ManageChannels)
+    );
+  }
+
+  function messageHasComponentWithPrefix(message, prefix) {
+    return message.components?.some((row) =>
+      row.components?.some((component) => component.customId?.startsWith(prefix)),
     );
   }
 

@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "20.06.2026",
+    id: "discord-ticket-close-transcript-delete-actions",
+    items: [
+      "Nach dem Schliessen eines Tickets wird die Ticket-Bedienung auf Transkript erstellen und Ticket loeschen umgestellt.",
+      "Ticket loeschen sichert vorher nochmal ein Transkript und entfernt danach den Discord-Ticketchannel.",
+      "Die Fallakte, Logs und gespeicherten Belege bleiben erhalten; geloescht wird nur der Discord-Kanal.",
+    ],
+    title: "Ticket-Abschlussaktionen",
+    type: "feature",
+    version: "0.10.36",
+  },
+  {
+    date: "20.06.2026",
     id: "sanctions-advisor-file-url-evidence-analysis",
     items: [
       "KI-Sanktionsberater haengt hochgeladene Supabase-Belege jetzt als OpenAI input_image oder input_file an die Auswertung an.",
