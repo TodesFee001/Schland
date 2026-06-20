@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "20.06.2026",
+    id: "sanctions-advisor-visible-after-official-docs",
+    items: [
+      "KI-Sanktionsberater zeigt seine Faelle wieder an, nachdem die neue Amtsdokument-Verknuepfung die Supabase-Abfrage blockiert hatte.",
+      "Die offizielle Dokumentliste wird jetzt ueber die eindeutige Akten-Fremdschluessel-Beziehung geladen.",
+      "Fehlerbild behoben: Seite laedt, aber der Sanktionsberater bleibt leer.",
+    ],
+    title: "Sanktionsberater-Anzeige repariert",
+    type: "fix",
+    version: "0.10.39",
+  },
+  {
+    date: "20.06.2026",
     id: "sanctions-advisor-official-docs-measures",
     items: [
       "KI-Sanktionsberater speichert jetzt immer konkrete Massnahmen mit Begruendung, Belegbasis, Rechtsgrundlagen, Risiken und Ausfuehrbarkeitsstatus.",

@@ -1418,7 +1418,7 @@ export async function getWorkspaceData(
               details,
               created_at
             ),
-            moderation_advice_official_documents(
+            moderation_advice_official_documents!moderation_advice_official_documents_advice_case_id_fkey(
               id,
               az,
               status,
