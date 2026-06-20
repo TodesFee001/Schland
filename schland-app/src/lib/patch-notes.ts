@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "20.06.2026",
+    id: "discord-ticket-counterpart-access-revert",
+    items: [
+      "Gegenparteien werden beim Ticket-Erstellen nicht mehr automatisch dem privaten Ticketchannel hinzugefuegt.",
+      "Automatischer Channelzugriff gilt nur fuer den Ersteller und den Bot; weitere Personen muessen bewusst ueber Person hinzufuegen eingeladen werden.",
+      "Die Gegenpartei bleibt weiter als Fallbezug im Ticket gespeichert, ohne dadurch Zugriff auf Belege oder interne Unterhaltung zu erhalten.",
+    ],
+    title: "Gegenpartei bleibt ohne Auto-Zugriff",
+    type: "fix",
+    version: "0.10.32",
+  },
+  {
+    date: "20.06.2026",
     id: "discord-ticket-overwrite-fallback",
     items: [
       "Ticketchannel wird jetzt zuerst mit minimalen Benutzerrechten erstellt; Rollenrechte werden danach einzeln gesetzt.",

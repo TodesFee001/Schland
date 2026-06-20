@@ -2057,11 +2057,7 @@ export function createTicketSystem(input) {
         .filter((id) => isDiscordSnowflake(id)),
     );
     const allowUserIds = new Set(
-      [
-        client.user?.id,
-        draft.creatorDiscordUserId,
-        ...draft.counterpartUsers.map((user) => user.discordUserId),
-      ]
+      [client.user?.id, draft.creatorDiscordUserId]
         .filter((id) => isDiscordSnowflake(id) && !excludedUserIds.has(id)),
     );
     const userOverwrites = [...allowUserIds].map((id) => ({
