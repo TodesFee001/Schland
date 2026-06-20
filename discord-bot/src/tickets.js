@@ -2061,7 +2061,7 @@ export function createTicketSystem(input) {
         .filter((id) => isDiscordSnowflake(id) && !excludedUserIds.has(id)),
     );
     const userOverwrites = [...allowUserIds].map((id) => ({
-      allow: buildTicketUserAllowOverwrite(),
+      allow: buildTicketUserAllowCreateOverwrite(),
       id,
       type: 1,
     }));
@@ -2162,6 +2162,16 @@ export function createTicketSystem(input) {
       SendMessages: true,
       ViewChannel: true,
     };
+  }
+
+  function buildTicketUserAllowCreateOverwrite() {
+    return [
+      PermissionFlagsBits.AttachFiles,
+      PermissionFlagsBits.EmbedLinks,
+      PermissionFlagsBits.ReadMessageHistory,
+      PermissionFlagsBits.SendMessages,
+      PermissionFlagsBits.ViewChannel,
+    ];
   }
 
   async function applyExcludedDenies(channel, participants) {

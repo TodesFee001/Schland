@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "20.06.2026",
+    id: "discord-ticket-create-bitfield-fix",
+    items: [
+      "Ticketchannel-Erstellung uebergibt User-Rechte beim initialen Discord-Channel-Create jetzt als Bitfield-kompatible Permission-Liste.",
+      "Damit ist der konkrete Discord.js-Fehler BitFieldInvalid: Invalid bitfield flag or number behoben.",
+      "Die spaeteren Person-hinzufuegen-Rechte bleiben unveraendert und werden weiterhin bewusst per Button gesetzt.",
+    ],
+    title: "Ticketchannel-Bitfieldfehler behoben",
+    type: "fix",
+    version: "0.10.33",
+  },
+  {
+    date: "20.06.2026",
     id: "discord-ticket-counterpart-access-revert",
     items: [
       "Gegenparteien werden beim Ticket-Erstellen nicht mehr automatisch dem privaten Ticketchannel hinzugefuegt.",
