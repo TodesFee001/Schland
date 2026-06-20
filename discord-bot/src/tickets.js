@@ -18,7 +18,11 @@ import {
 const TICKET_OPEN_BUTTON_ID = "ticket:open";
 const TICKET_TYPE_PREFIX = "ticket:type:";
 const TICKET_COUNTERPART_PREFIX = "ticket:counterpart:";
+const TICKET_COUNTERPART_MANUAL_BUTTON_PREFIX = "ticket:counterpart-manual-open:";
+const TICKET_COUNTERPART_MANUAL_PREFIX = "ticket:counterpart-manual:";
 const TICKET_EXCLUDED_PREFIX = "ticket:excluded:";
+const TICKET_EXCLUDED_MANUAL_BUTTON_PREFIX = "ticket:excluded-manual-open:";
+const TICKET_EXCLUDED_MANUAL_PREFIX = "ticket:excluded-manual:";
 const TICKET_OUTSIDE_PREFIX = "ticket:outside:";
 const TICKET_CHANNEL_PREFIX = "ticket:channel:";
 const TICKET_TIME_PREFIX = "ticket:time:";
@@ -29,6 +33,8 @@ const TICKET_EXACT_BUTTON_PREFIX = "ticket:exact-open:";
 const TICKET_EXACT_PREFIX = "ticket:exact:";
 const TICKET_ADVICE_PREFIX = "ticket:advice:";
 const TICKET_ADD_USER_PREFIX = "ticket:add-user:";
+const TICKET_ADD_USER_MANUAL_BUTTON_PREFIX = "ticket:add-user-manual-open:";
+const TICKET_ADD_USER_MANUAL_PREFIX = "ticket:add-user-manual:";
 const TICKET_CLOSE_PREFIX = "ticket:close:";
 const TICKET_CLOSE_SUBMIT_PREFIX = "ticket:close-submit:";
 const TICKET_HELP_BUTTON_ID = "ticket:help";
@@ -385,6 +391,33 @@ export function createTicketSystem(input) {
       return;
     }
 
+    if (interaction.customId.startsWith(TICKET_COUNTERPART_MANUAL_BUTTON_PREFIX)) {
+      await showDraftManualUserModal(
+        interaction,
+        TICKET_COUNTERPART_MANUAL_BUTTON_PREFIX,
+        TICKET_COUNTERPART_MANUAL_PREFIX,
+        "Gegenpartei per ID",
+        "Discord-ID oder @Mention",
+      );
+      return;
+    }
+
+    if (interaction.customId.startsWith(TICKET_EXCLUDED_MANUAL_BUTTON_PREFIX)) {
+      await showDraftManualUserModal(
+        interaction,
+        TICKET_EXCLUDED_MANUAL_BUTTON_PREFIX,
+        TICKET_EXCLUDED_MANUAL_PREFIX,
+        "Ausschluss per ID",
+        "Discord-ID oder @Mention",
+      );
+      return;
+    }
+
+    if (interaction.customId.startsWith(TICKET_ADD_USER_MANUAL_BUTTON_PREFIX)) {
+      await showTicketAddUserManualModal(interaction);
+      return;
+    }
+
     if (interaction.customId.startsWith(TICKET_OUTSIDE_PREFIX)) {
       const draft = requireDraft(interaction, TICKET_OUTSIDE_PREFIX);
 
@@ -606,6 +639,21 @@ export function createTicketSystem(input) {
   }
 
   async function handleTicketModal(interaction) {
+    if (interaction.customId.startsWith(TICKET_COUNTERPART_MANUAL_PREFIX)) {
+      await handleCounterpartManualModal(interaction);
+      return;
+    }
+
+    if (interaction.customId.startsWith(TICKET_EXCLUDED_MANUAL_PREFIX)) {
+      await handleExcludedManualModal(interaction);
+      return;
+    }
+
+    if (interaction.customId.startsWith(TICKET_ADD_USER_MANUAL_PREFIX)) {
+      await handleTicketAddUserManualModal(interaction);
+      return;
+    }
+
     if (interaction.customId.startsWith(TICKET_DETAILS_PREFIX)) {
       const draft = requireDraft(interaction, TICKET_DETAILS_PREFIX);
 
@@ -639,6 +687,209 @@ export function createTicketSystem(input) {
     if (interaction.customId.startsWith(TICKET_CLOSE_SUBMIT_PREFIX)) {
       await closeTicketFromModal(interaction);
     }
+  }
+
+  async function showDraftManualUserModal(
+    interaction,
+    buttonPrefix,
+    modalPrefix,
+    title,
+    label,
+  ) {
+    const draft = requireDraft(interaction, buttonPrefix);
+
+    if (!draft) {
+      return;
+    }
+
+    await interaction.showModal(
+      buildManualUsersModal(`${modalPrefix}${draft.id}`, title, label),
+    );
+  }
+
+  async function handleCounterpartManualModal(interaction) {
+    const draft = requireDraft(interaction, TICKET_COUNTERPART_MANUAL_PREFIX);
+
+    if (!draft) {
+      return;
+    }
+
+    const resolved = await usersFromManualText(
+      interaction,
+      getModalText(interaction, "user_ids"),
+    );
+    const users = resolved.users.filter(
+      (user) => user.discordUserId !== interaction.user.id,
+    );
+    draft.counterpartUsers = mergeTicketUsers(draft.counterpartUsers, users);
+
+    if (draft.counterpartUsers.length === 0) {
+      await interaction.reply({
+        components: buildCounterpartRows(draft.id),
+        content: appendManualUserWarnings(
+          buildDraftMessage(
+            draft,
+            "Bitte trage mindestens eine andere Person per Discord-ID ein.",
+          ),
+          resolved,
+        ),
+        ephemeral: true,
+      });
+      return;
+    }
+
+    ticketDrafts.set(draft.id, draft);
+
+    if (draft.ticketType === "government_member_dispute") {
+      await interaction.reply({
+        components: buildExcludedRows(draft.id),
+        content: appendManualUserWarnings(
+          buildDraftMessage(
+            draft,
+            "Waehle die betroffenen Regierungsmitglieder aus. Diese Personen werden explizit aus dem Ticket ausgeschlossen.",
+          ),
+          resolved,
+        ),
+        ephemeral: true,
+      });
+      return;
+    }
+
+    await interaction.reply({
+      components: buildChannelSelectRows(draft.id),
+      content: appendManualUserWarnings(
+        buildDraftMessage(draft, "Wo ist der Vorfall passiert?"),
+        resolved,
+      ),
+      ephemeral: true,
+    });
+  }
+
+  async function handleExcludedManualModal(interaction) {
+    const draft = requireDraft(interaction, TICKET_EXCLUDED_MANUAL_PREFIX);
+
+    if (!draft) {
+      return;
+    }
+
+    const resolved = await usersFromManualText(
+      interaction,
+      getModalText(interaction, "user_ids"),
+    );
+    draft.excludedUsers = mergeTicketUsers(draft.excludedUsers, resolved.users);
+
+    if (draft.excludedUsers.length === 0) {
+      await interaction.reply({
+        components: buildExcludedRows(draft.id),
+        content: appendManualUserWarnings(
+          buildDraftMessage(
+            draft,
+            "Bei Streit mit Regierungsmitgliedern muss mindestens eine auszuschliessende Person eingetragen werden.",
+          ),
+          resolved,
+        ),
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const governmentError = await validateGovernmentExcludedUsers(
+      interaction,
+      draft.excludedUsers,
+    );
+
+    if (governmentError) {
+      await interaction.reply({
+        components: buildExcludedRows(draft.id),
+        content: appendManualUserWarnings(
+          buildDraftMessage(draft, governmentError),
+          resolved,
+        ),
+        ephemeral: true,
+      });
+      return;
+    }
+
+    ticketDrafts.set(draft.id, draft);
+    await interaction.reply({
+      components: buildChannelSelectRows(draft.id),
+      content: appendManualUserWarnings(
+        buildDraftMessage(draft, "Wo ist der Vorfall passiert?"),
+        resolved,
+      ),
+      ephemeral: true,
+    });
+  }
+
+  async function showTicketAddUserManualModal(interaction) {
+    if (!hasTicketAdminRole(interaction.member)) {
+      await interaction.reply({
+        content: "Du brauchst die Ticket-Adminrolle, um Personen hinzuzufuegen.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const ticketId = interaction.customId.slice(
+      TICKET_ADD_USER_MANUAL_BUTTON_PREFIX.length,
+    );
+
+    if (!ticketId || ticketId !== getTicketIdFromChannel(interaction.channel)) {
+      await interaction.reply({
+        content: "Personen koennen nur in einem aktiven Ticket-Channel hinzugefuegt werden.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    await interaction.showModal(buildTicketAddUserManualModal(ticketId));
+  }
+
+  async function handleTicketAddUserManualModal(interaction) {
+    if (!hasTicketAdminRole(interaction.member)) {
+      await interaction.reply({
+        content: "Du brauchst die Ticket-Adminrolle, um Personen hinzuzufuegen.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const ticketId = interaction.customId.slice(TICKET_ADD_USER_MANUAL_PREFIX.length);
+
+    if (!ticketId || ticketId !== getTicketIdFromChannel(interaction.channel)) {
+      await interaction.reply({
+        content: "Diese Eingabe gehoert nicht mehr zu diesem Ticket.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    const resolved = await usersFromManualText(
+      interaction,
+      getModalText(interaction, "user_ids"),
+    );
+    const reason =
+      getModalText(interaction, "reason") || "Per Ticket-Button hinzugefuegt";
+
+    if (resolved.users.length === 0) {
+      await interaction.editReply({
+        content: appendManualUserWarnings("Keine gueltige Person gefunden.", resolved),
+      });
+      return;
+    }
+
+    const lines = await addTicketUsersToChannel(
+      interaction,
+      ticketId,
+      resolved.users,
+      reason,
+    );
+
+    await interaction.editReply({
+      content: appendManualUserWarnings(lines.join("\n"), resolved),
+    });
   }
 
   async function startTicketDraft(interaction) {
@@ -1033,6 +1284,20 @@ export function createTicketSystem(input) {
     await interaction.deferUpdate();
 
     const users = await usersFromSelect(interaction);
+    const lines = await addTicketUsersToChannel(
+      interaction,
+      ticketId,
+      users,
+      "Per Ticket-Button hinzugefuegt",
+    );
+
+    await interaction.editReply({
+      components: [],
+      content: lines.join("\n") || "Keine Person ausgewaehlt.",
+    });
+  }
+
+  async function addTicketUsersToChannel(interaction, ticketId, users, reason) {
     const added = [];
     const blocked = [];
     const failed = [];
@@ -1045,7 +1310,7 @@ export function createTicketSystem(input) {
             actorDiscordUserId: interaction.user.id,
             actorDiscordUsername: formatUser(interaction.user),
             channelId: interaction.channel.id,
-            reason: "Per Ticket-Button hinzugefuegt",
+            reason,
             user,
           },
           method: "PATCH",
@@ -1055,7 +1320,7 @@ export function createTicketSystem(input) {
           user.discordUserId,
           buildTicketUserAllowOverwrite(),
           {
-            reason: "Schland Ticket Button: Person hinzugefuegt",
+            reason: trimReason(`Schland Ticket: ${reason}`),
           },
         );
         await applyExcludedDenies(interaction.channel, result.ticket?.participants);
@@ -1085,10 +1350,7 @@ export function createTicketSystem(input) {
       lines.push(`Fehlgeschlagen: ${failed.join(", ")}`);
     }
 
-    await interaction.editReply({
-      components: [],
-      content: lines.join("\n") || "Keine Person ausgewaehlt.",
-    });
+    return lines;
   }
 
   async function handleAdviceButton(interaction) {
@@ -1706,6 +1968,12 @@ export function createTicketSystem(input) {
           .setMinValues(1)
           .setPlaceholder("Gegenpartei auswaehlen"),
       ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${TICKET_COUNTERPART_MANUAL_BUTTON_PREFIX}${draftId}`)
+          .setLabel("Discord-ID eingeben")
+          .setStyle(ButtonStyle.Secondary),
+      ),
     ];
   }
 
@@ -1718,6 +1986,12 @@ export function createTicketSystem(input) {
           .setMinValues(1)
           .setPlaceholder("Regierungsmitglied ausschliessen"),
       ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${TICKET_EXCLUDED_MANUAL_BUTTON_PREFIX}${draftId}`)
+          .setLabel("Discord-ID eingeben")
+          .setStyle(ButtonStyle.Secondary),
+      ),
     ];
   }
 
@@ -1727,7 +2001,9 @@ export function createTicketSystem(input) {
         new ChannelSelectMenuBuilder()
           .setChannelTypes(
             ChannelType.GuildAnnouncement,
+            ChannelType.GuildStageVoice,
             ChannelType.GuildText,
+            ChannelType.GuildVoice,
             ChannelType.PrivateThread,
             ChannelType.PublicThread,
           )
@@ -1934,7 +2210,47 @@ export function createTicketSystem(input) {
           .setMinValues(1)
           .setPlaceholder("Personen fuer dieses Ticket auswaehlen"),
       ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${TICKET_ADD_USER_MANUAL_BUTTON_PREFIX}${ticketId}`)
+          .setLabel("Discord-ID eingeben")
+          .setStyle(ButtonStyle.Secondary),
+      ),
     ];
+  }
+
+  function buildManualUsersModal(customId, title, label) {
+    const modal = new ModalBuilder().setCustomId(customId).setTitle(title);
+
+    modal.addComponents(
+      buildTextInputRow("user_ids", label, {
+        maxLength: 500,
+        placeholder: "123456789012345678 oder @Name, mehrere per Zeile/Komma",
+        required: true,
+        style: TextInputStyle.Paragraph,
+      }),
+    );
+
+    return modal;
+  }
+
+  function buildTicketAddUserManualModal(ticketId) {
+    const modal = buildManualUsersModal(
+      `${TICKET_ADD_USER_MANUAL_PREFIX}${ticketId}`,
+      "Person per ID hinzufuegen",
+      "Discord-ID oder @Mention",
+    );
+
+    modal.addComponents(
+      buildTextInputRow("reason", "Grund", {
+        maxLength: 200,
+        placeholder: "optional",
+        required: false,
+        style: TextInputStyle.Short,
+      }),
+    );
+
+    return modal;
   }
 
   function buildTextInputRow(customId, label, options) {
@@ -2239,6 +2555,74 @@ export function createTicketSystem(input) {
     return users;
   }
 
+  async function usersFromManualText(interaction, text) {
+    const ids = parseDiscordUserIds(text);
+    const users = [];
+    const failed = [];
+
+    for (const id of ids) {
+      const member = await interaction.guild?.members.fetch(id).catch(() => null);
+      const user = member?.user ?? (await client.users.fetch(id).catch(() => null));
+
+      if (!user) {
+        failed.push(id);
+        continue;
+      }
+
+      users.push({
+        discordUserId: user.id,
+        discordUsername: formatUser(user),
+      });
+    }
+
+    return {
+      failed,
+      users: mergeTicketUsers([], users),
+    };
+  }
+
+  function parseDiscordUserIds(text) {
+    const ids = [];
+    const pattern = /<@!?(\d{15,25})>|(?<!\d)(\d{15,25})(?!\d)/g;
+
+    for (const match of String(text ?? "").matchAll(pattern)) {
+      ids.push(match[1] ?? match[2]);
+    }
+
+    return [...new Set(ids)];
+  }
+
+  function mergeTicketUsers(existing, incoming) {
+    const users = [];
+    const seen = new Set();
+
+    for (const user of [...(existing ?? []), ...(incoming ?? [])]) {
+      if (!user?.discordUserId || seen.has(user.discordUserId)) {
+        continue;
+      }
+
+      seen.add(user.discordUserId);
+      users.push(user);
+    }
+
+    return users;
+  }
+
+  function appendManualUserWarnings(content, resolved) {
+    const failed = Array.isArray(resolved?.failed) ? resolved.failed : [];
+
+    if (failed.length === 0) {
+      return content;
+    }
+
+    return [
+      content,
+      "",
+      `Nicht gefunden: ${failed.join(", ")}`,
+      "Tipp: Discord-ID kopieren oder @Mention einfuegen.",
+    ].join("\n");
+  }
+
   async function validateGovernmentExcludedUsers(interaction, users) {
     if (config.governmentRoleIds.length === 0) {
       return null;
@@ -2404,8 +2788,10 @@ export function createTicketSystem(input) {
       "**Schland Ticket-System**",
       "1. Ticket starten: im Kanal `#ticket-erstellen` auf den Button `Ticket erstellen` klicken.",
       "2. Ticketart, Gegenpartei, Ort, Zeitpunkt und Details auswaehlen.",
-      "3. Der Bot erstellt einen privaten Ticketchannel mit Belegspeicherung.",
-      "4. Im Ticket koennen Berechtigte per Button Personen hinzufuegen, den Sanktionsberater starten, Transcript sichern oder schliessen.",
+      "3. Falls Discord eine Person in der Suche nicht findet, nutze Discord-ID eingeben.",
+      "4. Der Ort kann Text-, Thread-, Sprach- oder Stage-Kanal sein.",
+      "5. Der Bot erstellt einen privaten Ticketchannel mit Belegspeicherung.",
+      "6. Im Ticket koennen Berechtigte per Button Personen hinzufuegen, den Sanktionsberater starten, Transcript sichern oder schliessen.",
       "",
       `Text-Fallback, falls Discord keine Slash-Commands zeigt: \`${config.textCommandPrefix}ticket-setup\`, \`${config.textCommandPrefix}ticket-anleitung\`, \`${config.textCommandPrefix}add <Person> Grund\`.`,
       "Slash-Variante: `/ticket-setup`, `/ticket-anleitung`, `/add user grund?`.",

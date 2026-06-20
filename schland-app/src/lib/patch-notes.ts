@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "20.06.2026",
+    id: "discord-ticket-user-id-and-voice-channel-select",
+    items: [
+      "Ticketflow hat jetzt Discord-ID-Fallbacks fuer Gegenpartei, Ausschluss und Person hinzufuegen, falls Discords User-Suche Mitglieder nicht findet.",
+      "Mehrere Discord-IDs oder @Mentions koennen per Zeile oder Komma eingetragen werden.",
+      "Ort-Auswahl zeigt jetzt auch Sprachkanaele und Stage-Kanaele an.",
+    ],
+    title: "Ticket-Suche und Ort-Auswahl erweitert",
+    type: "fix",
+    version: "0.10.34",
+  },
+  {
+    date: "20.06.2026",
     id: "discord-ticket-create-bitfield-fix",
     items: [
       "Ticketchannel-Erstellung uebergibt User-Rechte beim initialen Discord-Channel-Create jetzt als Bitfield-kompatible Permission-Liste.",
