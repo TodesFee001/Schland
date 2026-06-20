@@ -206,6 +206,8 @@ const sections: Section[] = [
 const ADVICE_UPLOAD_MAX_FILES = 20;
 const ADVICE_UPLOAD_MAX_FILE_BYTES = 20 * 1024 * 1024;
 const ADVICE_UPLOAD_MAX_TOTAL_BYTES = 45 * 1024 * 1024;
+const ADVICE_EVIDENCE_FILE_ACCEPT =
+  "image/*,.pdf,.txt,.md,.csv,.tsv,.json,.html,.htm,.xml,.yaml,.yml,.doc,.docx,.rtf,.odt,.ppt,.pptx,.xls,.xlsx";
 
 const rootRoleKey = "root_owner";
 const platformAdminRoleKey = "platform_admin";
@@ -5376,12 +5378,12 @@ function ModerationAdviceSection({
               </label>
               <label className="grid gap-2 lg:col-span-3">
                 <span className="text-xs font-medium uppercase text-neutral-500">
-                  Message-Links
+                  Links / URLs
                 </span>
                 <textarea
                   name="messageLinks"
                   rows={4}
-                  placeholder="Ein Link pro Zeile"
+                  placeholder="Discord-, Datei- oder Webseiten-URL pro Zeile"
                   className="min-h-24 rounded-md border border-[var(--line)] bg-white px-3 py-2 font-mono text-xs outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
                 />
               </label>
@@ -5419,7 +5421,7 @@ function ModerationAdviceSection({
                 <input
                   type="file"
                   multiple
-                  accept="image/*,.pdf,.txt,.md,.csv,.json"
+                  accept={ADVICE_EVIDENCE_FILE_ACCEPT}
                   aria-invalid={adviceUploadBlocked}
                   onChange={(event) => {
                     const files = Array.from(event.currentTarget.files ?? []);
@@ -8305,9 +8307,31 @@ function isAdviceEvidenceTextFile(file: File) {
   const extension = getLocalFileExtension(file.name);
 
   return (
-    ["application/json", "text/csv", "text/markdown", "text/plain"].includes(
-      contentType,
-    ) || [".csv", ".json", ".md", ".txt"].includes(extension)
+    [
+      "application/csv",
+      "application/json",
+      "application/markdown",
+      "application/xml",
+      "text/csv",
+      "text/html",
+      "text/markdown",
+      "text/plain",
+      "text/tab-separated-values",
+      "text/xml",
+      "text/yaml",
+    ].includes(contentType) ||
+    [
+      ".csv",
+      ".htm",
+      ".html",
+      ".json",
+      ".md",
+      ".tsv",
+      ".txt",
+      ".xml",
+      ".yaml",
+      ".yml",
+    ].includes(extension)
   );
 }
 

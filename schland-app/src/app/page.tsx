@@ -1003,7 +1003,7 @@ function getSetupNotice(setup?: string) {
   if (setup === "advice-upload-type") {
     return {
       tone: "warning" as const,
-      text: "Erlaubt sind Bilder, PDF und einfache Textdateien.",
+      text: "Erlaubt sind Bilder, PDF, Office-/LibreOffice-Dokumente, Tabellen, Praesentationen und Text-/Webdateien.",
     };
   }
 

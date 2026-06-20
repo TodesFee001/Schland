@@ -41,22 +41,81 @@ const PROFILE_IMAGE_CONTENT_TYPES = new Set([
   "image/webp",
 ]);
 const ADVICE_FILE_CONTENT_TYPES = new Set([
+  "application/csv",
+  "application/msword",
   "application/json",
+  "application/markdown",
+  "application/rtf",
   "application/pdf",
+  "application/vnd.ms-excel",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.oasis.opendocument.presentation",
+  "application/vnd.oasis.opendocument.spreadsheet",
+  "application/vnd.oasis.opendocument.text",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/x-rtf",
+  "application/xml",
   "image/avif",
   "image/gif",
   "image/jpeg",
   "image/png",
+  "image/svg+xml",
   "image/webp",
   "text/csv",
+  "text/html",
   "text/markdown",
   "text/plain",
+  "text/rtf",
+  "text/tab-separated-values",
+  "text/xml",
+  "text/yaml",
 ]);
 const ADVICE_TEXT_CONTENT_TYPES = new Set([
+  "application/csv",
   "application/json",
+  "application/markdown",
+  "application/xml",
   "text/csv",
+  "text/html",
   "text/markdown",
   "text/plain",
+  "text/tab-separated-values",
+  "text/xml",
+  "text/yaml",
+]);
+const ADVICE_FILE_EXTENSIONS = new Set([
+  ".avif",
+  ".bmp",
+  ".csv",
+  ".doc",
+  ".docx",
+  ".gif",
+  ".heic",
+  ".htm",
+  ".html",
+  ".jpeg",
+  ".jpg",
+  ".json",
+  ".md",
+  ".odt",
+  ".pdf",
+  ".png",
+  ".ppt",
+  ".pptx",
+  ".rtf",
+  ".svg",
+  ".tif",
+  ".tiff",
+  ".tsv",
+  ".txt",
+  ".webp",
+  ".xls",
+  ".xlsx",
+  ".xml",
+  ".yaml",
+  ".yml",
 ]);
 
 type UploadedAdviceEvidence = {
@@ -3030,11 +3089,14 @@ function isAdviceUploadTypeAllowed(input: { contentType: string; fileName: strin
   const contentType = input.contentType.toLowerCase();
   const extension = getFileExtension(input.fileName);
 
-  if (contentType && ADVICE_FILE_CONTENT_TYPES.has(contentType)) {
+  if (
+    contentType &&
+    (ADVICE_FILE_CONTENT_TYPES.has(contentType) || contentType.startsWith("image/"))
+  ) {
     return true;
   }
 
-  return [".csv", ".json", ".md", ".pdf", ".txt"].includes(extension);
+  return ADVICE_FILE_EXTENSIONS.has(extension);
 }
 
 function getUploadedAdviceEvidence(formData: FormData) {
@@ -3330,7 +3392,7 @@ function isTextLikeAdviceEvidence(contentType: string, fileName: string) {
 
   return (
     ADVICE_TEXT_CONTENT_TYPES.has(normalizedContentType) ||
-    [".csv", ".json", ".md", ".txt"].includes(extension)
+    [".csv", ".htm", ".html", ".json", ".md", ".tsv", ".txt", ".xml", ".yaml", ".yml"].includes(extension)
   );
 }
 

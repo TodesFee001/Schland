@@ -11,6 +11,18 @@ export type PatchNote = {
 export const patchNotes: PatchNote[] = [
   {
     date: "20.06.2026",
+    id: "sanctions-advisor-file-url-evidence-analysis",
+    items: [
+      "KI-Sanktionsberater haengt hochgeladene Supabase-Belege jetzt als OpenAI input_image oder input_file an die Auswertung an.",
+      "Bilder, PDFs, Office-/LibreOffice-Dokumente, Praesentationen, Tabellen, Text-/Webdateien und passende Datei-URLs koennen dadurch inhaltlich bewertet werden.",
+      "Normale oeffentliche Webseiten-URLs werden als Textauszug beigelegt; abgelaufene oder nicht oeffentlich lesbare Links fuehren zu konservativer manueller Pruefung statt hartem Fehler.",
+    ],
+    title: "Belege werden wirklich ausgewertet",
+    type: "feature",
+    version: "0.10.35",
+  },
+  {
+    date: "20.06.2026",
     id: "discord-ticket-user-id-and-voice-channel-select",
     items: [
       "Ticketflow hat jetzt Discord-ID-Fallbacks fuer Gegenpartei, Ausschluss und Person hinzufuegen, falls Discords User-Suche Mitglieder nicht findet.",
